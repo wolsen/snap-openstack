@@ -26,6 +26,7 @@ from sunbeam.clusterd.service import (
     TokenAlreadyGeneratedException,
 )
 
+CLUSTERD_PORT = 7000
 LOG = logging.getLogger(__name__)
 
 
@@ -35,7 +36,7 @@ class ClusterInitStep(BaseStep):
     def __init__(self):
         super().__init__("Bootstrap Cluster", "Bootstrapping sunbeam cluster")
 
-        self.port = 7000
+        self.port = CLUSTERD_PORT
         self.client = clusterClient()
         self.fqdn = utils.get_fqdn()
         self.ip = utils.get_local_ip_by_default_route()
@@ -117,7 +118,7 @@ class ClusterJoinNodeStep(BaseStep):
     def __init__(self, token):
         super().__init__("Join node to Cluster", "Join node to sunbeam cluster")
 
-        self.port = 7000
+        self.port = CLUSTERD_PORT
         self.client = clusterClient()
         self.token = token
         self.fqdn = utils.get_fqdn()

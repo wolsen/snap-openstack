@@ -1,4 +1,4 @@
-# Copyright (c) 2022 Canonical Ltd.
+# Copyright (c) 2023 Canonical Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -81,13 +81,10 @@ class BaseService(ABC):
         LOG.debug("Response(%s) = %s", response, response.text)
 
         try:
-            print(response.json())
             response.raise_for_status()
         except HTTPError as e:
             # Do some nice translating to sunbeamdexceptions
             error = response.json().get("error")
-            print(error)
-            print(e)
             if "remote with name" in error:
                 raise NodeAlreadyExistsException(
                     "Already node exists in the sunbeam cluster"
