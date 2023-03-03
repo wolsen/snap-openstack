@@ -24,8 +24,24 @@ apps:
     plugs:
       - network
       - network-bind
+  sunbeam:
+    command: bin/sunbeam
+    plugs:
+      - home
+      - network
+      - network-bind
 
 parts:
+  sunbeam:
+    plugin: python
+    source: .
+    build-packages:
+      - git
+    python-requirements:
+      - requirements.txt
+    override-build: |
+      craftctl default
+
   dqlite:
     build-attributes: [core22-step-dependencies]
     after:
