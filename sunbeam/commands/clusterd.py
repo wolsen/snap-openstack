@@ -73,14 +73,13 @@ class ClusterInitStep(BaseStep):
 class ClusterAddNodeStep(BaseStep):
     """Generate token for new node to join in cluster."""
 
-    def __init__(self, name: str, role: str):
+    def __init__(self, name: str):
         super().__init__(
             "Add Node Cluster",
             "Generate token for new node to add to cluster",
         )
 
         self.node_name = name
-        self.role = role
         self.client = clusterClient()
 
     def is_skip(self, status: Optional[Status] = None):
@@ -103,8 +102,7 @@ class ClusterAddNodeStep(BaseStep):
     def run(self, status: Optional[Status] = None) -> Result:
         """Add node to sunbeam cluster"""
         try:
-            token = self.client.cluster.add_node(name=self.node_name, role=self.role)
-            # TODO(hemanth): Update node role in cluster DB
+            token = self.client.cluster.add_node(name=self.node_name)
             LOG.info(token)
             return Result(result_type=ResultType.COMPLETED, message=token)
         except TokenAlreadyGeneratedException as e:
@@ -115,12 +113,13 @@ class ClusterAddNodeStep(BaseStep):
 class ClusterJoinNodeStep(BaseStep):
     """Join node to the sunbeam cluster."""
 
-    def __init__(self, token):
+    def __init__(self, token, role):
         super().__init__("Join node to Cluster", "Join node to sunbeam cluster")
 
         self.port = CLUSTERD_PORT
         self.client = clusterClient()
         self.token = token
+        self.role = role
         self.fqdn = utils.get_fqdn()
         self.ip = utils.get_local_ip_by_default_route()
 
@@ -148,10 +147,28 @@ class ClusterJoinNodeStep(BaseStep):
                 name=self.fqdn,
                 address=f"{self.ip}:{self.port}",
                 token=self.token,
+                role=self.role,
             )
-            # TODO(hemanth): Update node role in cluster DB
             LOG.info(self.token)
             return Result(result_type=ResultType.COMPLETED, message=self.token)
         except (NodeAlreadyExistsException, NodeJoinException) as e:
+            LOG.warning(e)
+            return Result(ResultType.FAILED, str(e))
+
+
+class ClusterListNodeStep(BaseStep):
+    """List nodes in the sunbeam cluster."""
+
+    def __init__(self):
+        super().__init__("List nodes of Cluster", "List nodes in sunbeam cluster")
+        self.client = clusterClient()
+
+    def run(self, status: Optional[Status] = None) -> Result:
+        """Join node to sunbeam cluster"""
+        try:
+            members = self.client.cluster.get_cluster_members()
+            LOG.info(members)
+            return Result(result_type=ResultType.COMPLETED, message=members)
+        except ClusterServiceUnavailableException as e:
             LOG.warning(e)
             return Result(ResultType.FAILED, str(e))

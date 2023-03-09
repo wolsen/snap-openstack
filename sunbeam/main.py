@@ -20,7 +20,6 @@ import click
 from sunbeam import log
 from sunbeam.commands import bootstrap as bootstrap_cmds
 from sunbeam.commands import node as node_cmds
-from sunbeam.commands import status as status_cmds
 
 LOG = logging.getLogger()
 
@@ -42,12 +41,19 @@ def cli(ctx, quiet, verbose):
     """
 
 
+@click.group("cluster", context_settings=CONTEXT_SETTINGS)
+@click.pass_context
+def cluster(ctx):
+    """Manage the Sunbeam Cluster"""
+
+
 def main():
     log.setup_root_logging()
-    cli.add_command(bootstrap_cmds.bootstrap)
-    cli.add_command(node_cmds.add_node)
-    cli.add_command(node_cmds.join_node)
-    cli.add_command(status_cmds.status)
+    cli.add_command(cluster)
+    cluster.add_command(bootstrap_cmds.bootstrap)
+    cluster.add_command(node_cmds.add_node)
+    cluster.add_command(node_cmds.join)
+    cluster.add_command(node_cmds.list)
     cli()
 
 

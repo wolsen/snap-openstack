@@ -25,16 +25,16 @@ class ClusterService(service.BaseService):
         data = {"bootstrap": True, "address": address, "name": name}
         self._post("cluster/control", data=json.dumps(data))
 
-    def add_node(self, name: str, role: str) -> str:
+    def add_node(self, name: str) -> str:
         data = {"name": name}
         result = self._post("/cluster/1.0/tokens", data=json.dumps(data))
-        data = {"name": name, "role": role}
-        self._post("/1.0/nodes", data=json.dumps(data))
         return result.get("metadata")
 
-    def join_node(self, name: str, address: str, token: str) -> None:
+    def join_node(self, name: str, address: str, token: str, role: str) -> None:
         data = {"join_token": token, "address": address, "name": name}
         self._post("cluster/control", data=json.dumps(data))
+        data = {"name": name, "role": role}
+        self._post("/1.0/nodes", data=json.dumps(data))
 
     def get_cluster_members(self):
         result = []

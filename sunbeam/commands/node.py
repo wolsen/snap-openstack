@@ -21,6 +21,7 @@ from rich.console import Console
 from sunbeam.commands.clusterd import (
     ClusterAddNodeStep,
     ClusterJoinNodeStep,
+    ClusterListNodeStep,
 )
 from sunbeam.jobs.common import ResultType
 
@@ -30,13 +31,12 @@ console = Console()
 
 @click.command()
 @click.option("--name", type=str, prompt=True, help="Fully qualified node name")
-@click.option("--role", default="converged", type=str, help="Role of the node")
-def add_node(name: str, role: str) -> None:
-    """Add node to the cluster.
+def add_node(name: str) -> None:
+    """Generates a token for a new server.
 
     Register new node to the cluster.
     """
-    step = ClusterAddNodeStep(name, role.upper())
+    step = ClusterAddNodeStep(name)
 
     LOG.debug(f"Starting step {step.name}")
     message = f"{step.description} ... "
@@ -64,15 +64,13 @@ def add_node(name: str, role: str) -> None:
 
 @click.command()
 @click.option("--token", type=str, help="Join token")
-def join_node(token: str) -> None:
+@click.option("--role", default="converged", type=str, help="Role of the node")
+def join(token: str, role: str) -> None:
     """Join node to the cluster.
 
     Join the node to the cluster.
     """
-    # TODO(hemanth): Get role of node from cluster DB
-    role = "converged"
-
-    step = ClusterJoinNodeStep(token)
+    step = ClusterJoinNodeStep(token, role.upper())
 
     LOG.debug(f"Starting step {step.name}")
     message = f"{step.description} ... "
@@ -93,3 +91,32 @@ def join_node(token: str) -> None:
 
         console.print(f"{message}[green]done[/green]")
         click.echo(f"Node has been joined as a {role} node")
+
+
+@click.command()
+def list() -> None:
+    """List nodes in the cluster.
+
+    List all nodes in the cluster.
+    """
+    step = ClusterListNodeStep()
+
+    LOG.debug(f"Starting step {step.name}")
+    message = f"{step.description} ... "
+    if step.is_skip():
+        LOG.debug(f"Skipping step {step.name}")
+        console.print(f"{message}[green]done[/green]")
+    else:
+        LOG.debug(f"Running step {step.name}")
+        result = step.run()
+        LOG.debug(
+            f"Finished running step {step.name}. " f"Result: {result.result_type}"
+        )
+
+        if result.result_type == ResultType.FAILED:
+            console.print(f"{message}[red]failed[/red]")
+            raise click.ClickException(result.message)
+
+        console.print(f"{message}[green]done[/green]")
+        click.echo("Sunbeam Cluster Node List:")
+        click.echo(f"{result.message}")

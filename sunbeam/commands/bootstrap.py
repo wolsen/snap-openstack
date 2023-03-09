@@ -37,7 +37,7 @@ console = Console()
     "compute node, or a converged node (default)",
 )
 def bootstrap(role: str) -> None:
-    """Bootstrap the local node.
+    """Setup a new cluster.
 
     Initialize the sunbeam cluster.
     """

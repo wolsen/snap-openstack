@@ -21,9 +21,10 @@ from requests.exceptions import HTTPError
 from sunbeam.clusterd.cluster import ClusterService
 import sunbeam.clusterd.service as service
 from sunbeam.commands.clusterd import (
-    ClusterInitStep,
     ClusterAddNodeStep,
     ClusterJoinNodeStep,
+    ClusterInitStep,
+    ClusterListNodeStep,
 )
 from sunbeam.jobs.common import ResultType
 
@@ -41,21 +42,27 @@ class TestClusterdSteps:
 
     def test_add_node_step(self, mocker, snap):
         mocker.patch.object(service, "Snap", return_value=snap)
-        add_node_step = ClusterAddNodeStep(name="node-1", role="control")
+        add_node_step = ClusterAddNodeStep(name="node-1")
         add_node_step.client = MagicMock()
         result = add_node_step.run()
         assert result.result_type == ResultType.COMPLETED
-        add_node_step.client.cluster.add_node.assert_called_once_with(
-            name="node-1", role="control"
-        )
+        add_node_step.client.cluster.add_node.assert_called_once_with(name="node-1")
 
     def test_join_node_step(self, mocker, snap):
         mocker.patch.object(service, "Snap", return_value=snap)
-        join_node_step = ClusterJoinNodeStep(token="TESTTOKEN")
+        join_node_step = ClusterJoinNodeStep(token="TESTTOKEN", role="control")
         join_node_step.client = MagicMock()
         result = join_node_step.run()
         assert result.result_type == ResultType.COMPLETED
         join_node_step.client.cluster.join_node.assert_called_once()
+
+    def test_list_node_step(self, mocker, snap):
+        mocker.patch.object(service, "Snap", return_value=snap)
+        list_node_step = ClusterListNodeStep()
+        list_node_step.client = MagicMock()
+        result = list_node_step.run()
+        assert result.result_type == ResultType.COMPLETED
+        list_node_step.client.cluster.get_cluster_members.assert_called_once()
 
 
 class TestClusterService:
@@ -144,7 +151,7 @@ class TestClusterService:
         mocker.patch.object(service, "Snap", return_value=snap)
 
         cs = ClusterService(mock_session)
-        token = cs.add_node("node-2", "control")
+        token = cs.add_node("node-2")
         assert token == "TESTTOKEN"
 
     def test_add_node_when_node_already_exists(self, mocker, snap):
@@ -169,7 +176,7 @@ class TestClusterService:
 
         cs = ClusterService(mock_session)
         with pytest.raises(service.TokenAlreadyGeneratedException):
-            cs.add_node("node-2", "control")
+            cs.add_node("node-2")
 
     def test_join_node(self, mocker, snap):
         json_data = {
@@ -191,7 +198,7 @@ class TestClusterService:
         mocker.patch.object(service, "Snap", return_value=snap)
 
         cs = ClusterService(mock_session)
-        cs.join_node("node-2", "10.10.1.11:7000", "TESTTOKEN")
+        cs.join_node("node-2", "10.10.1.11:7000", "TESTTOKEN", "control")
 
     def test_join_node_with_wrong_token(self, mocker, snap):
         json_data = {
@@ -215,7 +222,7 @@ class TestClusterService:
 
         cs = ClusterService(mock_session)
         with pytest.raises(service.NodeJoinException):
-            cs.join_node("node-2", "10.10.1.11:7000", "TESTTOKEN")
+            cs.join_node("node-2", "10.10.1.11:7000", "TESTTOKEN", "token")
 
     def test_join_node_when_node_already_joined(self, mocker, snap):
         json_data = {
@@ -240,7 +247,7 @@ class TestClusterService:
 
         cs = ClusterService(mock_session)
         with pytest.raises(service.NodeAlreadyExistsException):
-            cs.join_node("node-2", "10.10.1.11:7000", "TESTTOKEN")
+            cs.join_node("node-2", "10.10.1.11:7000", "TESTTOKEN", "control")
 
     def test_get_cluster_members(self, mocker, snap):
         json_data = {
