@@ -1,0 +1,115 @@
+name: openstack
+base: core22
+summary: Dead simple OpenStack installation
+license: Apache-2.0
+description: |
+  snap-openstack aims to provide a scalable, simple to deploy OpenStack solution.
+version: yoga
+
+confinement: strict
+grade: devel
+
+architectures:
+  - build-on: amd64
+
+
+system-usernames:
+  snap_daemon: shared
+
+apps:
+  clusterd:
+    command: commands/clusterd.start
+    restart-condition: on-failure
+    daemon: simple
+    plugs:
+      - network
+      - network-bind
+  sunbeam:
+    command: bin/sunbeam
+    plugs:
+      - home
+      - network
+      - network-bind
+
+parts:
+  sunbeam:
+    plugin: python
+    source: .
+    build-packages:
+      - git
+    python-requirements:
+      - requirements.txt
+    override-build: |
+      craftctl default
+
+  dqlite:
+    build-attributes: [core22-step-dependencies]
+    after:
+      - raft
+    source: https://github.com/canonical/dqlite
+    source-type: git
+    source-depth: 1
+    plugin: autotools
+    autotools-configure-parameters:
+      - --prefix=
+    stage-packages:
+      - libuv1
+      - libsqlite3-0
+    build-packages:
+      - libuv1-dev
+      - libsqlite3-dev
+      - pkg-config
+    organize:
+      usr/lib/: lib/
+    prime:
+      - lib/libdqlite*so*
+      - lib/*/libuv*
+
+  raft:
+    build-attributes: [core22-step-dependencies]
+    source: https://github.com/canonical/raft
+    source-type: git
+    source-depth: 1
+    plugin: autotools
+    autotools-configure-parameters:
+      - --prefix=
+    stage-packages:
+      - libuv1
+      - liblz4-1
+    build-packages:
+      - libuv1-dev
+      - liblz4-dev
+      - pkg-config
+    organize:
+      usr/lib/: lib/
+    prime:
+      - lib/libraft*so*
+      - lib/*/libuv.so*
+
+  sunbeam-cluster:
+    after:
+      - dqlite
+    plugin: go
+    source: https://github.com/hemanthnakkina/sunbeam-microcluster
+    source-depth: 1
+    source-type: git
+    build-snaps:
+      - go
+    build-environment:
+      - GOFLAGS: "-mod=readonly"
+    override-build: |
+      set -ex
+
+      # Setup build environment
+      export CGO_CFLAGS="-I${SNAPCRAFT_STAGE}/include/ -I${SNAPCRAFT_STAGE}/usr/local/include/"
+      export CGO_LDFLAGS="-L${SNAPCRAFT_STAGE}/lib/ -L${SNAPCRAFT_STAGE}/usr/local/lib/"
+      export CGO_LDFLAGS_ALLOW="(-Wl,-wrap,pthread_create)|(-Wl,-z,now)"
+
+      # Build the binaries
+      go build -o "${SNAPCRAFT_PART_INSTALL}/bin/sunbeamd" -tags=libsqlite3 ./cmd/sunbeamd
+    prime:
+      - bin/sunbeamd
+
+  wrappers:
+    plugin: dump
+    source: snap-wrappers/
