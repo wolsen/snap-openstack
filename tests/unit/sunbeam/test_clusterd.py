@@ -34,7 +34,8 @@ class TestClusterdSteps:
 
     def test_init_step(self, mocker, snap):
         mocker.patch.object(service, "Snap", return_value=snap)
-        init_step = ClusterInitStep()
+        role = "converged"
+        init_step = ClusterInitStep(role)
         init_step.client = MagicMock()
         result = init_step.run()
         assert result.result_type == ResultType.COMPLETED
@@ -103,7 +104,7 @@ class TestClusterService:
         mocker.patch.object(service, "Snap", return_value=snap)
 
         cs = ClusterService(mock_session)
-        cs.bootstrap("node-1", "10.10.1.10:7000")
+        cs.bootstrap_cluster("node-1", "10.10.1.10:7000")
 
     def test_bootstrap_when_node_already_exists(self, mocker, snap):
         json_data = {
@@ -112,8 +113,10 @@ class TestClusterService:
             "status_code": 0,
             "operation": "",
             "error_code": 500,
-            "error": "Failed to initialize local remote entry: "
-            'A remote with name "node-1" already exists',
+            "error": (
+                "Failed to initialize local remote entry: "
+                'A remote with name "node-1" already exists'
+            ),
             "metadata": None,
         }
         mock_response = self._mock_response(
@@ -127,11 +130,10 @@ class TestClusterService:
         mocker.patch.object(service, "Snap", return_value=snap)
 
         cs = ClusterService(mock_session)
-        # with pytest.raises(service.HTTPError):
         with pytest.raises(service.NodeAlreadyExistsException):
-            cs.bootstrap("node-1", "10.10.1.10:7000")
+            cs.bootstrap_cluster("node-1", "10.10.1.10:7000")
 
-    def test_add_node(self, mocker, snap):
+    def test_generate_token(self, mocker, snap):
         json_data = {
             "type": "sync",
             "status": "Success",
@@ -151,10 +153,10 @@ class TestClusterService:
         mocker.patch.object(service, "Snap", return_value=snap)
 
         cs = ClusterService(mock_session)
-        token = cs.add_node("node-2")
+        token = cs.generate_token("node-2")
         assert token == "TESTTOKEN"
 
-    def test_add_node_when_node_already_exists(self, mocker, snap):
+    def test_generate_token_when_token_already_exists(self, mocker, snap):
         json_data = {
             "type": "error",
             "status": "",
@@ -176,9 +178,9 @@ class TestClusterService:
 
         cs = ClusterService(mock_session)
         with pytest.raises(service.TokenAlreadyGeneratedException):
-            cs.add_node("node-2")
+            cs.generate_token("node-2")
 
-    def test_join_node(self, mocker, snap):
+    def test_join(self, mocker, snap):
         json_data = {
             "type": "sync",
             "status": "Success",
@@ -198,9 +200,9 @@ class TestClusterService:
         mocker.patch.object(service, "Snap", return_value=snap)
 
         cs = ClusterService(mock_session)
-        cs.join_node("node-2", "10.10.1.11:7000", "TESTTOKEN", "control")
+        cs.join("node-2", "10.10.1.11:7000", "TESTTOKEN")
 
-    def test_join_node_with_wrong_token(self, mocker, snap):
+    def test_join_with_wrong_token(self, mocker, snap):
         json_data = {
             "type": "error",
             "status": "",
@@ -222,17 +224,19 @@ class TestClusterService:
 
         cs = ClusterService(mock_session)
         with pytest.raises(service.NodeJoinException):
-            cs.join_node("node-2", "10.10.1.11:7000", "TESTTOKEN", "token")
+            cs.join("node-2", "10.10.1.11:7000", "TESTTOKEN")
 
-    def test_join_node_when_node_already_joined(self, mocker, snap):
+    def test_join_when_node_already_joined(self, mocker, snap):
         json_data = {
             "type": "error",
             "status": "",
             "status_code": 0,
             "operation": "",
             "error_code": 500,
-            "error": "Failed to initialize local remote entry: "
-            'A remote with name "node-2" already exists',
+            "error": (
+                "Failed to initialize local remote entry: "
+                'A remote with name "node-2" already exists'
+            ),
             "metadata": None,
         }
         mock_response = self._mock_response(
@@ -247,7 +251,7 @@ class TestClusterService:
 
         cs = ClusterService(mock_session)
         with pytest.raises(service.NodeAlreadyExistsException):
-            cs.join_node("node-2", "10.10.1.11:7000", "TESTTOKEN", "control")
+            cs.join("node-2", "10.10.1.11:7000", "TESTTOKEN")
 
     def test_get_cluster_members(self, mocker, snap):
         json_data = {
@@ -308,3 +312,197 @@ class TestClusterService:
         cs = ClusterService(mock_session)
         with pytest.raises(service.ClusterServiceUnavailableException):
             cs.get_cluster_members()
+
+    def test_list_tokens(self, mocker, snap):
+        json_data = {
+            "type": "sync",
+            "status": "Success",
+            "status_code": 200,
+            "operation": "",
+            "error_code": 0,
+            "error": "",
+            "metadata": [
+                {
+                    "name": "node-2",
+                    "token": "TESTTOKEN",
+                },
+            ],
+        }
+
+        mock_response = self._mock_response(
+            status=200,
+            json_data=json_data,
+        )
+
+        mock_session = MagicMock()
+        mock_session.request.return_value = mock_response
+        mocker.patch.object(service, "Snap", return_value=snap)
+
+        cs = ClusterService(mock_session)
+        tokens = cs.list_tokens()
+        tokens_from_call = [t.get("token") for t in tokens]
+        tokens_from_mock = [t.get("token") for t in json_data.get("metadata")]
+        assert tokens_from_mock == tokens_from_call
+
+    def test_delete_token(self, mocker, snap):
+        json_data = {
+            "type": "sync",
+            "status": "Success",
+            "status_code": 200,
+            "operation": "",
+            "error_code": 0,
+            "error": "",
+            "metadata": {},
+        }
+        mock_response = self._mock_response(
+            status=200,
+            json_data=json_data,
+        )
+
+        mock_session = MagicMock()
+        mock_session.request.return_value = mock_response
+        mocker.patch.object(service, "Snap", return_value=snap)
+
+        cs = ClusterService(mock_session)
+        cs.delete_token("node-2")
+
+    def test_delete_token_when_token_doesnot_exists(self, mocker, snap):
+        json_data = {
+            "type": "error",
+            "status": "",
+            "status_code": 0,
+            "operation": "",
+            "error_code": 404,
+            "error": "InternalTokenRecord not found",
+            "metadata": None,
+        }
+        mock_response = self._mock_response(
+            status=200,
+            json_data=json_data,
+            raise_for_status=HTTPError("Internal Error"),
+        )
+
+        mock_session = MagicMock()
+        mock_session.request.return_value = mock_response
+        mocker.patch.object(service, "Snap", return_value=snap)
+
+        cs = ClusterService(mock_session)
+        with pytest.raises(service.TokenNotFoundException):
+            cs.delete_token("node-3")
+
+    def test_remove(self, mocker, snap):
+        json_data = {
+            "type": "sync",
+            "status": "Success",
+            "status_code": 200,
+            "operation": "",
+            "error_code": 0,
+            "error": "",
+            "metadata": {},
+        }
+        mock_response = self._mock_response(
+            status=200,
+            json_data=json_data,
+        )
+
+        mock_session = MagicMock()
+        mock_session.request.return_value = mock_response
+        mocker.patch.object(service, "Snap", return_value=snap)
+
+        cs = ClusterService(mock_session)
+        cs.remove("node-2")
+
+    def test_remove_when_node_doesnot_exist(self, mocker, snap):
+        json_data = {
+            "type": "error",
+            "status": "",
+            "status_code": 0,
+            "operation": "",
+            "error_code": 404,
+            "error": 'No remote exists with the given name "node-3"',
+            "metadata": None,
+        }
+        mock_response = self._mock_response(
+            status=200,
+            json_data=json_data,
+            raise_for_status=HTTPError("Internal Error"),
+        )
+
+        mock_session = MagicMock()
+        mock_session.request.return_value = mock_response
+        mocker.patch.object(service, "Snap", return_value=snap)
+
+        cs = ClusterService(mock_session)
+        with pytest.raises(service.NodeNotExistInClusterException):
+            cs.delete_token("node-3")
+
+    def test_remove_when_node_is_last_member(self, mocker, snap):
+        json_data = {
+            "type": "error",
+            "status": "",
+            "status_code": 0,
+            "operation": "",
+            "error_code": 404,
+            "error": (
+                "Cannot remove cluster members, there are no remaining "
+                "non-pending members"
+            ),
+            "metadata": None,
+        }
+        mock_response = self._mock_response(
+            status=200,
+            json_data=json_data,
+            raise_for_status=HTTPError("Internal Error"),
+        )
+
+        mock_session = MagicMock()
+        mock_session.request.return_value = mock_response
+        mocker.patch.object(service, "Snap", return_value=snap)
+
+        cs = ClusterService(mock_session)
+        with pytest.raises(service.LastNodeRemovalFromClusterException):
+            cs.delete_token("node-3")
+
+    def test_add_node_info(self, mocker, snap):
+        json_data = {
+            "type": "sync",
+            "status": "Success",
+            "status_code": 200,
+            "operation": "",
+            "error_code": 0,
+            "error": "",
+            "metadata": {},
+        }
+        mock_response = self._mock_response(
+            status=200,
+            json_data=json_data,
+        )
+
+        mock_session = MagicMock()
+        mock_session.request.return_value = mock_response
+        mocker.patch.object(service, "Snap", return_value=snap)
+
+        cs = ClusterService(mock_session)
+        cs.add_node_info("node-1", "converged")
+
+    def test_remove_node_info(self, mocker, snap):
+        json_data = {
+            "type": "sync",
+            "status": "Success",
+            "status_code": 200,
+            "operation": "",
+            "error_code": 0,
+            "error": "",
+            "metadata": {},
+        }
+        mock_response = self._mock_response(
+            status=200,
+            json_data=json_data,
+        )
+
+        mock_session = MagicMock()
+        mock_session.request.return_value = mock_response
+        mocker.patch.object(service, "Snap", return_value=snap)
+
+        cs = ClusterService(mock_session)
+        cs.remove_node_info("node-1")
