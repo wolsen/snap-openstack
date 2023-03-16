@@ -45,7 +45,7 @@ def bootstrap(role: str) -> None:
     LOG.debug(f"Bootstrap node: role {role}")
 
     plan = []
-    plan.append(ClusterInitStep())
+    plan.append(ClusterInitStep(role.upper()))
 
     for step in plan:
         LOG.debug(f"Starting step {step.name}")

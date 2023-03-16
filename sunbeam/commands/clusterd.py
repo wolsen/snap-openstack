@@ -24,6 +24,7 @@ from sunbeam.clusterd.service import (
     NodeAlreadyExistsException,
     NodeJoinException,
     TokenAlreadyGeneratedException,
+    TokenNotFoundException,
 )
 
 CLUSTERD_PORT = 7000
@@ -33,10 +34,11 @@ LOG = logging.getLogger(__name__)
 class ClusterInitStep(BaseStep):
     """Bootstrap clustering on sunbeam clusterd."""
 
-    def __init__(self):
+    def __init__(self, role: str):
         super().__init__("Bootstrap Cluster", "Bootstrapping sunbeam cluster")
 
         self.port = CLUSTERD_PORT
+        self.role = role
         self.client = clusterClient()
         self.fqdn = utils.get_fqdn()
         self.ip = utils.get_local_ip_by_default_route()
@@ -62,9 +64,8 @@ class ClusterInitStep(BaseStep):
         """Bootstrap sunbeam cluster"""
         try:
             self.client.cluster.bootstrap(
-                name=self.fqdn, address=f"{self.ip}:{self.port}"
+                name=self.fqdn, address=f"{self.ip}:{self.port}", role=self.role
             )
-            # TODO(hemanth): Update node role in cluster DB
             return Result(ResultType.COMPLETED)
         except Exception as e:
             return Result(ResultType.FAILED, str(e))
@@ -170,5 +171,27 @@ class ClusterListNodeStep(BaseStep):
             LOG.info(members)
             return Result(result_type=ResultType.COMPLETED, message=members)
         except ClusterServiceUnavailableException as e:
+            LOG.warning(e)
+            return Result(ResultType.FAILED, str(e))
+
+
+class ClusterRemoveNodeStep(BaseStep):
+    """Remove node from the sunbeam cluster."""
+
+    def __init__(self, name: str):
+        super().__init__("Remove node from Cluster", "Remove node from sunbeam cluster")
+        self.node_name = name
+        self.client = clusterClient()
+
+    def run(self, status: Optional[Status] = None) -> Result:
+        """Remove node from sunbeam cluster"""
+        try:
+            self.client.cluster.remove_node(self.node_name)
+            return Result(result_type=ResultType.COMPLETED)
+        except (
+            TokenNotFoundException,
+            NodeNotExistInClusterException,
+            LastNodeRemovalFromClusterException,
+        ) as e:
             LOG.warning(e)
             return Result(ResultType.FAILED, str(e))

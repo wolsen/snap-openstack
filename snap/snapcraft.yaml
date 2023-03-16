@@ -90,7 +90,7 @@ parts:
     after:
       - dqlite
     plugin: go
-    source: https://github.com/hemanthnakkina/sunbeam-microcluster
+    source: https://github.com/openstack-snaps/sunbeam-microcluster
     source-depth: 1
     source-type: git
     build-snaps:

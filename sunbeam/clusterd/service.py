@@ -31,8 +31,20 @@ class RemoteException(Exception):
     pass
 
 
+class ClusterServiceUnavailableException(RemoteException):
+    """Raised when cluster service is not yet bootstrapped"""
+
+    pass
+
+
 class NodeAlreadyExistsException(RemoteException):
     """Raised when the node already exists"""
+
+    pass
+
+
+class NodeNotExistInClusterException(RemoteException):
+    """Raised when the node does not exist in cluster"""
 
     pass
 
@@ -43,14 +55,20 @@ class NodeJoinException(RemoteException):
     pass
 
 
+class LastNodeRemovalFromClusterException(RemoteException):
+    """Raised when token is already generated for the node"""
+
+    pass
+
+
 class TokenAlreadyGeneratedException(RemoteException):
     """Raised when token is already generated for the node"""
 
     pass
 
 
-class ClusterServiceUnavailableException(RemoteException):
-    """Raised when cluster service is not yet bootstrapped"""
+class TokenNotFoundException(RemoteException):
+    """Raised when token is not found for the node"""
 
     pass
 
@@ -70,6 +88,7 @@ class BaseService(ABC):
         """
         self.__session = session
         self._socket_path = Snap().paths.common / "state" / "control.socket"
+        LOG.debug(self._socket_path)
 
     def _request(self, method, path, **kwargs):
         if path.startswith("/"):
@@ -89,6 +108,10 @@ class BaseService(ABC):
                 raise NodeAlreadyExistsException(
                     "Already node exists in the sunbeam cluster"
                 )
+            elif "No remote exists with the given name" in error:
+                raise NodeNotExistInClusterException(
+                    "Node does not exist in the sunbeam cluster"
+                )
             elif "Failed to join cluster with the given join token" in error:
                 raise NodeJoinException(
                     "Join node to cluster failed with the given token"
@@ -100,6 +123,16 @@ class BaseService(ABC):
             elif "Daemon not yet initialized" in error:
                 raise ClusterServiceUnavailableException(
                     "Sunbeam Cluster not initialized"
+                )
+            elif "InternalTokenRecord not found" in error:
+                raise TokenNotFoundException("Token not found for the node")
+            elif (
+                "Cannot remove cluster members, there are no remaining "
+                "non-pending members"
+            ) in error:
+                raise LastNodeRemovalFromClusterException(
+                    "Cannot remove cluster member as there are no remaining "
+                    "non-pending members. Reset the last node instead."
                 )
             raise e
 

@@ -22,6 +22,7 @@ from sunbeam.commands.clusterd import (
     ClusterAddNodeStep,
     ClusterJoinNodeStep,
     ClusterListNodeStep,
+    ClusterRemoveNodeStep,
 )
 from sunbeam.jobs.common import ResultType
 
@@ -120,3 +121,35 @@ def list() -> None:
         console.print(f"{message}[green]done[/green]")
         click.echo("Sunbeam Cluster Node List:")
         click.echo(f"{result.message}")
+
+
+@click.command()
+@click.option("--name", type=str, prompt=True, help="Fully qualified node name")
+def remove(name: str) -> None:
+    """Remove node from the cluster.
+
+    Remove a node from the cluster.
+    If the node does not exist, it removes the node
+    from the token records.
+    """
+    step = ClusterRemoveNodeStep(name)
+
+    LOG.debug(f"Starting step {step.name}")
+    message = f"{step.description} ... "
+    if step.is_skip():
+        LOG.debug(f"Skipping step {step.name}")
+        console.print(f"{message}[green]done[/green]")
+        click.echo("Node not part of the sunbeam cluster")
+    else:
+        LOG.debug(f"Running step {step.name}")
+        result = step.run()
+        LOG.debug(
+            f"Finished running step {step.name}. " f"Result: {result.result_type}"
+        )
+
+        if result.result_type == ResultType.FAILED:
+            console.print(f"{message}[red]failed[/red]")
+            raise click.ClickException(result.message)
+
+        console.print(f"{message}[green]done[/green]")
+        click.echo(f"Removed Node {name} from the cluster")
