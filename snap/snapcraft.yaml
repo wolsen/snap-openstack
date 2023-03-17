@@ -27,9 +27,11 @@ apps:
   sunbeam:
     command: bin/sunbeam
     plugs:
+      - dot-local-share-juju
       - home
       - network
       - network-bind
+      - ssh-keys
 
 parts:
   sunbeam:
@@ -41,6 +43,7 @@ parts:
       - requirements.txt
     override-build: |
       craftctl default
+      snap-helpers write-hooks
 
   dqlite:
     build-attributes: [core22-step-dependencies]
@@ -113,3 +116,14 @@ parts:
   wrappers:
     plugin: dump
     source: snap-wrappers/
+
+plugs:
+  juju-bin:
+    interface: content
+    content: juju
+    target: $SNAP/juju
+
+  dot-local-share-juju:
+    interface: personal-files
+    write:
+      - $HOME/.local/share/juju

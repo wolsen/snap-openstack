@@ -195,3 +195,42 @@ class ClusterRemoveNodeStep(BaseStep):
         ) as e:
             LOG.warning(e)
             return Result(ResultType.FAILED, str(e))
+
+
+class ClusterAddJujuUserStep(BaseStep):
+    """Add Juju user in cluster database."""
+
+    def __init__(self, name: str, token: str):
+        super().__init__(
+            "Add Juju User in Cluster DB",
+            "Add Juju user in cluster database",
+        )
+
+        self.username = name
+        self.token = token
+        self.client = clusterClient()
+
+    def is_skip(self, status: Optional[Status] = None):
+        """Determines if the step should be skipped or not.
+
+        :return: True if the Step should be skipped, False otherwise
+        """
+        try:
+            users = self.client.cluster.list_juju_users()
+            user_names = [user.get("username") for user in users]
+            if self.username in user_names:
+                return True
+        except ClusterServiceUnavailableException as e:
+            LOG.warning(e)
+            return False
+
+        return False
+
+    def run(self, status: Optional[Status] = None) -> Result:
+        """Add node to sunbeam cluster"""
+        try:
+            self.client.cluster.add_juju_user(self.username, self.token)
+            return Result(result_type=ResultType.COMPLETED)
+        except ClusterServiceUnavailableException as e:
+            LOG.warning(e)
+            return Result(ResultType.FAILED, str(e))

@@ -18,14 +18,25 @@ import logging
 
 import click
 from rich.console import Console
+from snaphelpers import Snap
 
 from sunbeam.commands.clusterd import (
     ClusterInitStep,
 )
-from sunbeam.jobs.common import ResultType
+from sunbeam.commands.juju import (
+    BootstrapJujuStep,
+)
+from sunbeam.jobs.checks import (
+    JujuSnapCheck,
+)
+from sunbeam.jobs.common import (
+    ResultType,
+    Role,
+)
 
 LOG = logging.getLogger(__name__)
 console = Console()
+snap = Snap()
 
 
 @click.command()
@@ -37,15 +48,38 @@ console = Console()
     "compute node, or a converged node (default)",
 )
 def bootstrap(role: str) -> None:
-    """Setup a new cluster.
+    """Bootstrap the local node.
 
     Initialize the sunbeam cluster.
     """
-
+    node_role = Role[role.upper()]
     LOG.debug(f"Bootstrap node: role {role}")
+
+    cloud_type = snap.config.get("juju.cloud.type")
+    cloud_name = snap.config.get("juju.cloud.name")
+
+    preflight_checks = []
+    if node_role.is_control_node():
+        preflight_checks.extend([JujuSnapCheck()])
+
+    for check in preflight_checks:
+        LOG.debug(f"Starting pre-flight check {check.name}")
+        message = f"{check.description} ... "
+        with console.status(f"{check.description} ... "):
+            result = check.run()
+            if result:
+                console.print(f"{message}[green]done[/green]")
+            else:
+                console.print(f"{message}[red]failed[/red]")
+                console.print()
+                raise click.ClickException(check.message)
 
     plan = []
     plan.append(ClusterInitStep(role.upper()))
+
+    if node_role.is_control_node():
+        plan.append(BootstrapJujuStep(cloud_name, cloud_type))
+        # plan.append(BootstrapJujuStep(control_plane_cloud, "k8s"))
 
     for step in plan:
         LOG.debug(f"Starting step {step.name}")

@@ -1,0 +1,287 @@
+# Copyright (c) 2023 Canonical Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+# implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import json
+import logging
+import os
+import re
+import subprocess
+import tempfile
+from typing import Optional
+
+import yaml
+from snaphelpers import Snap
+
+from sunbeam import utils
+from sunbeam.jobs.common import BaseStep, Result, ResultType
+
+
+LOG = logging.getLogger(__name__)
+
+
+class JujuStepHelper:
+    def _get_juju_binary(self) -> str:
+        """Get juju binary path."""
+        snap = Snap()
+        juju_binary = snap.paths.snap / "juju" / "bin" / "juju"
+        return str(juju_binary)
+
+    def _juju_cmd(self, *args):
+        """Runs the specified juju command line command
+
+        The command will be run using the json formatter. Invoking functions
+        do not need to worry about the format or the juju command that should
+        be used.
+
+        For example, to run the juju bootstrap microk8s, this method should
+        be invoked as:
+
+          self._juju_cmd('bootstrap', 'microk8s')
+
+        Any results from running with json are returned after being parsed.
+        Subprocess execution errors are raised to the calling code.
+
+        :param args: command to run
+        :return:
+        """
+        cmd = [self._get_juju_binary()]
+        cmd.extend(args)
+        cmd.extend(["--format", "json"])
+
+        LOG.debug(f'Running command {" ".join(cmd)}')
+        process = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        LOG.debug(
+            f"Command finished. stdout={process.stdout}, " "stderr={process.stderr}"
+        )
+
+        return json.loads(process.stdout.strip())
+
+    def check_model_present(self, model_name):
+        """Determines if the step should be skipped or not.
+
+        :return: True if the Step should be skipped, False otherwise
+        """
+        LOG.debug("Retrieving model information from Juju")
+        models = asyncio.get_event_loop().run_until_complete(self.jhelper.get_models())
+        LOG.debug(f"Juju models: {models}")
+        return model_name in models
+
+    def get_clouds(self, cloud_type: str) -> list:
+        """Get clouds based on cloud type"""
+        clouds = []
+        clouds_from_juju_cmd = self._juju_cmd("clouds")
+        LOG.debug(f"Available clouds in juju are {clouds_from_juju_cmd.keys()}")
+
+        for name, details in clouds_from_juju_cmd.items():
+            if details["type"] == cloud_type:
+                clouds.append(name)
+
+        LOG.debug(f"There are {len(clouds)} {cloud_type} clouds available: {clouds}")
+
+        return clouds
+
+    def get_controllers(self, clouds: list) -> list:
+        """Get controllers hosted on given clouds"""
+        existing_controllers = []
+
+        controllers = self._juju_cmd("controllers")
+        LOG.debug(f"Found controllers: {controllers.keys()}")
+        LOG.debug(controllers)
+
+        controllers = controllers.get("controllers", {})
+        if controllers:
+            for name, details in controllers.items():
+                if details["cloud"] in clouds:
+                    existing_controllers.append(name)
+
+        LOG.debug(
+            f"There are {len(existing_controllers)} existing k8s "
+            f"controllers running: {existing_controllers}"
+        )
+        return existing_controllers
+
+    def add_cloud(self, cloud_type: str, cloud_name: str) -> bool:
+        """Add cloud of type cloud_type."""
+        if cloud_type != "manual":
+            return False
+
+        cloud_yaml = {"clouds": {}}
+        cloud_yaml["clouds"][cloud_name] = {
+            "type": "manual",
+            "endpoint": utils.get_local_ip_by_default_route(),
+        }
+
+        with tempfile.NamedTemporaryFile() as temp:
+            temp.write(yaml.dump(cloud_yaml).encode("utf-8"))
+            temp.flush()
+            cmd = [
+                self._get_juju_binary(),
+                "add-cloud",
+                cloud_name,
+                "--file",
+                temp.name,
+            ]
+            LOG.debug(f'Running command {" ".join(cmd)}')
+            process = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            LOG.debug(
+                f"Command finished. stdout={process.stdout}, stderr={process.stderr}"
+            )
+
+        return True
+
+
+class BootstrapJujuStep(BaseStep, JujuStepHelper):
+    """Bootstraps the Juju controller."""
+
+    def __init__(self, cloud_name: str, cloud_type: str):
+        super().__init__("Bootstrap Juju", "Bootstrapping Juju onto cloud")
+
+        self.cloud = cloud_name
+        self.cloud_type = cloud_type
+        self.controller_name = None
+        self.juju_clouds = []
+
+        home = os.environ.get("SNAP_REAL_HOME")
+        os.environ["JUJU_DATA"] = f"{home}/.local/share/juju"
+
+    def is_skip(self, status: Optional["Status"] = None):
+        """Determines if the step should be skipped or not.
+
+        :return: True if the Step should be skipped, False otherwise
+        """
+        try:
+            self.juju_clouds = self.get_clouds(self.cloud_type)
+            if not self.juju_clouds:
+                return False
+
+            controllers = self.get_controllers(self.juju_clouds)
+            if not controllers:
+                return False
+
+            # Simply use the first existing kubernetes controller we find.
+            # We actually probably need to provide a way for this to be
+            # influenced, but for now - we'll use the first controller.
+            self.controller_name = controllers[0]
+            return True
+        except subprocess.CalledProcessError as e:
+            LOG.exception(
+                "Error determining whether to skip the bootstrap "
+                "process. Defaulting to not skip."
+            )
+            LOG.warning(e.stderr)
+            return False
+
+    def run(self, status: Optional["Status"] = None) -> Result:
+        """Run the step to completion.
+
+        Invoked when the step is run and returns a ResultType to indicate
+
+        :return:
+        """
+        try:
+            if self.cloud not in self.juju_clouds:
+                result = self.add_cloud(self.cloud_type, self.cloud)
+                if not result:
+                    return Result(ResultType.FAILED, "Not able to create cloud")
+
+            cmd = [self._get_juju_binary(), "bootstrap", self.cloud]
+            LOG.debug(f'Running command {" ".join(cmd)}')
+            process = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            LOG.debug(
+                f"Command finished. stdout={process.stdout}, stderr={process.stderr}"
+            )
+
+            return Result(ResultType.COMPLETED)
+        except subprocess.CalledProcessError as e:
+            LOG.exception("Error bootstrapping Juju")
+            LOG.warning(e.stderr)
+            return Result(ResultType.FAILED, str(e))
+
+
+class CreateJujuUserStep(BaseStep, JujuStepHelper):
+    """Create user in juju and grant superuser access."""
+
+    def __init__(self, name: str):
+        super().__init__("Create User", "Create user in juju")
+        self.username = name
+        self.registration_token_regex = r"juju register (.*?)\n"
+
+    def is_skip(self, status: Optional["Status"] = None):
+        """Determines if the step should be skipped or not.
+
+        :return: True if the Step should be skipped, False otherwise
+        """
+        try:
+            users = self._juju_cmd("list-users")
+            user_names = [user.get("user-name") for user in users]
+            if self.username in user_names:
+                return True
+        except subprocess.CalledProcessError as e:
+            LOG.exception("Error getting users list from juju.")
+            LOG.warning(e.stderr)
+            return False
+
+        return False
+
+    def run(self, status: Optional["Status"] = None) -> Result:
+        """Run the step to completion.
+
+        Invoked when the step is run and returns a ResultType to indicate
+
+        :return:
+        """
+        try:
+            cmd = [self._get_juju_binary(), "add-user", self.username]
+            LOG.debug(f'Running command {" ".join(cmd)}')
+            process = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            LOG.debug(
+                f"Command finished. stdout={process.stdout}, stderr={process.stderr}"
+            )
+
+            re_groups = re.search(
+                self.registration_token_regex, process.stdout, re.MULTILINE
+            )
+            token = re_groups.group(1)
+            if not token:
+                return Result(ResultType.FAILED, "Not able to parse Registration token")
+
+            # Grant superuser access to user.
+            cmd = [self._get_juju_binary(), "grant", self.username, "superuser"]
+            LOG.debug(f'Running command {" ".join(cmd)}')
+            process = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            LOG.debug(
+                f"Command finished. stdout={process.stdout}, stderr={process.stderr}"
+            )
+
+            # Grant write access to controller model
+            # Without this step, the user is not able to view controller model
+            cmd = [
+                self._get_juju_binary(),
+                "grant",
+                self.username,
+                "write",
+                "controller",
+            ]
+            LOG.debug(f'Running command {" ".join(cmd)}')
+            process = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            LOG.debug(
+                f"Command finished. stdout={process.stdout}, stderr={process.stderr}"
+            )
+
+            return Result(ResultType.COMPLETED, message=token)
+        except subprocess.CalledProcessError as e:
+            LOG.exception(f"Error creating user {self.username} in Juju")
+            LOG.warning(e.stderr)
+            return Result(ResultType.FAILED, str(e))
