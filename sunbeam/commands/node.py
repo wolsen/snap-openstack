@@ -19,8 +19,8 @@ import click
 from rich.console import Console
 
 from sunbeam.commands.clusterd import (
-    ClusterAddNodeStep,
     ClusterAddJujuUserStep,
+    ClusterAddNodeStep,
     ClusterJoinNodeStep,
     ClusterListNodeStep,
     ClusterRemoveNodeStep,
@@ -28,39 +28,13 @@ from sunbeam.commands.clusterd import (
 from sunbeam.commands.juju import (
     CreateJujuUserStep,
 )
-from sunbeam.jobs.common import ResultType
+from sunbeam.jobs.common import (
+    run_plan,
+    ResultType,
+)
 
 LOG = logging.getLogger(__name__)
 console = Console()
-
-
-def run_plan(plan: list) -> dict:
-    results = {}
-
-    for step in plan:
-        LOG.debug(f"Starting step {step.name}")
-        message = f"{step.description} ... "
-        with console.status(f"{step.description} ... "):
-            if step.is_skip():
-                LOG.debug(f"Skipping step {step.name}")
-                console.print(f"{message}[green]done[/green]")
-                continue
-
-            LOG.debug(f"Running step {step.name}")
-            result = step.run()
-            results[step.__class__.__name__] = result
-            LOG.warning(results)
-            LOG.debug(
-                f"Finished running step {step.name}. " f"Result: {result.result_type}"
-            )
-
-        if result.result_type == ResultType.FAILED:
-            console.print(f"{message}[red]failed[/red]")
-            raise click.ClickException(result.message)
-
-        console.print(f"{message}[green]done[/green]")
-
-    return results
 
 
 @click.command()
@@ -75,7 +49,7 @@ def add_node(name: str) -> None:
         CreateJujuUserStep(name),
     ]
 
-    plan1_results = run_plan(plan1)
+    plan1_results = run_plan(plan1, console)
 
     user_token = None
     create_juju_user_step_result = plan1_results.get("CreateJujuUserStep")
@@ -83,14 +57,19 @@ def add_node(name: str) -> None:
         user_token = create_juju_user_step_result.message
 
     plan2 = [ClusterAddJujuUserStep(name, user_token)]
-    run_plan(plan2)
+    run_plan(plan2, console)
 
     add_node_step_result = plan1_results.get("ClusterAddNodeStep")
-    if add_node_step_result:
+    if add_node_step_result.result_type == ResultType.COMPLETED:
         click.echo(f"Token for the Node {name}: {add_node_step_result.message}")
-    else:
-        # ClusterAddNodeStep skipped as node already part of cluster
-        click.echo("Node already part of the sunbeam cluster")
+    elif add_node_step_result.result_type == ResultType.SKIPPED:
+        if add_node_step_result.message:
+            click.echo(
+                f"Token already generated for Node {name}: "
+                f"{add_node_step_result.message}"
+            )
+        else:
+            click.echo("Node already part of the sunbeam cluster")
 
 
 @click.command()
@@ -101,27 +80,12 @@ def join(token: str, role: str) -> None:
 
     Join the node to the cluster.
     """
-    step = ClusterJoinNodeStep(token, role.upper())
+    plan = [
+        ClusterJoinNodeStep(token, role.upper()),
+    ]
+    run_plan(plan, console)
 
-    LOG.debug(f"Starting step {step.name}")
-    message = f"{step.description} ... "
-    if step.is_skip():
-        LOG.debug(f"Skipping step {step.name}")
-        console.print(f"{message}[green]done[/green]")
-        click.echo("Node already part of the sunbeam cluster")
-    else:
-        LOG.debug(f"Running step {step.name}")
-        result = step.run()
-        LOG.debug(
-            f"Finished running step {step.name}. " f"Result: {result.result_type}"
-        )
-
-        if result.result_type == ResultType.FAILED:
-            console.print(f"{message}[red]failed[/red]")
-            raise click.ClickException(result.message)
-
-        console.print(f"{message}[green]done[/green]")
-        click.echo(f"Node has been joined as a {role} node")
+    click.echo(f"Node has been joined as a {role} node")
 
 
 @click.command()
@@ -130,27 +94,13 @@ def list() -> None:
 
     List all nodes in the cluster.
     """
-    step = ClusterListNodeStep()
+    plan = [ClusterListNodeStep()]
+    results = run_plan(plan, console)
 
-    LOG.debug(f"Starting step {step.name}")
-    message = f"{step.description} ... "
-    if step.is_skip():
-        LOG.debug(f"Skipping step {step.name}")
-        console.print(f"{message}[green]done[/green]")
-    else:
-        LOG.debug(f"Running step {step.name}")
-        result = step.run()
-        LOG.debug(
-            f"Finished running step {step.name}. " f"Result: {result.result_type}"
-        )
+    list_node_step_result = results.get("ClusterListNodeStep")
 
-        if result.result_type == ResultType.FAILED:
-            console.print(f"{message}[red]failed[/red]")
-            raise click.ClickException(result.message)
-
-        console.print(f"{message}[green]done[/green]")
-        click.echo("Sunbeam Cluster Node List:")
-        click.echo(f"{result.message}")
+    click.echo("Sunbeam Cluster Node List:")
+    click.echo(f"{list_node_step_result.message}")
 
 
 @click.command()
@@ -162,24 +112,7 @@ def remove(name: str) -> None:
     If the node does not exist, it removes the node
     from the token records.
     """
-    step = ClusterRemoveNodeStep(name)
+    plan = [ClusterRemoveNodeStep(name)]
+    run_plan(plan, console)
 
-    LOG.debug(f"Starting step {step.name}")
-    message = f"{step.description} ... "
-    if step.is_skip():
-        LOG.debug(f"Skipping step {step.name}")
-        console.print(f"{message}[green]done[/green]")
-        click.echo("Node not part of the sunbeam cluster")
-    else:
-        LOG.debug(f"Running step {step.name}")
-        result = step.run()
-        LOG.debug(
-            f"Finished running step {step.name}. " f"Result: {result.result_type}"
-        )
-
-        if result.result_type == ResultType.FAILED:
-            console.print(f"{message}[red]failed[/red]")
-            raise click.ClickException(result.message)
-
-        console.print(f"{message}[green]done[/green]")
-        click.echo(f"Removed Node {name} from the cluster")
+    click.echo(f"Removed Node {name} from the cluster")

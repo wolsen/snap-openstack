@@ -156,32 +156,33 @@ class BootstrapJujuStep(BaseStep, JujuStepHelper):
         home = os.environ.get("SNAP_REAL_HOME")
         os.environ["JUJU_DATA"] = f"{home}/.local/share/juju"
 
-    def is_skip(self, status: Optional["Status"] = None):
+    def is_skip(self, status: Optional["Status"] = None) -> Result:
         """Determines if the step should be skipped or not.
 
-        :return: True if the Step should be skipped, False otherwise
+        :return: ResultType.SKIPPED if the Step should be skipped,
+                 ResultType.COMPLETED or ResultType.FAILED otherwise
         """
         try:
             self.juju_clouds = self.get_clouds(self.cloud_type)
             if not self.juju_clouds:
-                return False
+                return Result(ResultType.COMPLETED)
 
             controllers = self.get_controllers(self.juju_clouds)
             if not controllers:
-                return False
+                return Result(ResultType.COMPLETED)
 
             # Simply use the first existing kubernetes controller we find.
             # We actually probably need to provide a way for this to be
             # influenced, but for now - we'll use the first controller.
             self.controller_name = controllers[0]
-            return True
+            return Result(ResultType.SKIPPED)
         except subprocess.CalledProcessError as e:
             LOG.exception(
                 "Error determining whether to skip the bootstrap "
                 "process. Defaulting to not skip."
             )
             LOG.warning(e.stderr)
-            return False
+            return Result(ResultType.FAILED, str(e))
 
     def run(self, status: Optional["Status"] = None) -> Result:
         """Run the step to completion.
@@ -218,22 +219,26 @@ class CreateJujuUserStep(BaseStep, JujuStepHelper):
         self.username = name
         self.registration_token_regex = r"juju register (.*?)\n"
 
-    def is_skip(self, status: Optional["Status"] = None):
+        home = os.environ.get("SNAP_REAL_HOME")
+        os.environ["JUJU_DATA"] = f"{home}/.local/share/juju"
+
+    def is_skip(self, status: Optional["Status"] = None) -> Result:
         """Determines if the step should be skipped or not.
 
-        :return: True if the Step should be skipped, False otherwise
+        :return: ResultType.SKIPPED if the Step should be skipped,
+                 ResultType.COMPLETED or ResultType.FAILED otherwise
         """
         try:
             users = self._juju_cmd("list-users")
             user_names = [user.get("user-name") for user in users]
             if self.username in user_names:
-                return True
+                return Result(ResultType.SKIPPED)
         except subprocess.CalledProcessError as e:
             LOG.exception("Error getting users list from juju.")
             LOG.warning(e.stderr)
-            return False
+            return Result(ResultType.FAILED, str(e))
 
-        return False
+        return Result(ResultType.COMPLETED)
 
     def run(self, status: Optional["Status"] = None) -> Result:
         """Run the step to completion.

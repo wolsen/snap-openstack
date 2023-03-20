@@ -30,7 +30,8 @@ from sunbeam.jobs.checks import (
     JujuSnapCheck,
 )
 from sunbeam.jobs.common import (
-    ResultType,
+    run_plan,
+    # ResultType,
     Role,
 )
 
@@ -79,8 +80,10 @@ def bootstrap(role: str) -> None:
 
     if node_role.is_control_node():
         plan.append(BootstrapJujuStep(cloud_name, cloud_type))
-        # plan.append(BootstrapJujuStep(control_plane_cloud, "k8s"))
 
+    run_plan(plan, console)
+
+    """
     for step in plan:
         LOG.debug(f"Starting step {step.name}")
         message = f"{step.description} ... "
@@ -101,6 +104,7 @@ def bootstrap(role: str) -> None:
             raise click.ClickException(result.message)
 
         console.print(f"{message}[green]done[/green]")
+    """
 
     click.echo(f"Node has been bootstrapped as a {role} node")
 

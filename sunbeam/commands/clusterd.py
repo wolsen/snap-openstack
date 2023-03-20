@@ -43,22 +43,23 @@ class ClusterInitStep(BaseStep):
         self.fqdn = utils.get_fqdn()
         self.ip = utils.get_local_ip_by_default_route()
 
-    def is_skip(self, status: Optional[Status] = None):
+    def is_skip(self, status: Optional[Status] = None) -> Result:
         """Determines if the step should be skipped or not.
 
-        :return: True if the Step should be skipped, False otherwise
+        :return: ResultType.SKIPPED if the Step should be skipped,
+                 ResultType.COMPLETED or ResultType.FAILED otherwise
         """
         try:
             members = self.client.cluster.get_cluster_members()
             LOG.info(members)
             member_names = [member.get("name") for member in members]
             if self.fqdn in member_names:
-                return True
+                return Result(ResultType.SKIPPED)
         except ClusterServiceUnavailableException as e:
             LOG.warning(e)
-            return False
+            return Result(ResultType.FAILED, str(e))
 
-        return False
+        return Result(ResultType.COMPLETED)
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Bootstrap sunbeam cluster"""
@@ -83,22 +84,31 @@ class ClusterAddNodeStep(BaseStep):
         self.node_name = name
         self.client = clusterClient()
 
-    def is_skip(self, status: Optional[Status] = None):
+    def is_skip(self, status: Optional[Status] = None) -> Result:
         """Determines if the step should be skipped or not.
 
-        :return: True if the Step should be skipped, False otherwise
+        :return: ResultType.SKIPPED if the Step should be skipped,
+                 ResultType.COMPLETED or ResultType.FAILED otherwise
         """
         try:
             members = self.client.cluster.get_cluster_members()
             LOG.info(members)
             member_names = [member.get("name") for member in members]
             if self.node_name in member_names:
-                return True
+                return Result(ResultType.SKIPPED)
+
+            # If node is not cluster member, check if it the node has
+            # already generated token
+            tokens = self.client.cluster.list_tokens()
+            LOG.info(tokens)
+            token_d = {token.get("name"): token.get("token") for token in tokens}
+            if self.node_name in token_d:
+                return Result(ResultType.SKIPPED, token_d.get(self.node_name))
         except ClusterServiceUnavailableException as e:
             LOG.warning(e)
-            return False
+            return Result(ResultType.FAILED, str(e))
 
-        return False
+        return Result(ResultType.COMPLETED)
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Add node to sunbeam cluster"""
@@ -124,22 +134,23 @@ class ClusterJoinNodeStep(BaseStep):
         self.fqdn = utils.get_fqdn()
         self.ip = utils.get_local_ip_by_default_route()
 
-    def is_skip(self, status: Optional[Status] = None):
+    def is_skip(self, status: Optional[Status] = None) -> Result:
         """Determines if the step should be skipped or not.
 
-        :return: True if the Step should be skipped, False otherwise
+        :return: ResultType.SKIPPED if the Step should be skipped,
+                 ResultType.COMPLETED or ResultType.FAILED otherwise
         """
         try:
             members = self.client.cluster.get_cluster_members()
             LOG.info(members)
             member_names = [member.get("name") for member in members]
             if self.fqdn in member_names:
-                return True
+                return Result(ResultType.SKIPPED)
         except ClusterServiceUnavailableException as e:
             LOG.warning(e)
-            return False
+            return Result(ResultType.FAILED, str(e))
 
-        return False
+        return Result(ResultType.COMPLETED)
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Join node to sunbeam cluster"""
@@ -210,21 +221,22 @@ class ClusterAddJujuUserStep(BaseStep):
         self.token = token
         self.client = clusterClient()
 
-    def is_skip(self, status: Optional[Status] = None):
+    def is_skip(self, status: Optional[Status] = None) -> Result:
         """Determines if the step should be skipped or not.
 
-        :return: True if the Step should be skipped, False otherwise
+        :return: ResultType.SKIPPED if the Step should be skipped,
+                 ResultType.COMPLETED or ResultType.FAILED otherwise
         """
         try:
             users = self.client.cluster.list_juju_users()
             user_names = [user.get("username") for user in users]
             if self.username in user_names:
-                return True
+                return Result(ResultType.SKIPPED)
         except ClusterServiceUnavailableException as e:
             LOG.warning(e)
-            return False
+            return Result(ResultType.FAILED, str(e))
 
-        return False
+        return Result(ResultType.COMPLETED)
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Add node to sunbeam cluster"""
