@@ -28,6 +28,7 @@ from snaphelpers import Snap
 
 from sunbeam import utils
 from sunbeam.clusterd.client import Client as clusterClient
+from sunbeam.clusterd.service import NodeNotExistInClusterException
 from sunbeam.jobs.common import BaseStep, Result, ResultType
 
 
@@ -546,16 +547,14 @@ class RemoveJujuMachineStep(BaseStep, JujuStepHelper):
         :return: ResultType.SKIPPED if the Step should be skipped,
                  ResultType.COMPLETED or ResultType.FAILED otherwise
         """
+        client = clusterClient()
         try:
-            # TODO(hemanth): Update to get node details for a given node
-            # instead of getting all nodes information. Need changes in
-            # sunbeam-microcluster to expose the API
-            client = clusterClient()
-            nodes = client.cluster.list_nodes()
-            for node in nodes:
-                if node.get("name") == self.name:
-                    self.machine_id = node.get("machineid")
+            node = client.cluster.get_node_info(self.name)
+            self.machine_id = node.get("machineid")
+        except NodeNotExistInClusterException as e:
+            return Result(ResultType.FAILED, str(e))
 
+        try:
             machines = self._juju_cmd("machines", "-m", CONTROLLER_MODEL)
             LOG.debug(f"Found machines: {machines}")
             machines = machines.get("machines", {})

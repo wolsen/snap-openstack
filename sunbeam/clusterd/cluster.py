@@ -113,6 +113,10 @@ class ExtendedAPIService(service.BaseService):
         nodes = self._get("/1.0/nodes")
         return nodes.get("metadata")
 
+    def get_node_info(self, name: str) -> dict:
+        """Fetch Node Information from a name"""
+        return self._get(f"1.0/nodes/{name}").get("metadata")
+
     def remove_node_info(self, name: str) -> None:
         """Remove Node information from cluster database."""
         self._delete(f"1.0/nodes/{name}")
