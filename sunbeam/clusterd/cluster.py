@@ -108,9 +108,33 @@ class ExtendedAPIService(service.BaseService):
         data = {"name": name, "role": role}
         self._post("/1.0/nodes", data=json.dumps(data))
 
+    def list_nodes(self) -> list:
+        """List all nodes."""
+        nodes = self._get("/1.0/nodes")
+        return nodes.get("metadata")
+
     def remove_node_info(self, name: str) -> None:
         """Remove Node information from cluster database."""
         self._delete(f"1.0/nodes/{name}")
+
+    def update_node_info(self, name: str, role: str = "", machineid: int = -1) -> None:
+        """Update role and machineid for node."""
+        data = {"role": role, "machineid": machineid}
+        self._put(f"1.0/nodes/{name}", data=json.dumps(data))
+
+    def add_juju_user(self, name: str, token: str) -> None:
+        """Add juju user to cluster database."""
+        data = {"username": name, "token": token}
+        self._post("/1.0/jujuusers", data=json.dumps(data))
+
+    def list_juju_users(self) -> list:
+        """List all juju users."""
+        users = self._get("/1.0/jujuusers")
+        return users.get("metadata")
+
+    def remove_juju_user(self, name: str) -> None:
+        """Remove Juju user from cluster database."""
+        self._delete(f"1.0/jujuusers/{name}")
 
 
 class ClusterService(MicroClusterService, ExtendedAPIService):
@@ -133,6 +157,7 @@ class ClusterService(MicroClusterService, ExtendedAPIService):
 
         # If node is part of cluster, remove node from cluster
         if name in member_names:
+            self.remove_juju_user(name)
             self.remove_node_info(name)
             self.remove(name)
         else:

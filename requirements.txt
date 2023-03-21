@@ -9,3 +9,9 @@ requests-unixsocket # Apache 2
 
 # Used for getting local ip address
 netifaces
+
+# Generation of user passwords
+pwgen
+
+# Interactive subprocess execution
+pexpect

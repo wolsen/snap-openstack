@@ -17,6 +17,7 @@ import enum
 import logging
 from typing import Optional
 
+import click
 from rich.console import Console
 from rich.status import Status
 
@@ -159,12 +160,13 @@ class BaseStep:
         """
         return False
 
-    def is_skip(self, status: Optional[Status] = None) -> bool:
+    def is_skip(self, status: Optional[Status] = None) -> Result:
         """Determines if the step should be skipped or not.
 
-        :return: True if the Step should be skipped, False otherwise
+        :return: ResultType.SKIPPED if the Step should be skipped,
+                 ResultType.COMPLETED or ResultType.FAILED otherwise
         """
-        return False
+        return Result(ResultType.COMPLETED)
 
     def run(self, status: Optional[Status]) -> Result:
         """Run the step to completion.
@@ -174,3 +176,43 @@ class BaseStep:
         :return:
         """
         pass
+
+
+def run_plan(plan: list, console: Console) -> dict:
+    """Run plans sequentially.
+
+    Runs each step of the plan, logs each step of
+    the plan and returns a dictionary of results
+    from each step.
+
+    Raise ClickException in case of Result Failures.
+    """
+    results = {}
+
+    for step in plan:
+        LOG.debug(f"Starting step {step.name}")
+        message = f"{step.description} ... "
+        with console.status(f"{step.description} ... "):
+            skip_result = step.is_skip()
+            if skip_result.result_type == ResultType.SKIPPED:
+                results[step.__class__.__name__] = skip_result
+                LOG.debug(f"Skipping step {step.name}")
+                console.print(f"{message}[green]done[/green]")
+                continue
+
+            LOG.debug(f"Running step {step.name}")
+            result = step.run()
+            results[step.__class__.__name__] = result
+            LOG.debug(
+                f"Finished running step {step.name}. " f"Result: {result.result_type}"
+            )
+
+        if result.result_type == ResultType.FAILED:
+            console.print(f"{message}[red]failed[/red]")
+            raise click.ClickException(result.message)
+
+        console.print(f"{message}[green]done[/green]")
+
+    # Returns results object only when all steps have results of type
+    # COMPLETED or SKIPPED.
+    return results

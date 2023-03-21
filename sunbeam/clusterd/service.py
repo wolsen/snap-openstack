@@ -31,6 +31,12 @@ class RemoteException(Exception):
     pass
 
 
+class ClusterAlreadyBootstrappedException(RemoteException):
+    """Raised when cluster service is already bootstrapped"""
+
+    pass
+
+
 class ClusterServiceUnavailableException(RemoteException):
     """Raised when cluster service is not yet bootstrapped"""
 
@@ -133,6 +139,10 @@ class BaseService(ABC):
                 raise LastNodeRemovalFromClusterException(
                     "Cannot remove cluster member as there are no remaining "
                     "non-pending members. Reset the last node instead."
+                )
+            elif "already running" in error:
+                raise ClusterAlreadyBootstrappedException(
+                    "Already cluster is bootstrapped."
                 )
             raise e
 

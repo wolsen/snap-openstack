@@ -17,17 +17,32 @@ import logging
 
 import click
 from rich.console import Console
+from snaphelpers import Snap
 
+from sunbeam import utils
 from sunbeam.commands.clusterd import (
+    ClusterAddJujuUserStep,
     ClusterAddNodeStep,
     ClusterJoinNodeStep,
     ClusterListNodeStep,
     ClusterRemoveNodeStep,
+    ClusterUpdateNodeStep,
 )
-from sunbeam.jobs.common import ResultType
+from sunbeam.commands.juju import (
+    AddJujuMachineStep,
+    CreateJujuUserStep,
+    RegisterJujuUserStep,
+    RemoveJujuMachineStep,
+    # RemoveJujuUserStep,
+)
+from sunbeam.jobs.common import (
+    run_plan,
+    ResultType,
+)
 
 LOG = logging.getLogger(__name__)
 console = Console()
+snap = Snap()
 
 
 @click.command()
@@ -37,30 +52,32 @@ def add_node(name: str) -> None:
 
     Register new node to the cluster.
     """
-    step = ClusterAddNodeStep(name)
+    plan1 = [
+        ClusterAddNodeStep(name),
+        CreateJujuUserStep(name),
+    ]
 
-    LOG.debug(f"Starting step {step.name}")
-    message = f"{step.description} ... "
-    if step.is_skip():
-        LOG.debug(f"Skipping step {step.name}")
-        console.print(f"{message}[green]done[/green]")
-        click.echo("Node already part of the sunbeam cluster")
-    else:
-        LOG.debug(f"Running step {step.name}")
-        result = step.run()
-        LOG.debug(
-            f"Finished running step {step.name}. " f"Result: {result.result_type}"
-        )
+    plan1_results = run_plan(plan1, console)
 
-        if result.result_type == ResultType.FAILED:
-            console.print(f"{message}[red]failed[/red]")
-            raise click.ClickException(result.message)
+    user_token = None
+    create_juju_user_step_result = plan1_results.get("CreateJujuUserStep")
+    if create_juju_user_step_result:
+        user_token = create_juju_user_step_result.message
 
-        console.print(f"{message}[green]done[/green]")
-        click.echo(f"Token for the Node {name}: {result.message}")
+    plan2 = [ClusterAddJujuUserStep(name, user_token)]
+    run_plan(plan2, console)
 
-    # TODO(hemanth): Need to get already generated token if add node
-    # is run multiple times??
+    add_node_step_result = plan1_results.get("ClusterAddNodeStep")
+    if add_node_step_result.result_type == ResultType.COMPLETED:
+        click.echo(f"Token for the Node {name}: {add_node_step_result.message}")
+    elif add_node_step_result.result_type == ResultType.SKIPPED:
+        if add_node_step_result.message:
+            click.echo(
+                f"Token already generated for Node {name}: "
+                f"{add_node_step_result.message}"
+            )
+        else:
+            click.echo("Node already part of the sunbeam cluster")
 
 
 @click.command()
@@ -71,27 +88,29 @@ def join(token: str, role: str) -> None:
 
     Join the node to the cluster.
     """
-    step = ClusterJoinNodeStep(token, role.upper())
+    # Resgister juju user with same name as Node fqdn
+    name = utils.get_fqdn()
+    ip = utils.get_local_ip_by_default_route()
 
-    LOG.debug(f"Starting step {step.name}")
-    message = f"{step.description} ... "
-    if step.is_skip():
-        LOG.debug(f"Skipping step {step.name}")
-        console.print(f"{message}[green]done[/green]")
-        click.echo("Node already part of the sunbeam cluster")
-    else:
-        LOG.debug(f"Running step {step.name}")
-        result = step.run()
-        LOG.debug(
-            f"Finished running step {step.name}. " f"Result: {result.result_type}"
-        )
+    cloud_name = snap.config.get("juju.cloud.name")
+    controller_name = f"{cloud_name}-default"
 
-        if result.result_type == ResultType.FAILED:
-            console.print(f"{message}[red]failed[/red]")
-            raise click.ClickException(result.message)
+    plan1 = [
+        ClusterJoinNodeStep(token, role.upper()),
+        RegisterJujuUserStep(name, controller_name),
+        AddJujuMachineStep(ip),
+    ]
+    plan1_results = run_plan(plan1, console)
 
-        console.print(f"{message}[green]done[/green]")
-        click.echo(f"Node has been joined as a {role} node")
+    machine_id = -1
+    add_juju_machine_step_result = plan1_results.get("AddJujuMachineStep")
+    if add_juju_machine_step_result.result_type != ResultType.FAILED:
+        machine_id = int(add_juju_machine_step_result.message)
+
+    plan2 = [ClusterUpdateNodeStep(name, role="", machine_id=machine_id)]
+    run_plan(plan2, console)
+
+    click.echo(f"Node has been joined as a {role} node")
 
 
 @click.command()
@@ -100,27 +119,13 @@ def list() -> None:
 
     List all nodes in the cluster.
     """
-    step = ClusterListNodeStep()
+    plan = [ClusterListNodeStep()]
+    results = run_plan(plan, console)
 
-    LOG.debug(f"Starting step {step.name}")
-    message = f"{step.description} ... "
-    if step.is_skip():
-        LOG.debug(f"Skipping step {step.name}")
-        console.print(f"{message}[green]done[/green]")
-    else:
-        LOG.debug(f"Running step {step.name}")
-        result = step.run()
-        LOG.debug(
-            f"Finished running step {step.name}. " f"Result: {result.result_type}"
-        )
+    list_node_step_result = results.get("ClusterListNodeStep")
 
-        if result.result_type == ResultType.FAILED:
-            console.print(f"{message}[red]failed[/red]")
-            raise click.ClickException(result.message)
-
-        console.print(f"{message}[green]done[/green]")
-        click.echo("Sunbeam Cluster Node List:")
-        click.echo(f"{result.message}")
+    click.echo("Sunbeam Cluster Node List:")
+    click.echo(f"{list_node_step_result.message}")
 
 
 @click.command()
@@ -132,24 +137,21 @@ def remove(name: str) -> None:
     If the node does not exist, it removes the node
     from the token records.
     """
-    step = ClusterRemoveNodeStep(name)
+    plan = [
+        RemoveJujuMachineStep(name),
+        # Cannot remove user as the same user name cannot be resued,
+        # so commenting the RemoveJujuUserStep
+        # RemoveJujuUserStep(name),
+        ClusterRemoveNodeStep(name),
+    ]
+    run_plan(plan, console)
 
-    LOG.debug(f"Starting step {step.name}")
-    message = f"{step.description} ... "
-    if step.is_skip():
-        LOG.debug(f"Skipping step {step.name}")
-        console.print(f"{message}[green]done[/green]")
-        click.echo("Node not part of the sunbeam cluster")
-    else:
-        LOG.debug(f"Running step {step.name}")
-        result = step.run()
-        LOG.debug(
-            f"Finished running step {step.name}. " f"Result: {result.result_type}"
-        )
-
-        if result.result_type == ResultType.FAILED:
-            console.print(f"{message}[red]failed[/red]")
-            raise click.ClickException(result.message)
-
-        console.print(f"{message}[green]done[/green]")
-        click.echo(f"Removed Node {name} from the cluster")
+    click.echo(f"Removed Node {name} from the cluster")
+    # Removing machine does not clean up all deployed juju components. This is
+    # deliberate, see https://bugs.launchpad.net/juju/+bug/1851489.
+    # Without the workaround mentioned in LP#1851489, it is not possible to
+    # reprovision the machine back.
+    click.echo(
+        f"Run command 'sudo /sbin/remove-juju-services' on node {name} "
+        "to reuse the machine."
+    )
