@@ -31,7 +31,6 @@ from sunbeam.jobs.checks import (
 )
 from sunbeam.jobs.common import (
     run_plan,
-    # ResultType,
     Role,
 )
 
@@ -82,29 +81,6 @@ def bootstrap(role: str) -> None:
         plan.append(BootstrapJujuStep(cloud_name, cloud_type))
 
     run_plan(plan, console)
-
-    """
-    for step in plan:
-        LOG.debug(f"Starting step {step.name}")
-        message = f"{step.description} ... "
-        with console.status(f"{step.description} ... "):
-            if step.is_skip():
-                LOG.debug(f"Skipping step {step.name}")
-                console.print(f"{message}[green]done[/green]")
-                continue
-
-            LOG.debug(f"Running step {step.name}")
-            result = step.run()
-            LOG.debug(
-                f"Finished running step {step.name}. " f"Result: {result.result_type}"
-            )
-
-        if result.result_type == ResultType.FAILED:
-            console.print(f"{message}[red]failed[/red]")
-            raise click.ClickException(result.message)
-
-        console.print(f"{message}[green]done[/green]")
-    """
 
     click.echo(f"Node has been bootstrapped as a {role} node")
 

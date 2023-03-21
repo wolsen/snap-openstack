@@ -20,9 +20,12 @@ from sunbeam import utils
 from sunbeam.jobs.common import BaseStep, Result, ResultType, Status
 from sunbeam.clusterd.client import Client as clusterClient
 from sunbeam.clusterd.service import (
+    ClusterAlreadyBootstrappedException,
     ClusterServiceUnavailableException,
+    LastNodeRemovalFromClusterException,
     NodeAlreadyExistsException,
     NodeJoinException,
+    NodeNotExistInClusterException,
     TokenAlreadyGeneratedException,
     TokenNotFoundException,
 )
@@ -68,6 +71,9 @@ class ClusterInitStep(BaseStep):
                 name=self.fqdn, address=f"{self.ip}:{self.port}", role=self.role
             )
             return Result(ResultType.COMPLETED)
+        except ClusterAlreadyBootstrappedException:
+            LOG.debug("Cluster already bootstrapped")
+            return Result(ResultType.COMPLETED)
         except Exception as e:
             return Result(ResultType.FAILED, str(e))
 
@@ -92,7 +98,7 @@ class ClusterAddNodeStep(BaseStep):
         """
         try:
             members = self.client.cluster.get_cluster_members()
-            LOG.info(members)
+            LOG.debug(members)
             member_names = [member.get("name") for member in members]
             if self.node_name in member_names:
                 return Result(ResultType.SKIPPED)
@@ -100,7 +106,6 @@ class ClusterAddNodeStep(BaseStep):
             # If node is not cluster member, check if it the node has
             # already generated token
             tokens = self.client.cluster.list_tokens()
-            LOG.info(tokens)
             token_d = {token.get("name"): token.get("token") for token in tokens}
             if self.node_name in token_d:
                 return Result(ResultType.SKIPPED, token_d.get(self.node_name))
@@ -186,6 +191,26 @@ class ClusterListNodeStep(BaseStep):
             return Result(ResultType.FAILED, str(e))
 
 
+class ClusterUpdateNodeStep(BaseStep):
+    """Update node info in the cluster database."""
+
+    def __init__(self, name: str, role: str = "", machine_id: int = -1):
+        super().__init__("Update node info", "Update node info in cluster database")
+        self.client = clusterClient()
+        self.name = name
+        self.role = role
+        self.machine_id = machine_id
+
+    def run(self, status: Optional[Status] = None) -> Result:
+        """Update Node info"""
+        try:
+            self.client.cluster.update_node_info(self.name, self.role, self.machine_id)
+            return Result(result_type=ResultType.COMPLETED)
+        except ClusterServiceUnavailableException as e:
+            LOG.warning(e)
+            return Result(ResultType.FAILED, str(e))
+
+
 class ClusterRemoveNodeStep(BaseStep):
     """Remove node from the sunbeam cluster."""
 
@@ -202,8 +227,11 @@ class ClusterRemoveNodeStep(BaseStep):
         except (
             TokenNotFoundException,
             NodeNotExistInClusterException,
-            LastNodeRemovalFromClusterException,
         ) as e:
+            # Consider these exceptions as soft ones
+            LOG.warning(e)
+            return Result(ResultType.COMPLETED)
+        except (LastNodeRemovalFromClusterException, Exception) as e:
             LOG.warning(e)
             return Result(ResultType.FAILED, str(e))
 

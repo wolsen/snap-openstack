@@ -297,6 +297,56 @@ class CreateJujuUserStep(BaseStep, JujuStepHelper):
             return Result(ResultType.FAILED, str(e))
 
 
+class RemoveJujuUserStep(BaseStep, JujuStepHelper):
+    """Remove user in juju."""
+
+    def __init__(self, name: str):
+        super().__init__("Remove User", "Remove user in juju")
+        self.username = name
+
+        home = os.environ.get("SNAP_REAL_HOME")
+        os.environ["JUJU_DATA"] = f"{home}/.local/share/juju"
+
+    def is_skip(self, status: Optional["Status"] = None) -> Result:
+        """Determines if the step should be skipped or not.
+
+        :return: ResultType.SKIPPED if the Step should be skipped,
+                 ResultType.COMPLETED or ResultType.FAILED otherwise
+        """
+        try:
+            users = self._juju_cmd("list-users")
+            user_names = [user.get("user-name") for user in users]
+            if self.username not in user_names:
+                return Result(ResultType.SKIPPED)
+        except subprocess.CalledProcessError as e:
+            LOG.exception("Error getting users list from juju.")
+            LOG.warning(e.stderr)
+            return Result(ResultType.FAILED, str(e))
+
+        return Result(ResultType.COMPLETED)
+
+    def run(self, status: Optional["Status"] = None) -> Result:
+        """Run the step to completion.
+
+        Invoked when the step is run and returns a ResultType to indicate
+
+        :return:
+        """
+        try:
+            cmd = [self._get_juju_binary(), "remove-user", self.username, "--yes"]
+            LOG.debug(f'Running command {" ".join(cmd)}')
+            process = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            LOG.debug(
+                f"Command finished. stdout={process.stdout}, stderr={process.stderr}"
+            )
+
+            return Result(ResultType.COMPLETED)
+        except subprocess.CalledProcessError as e:
+            LOG.exception(f"Error removing user {self.username} in Juju")
+            LOG.warning(e.stderr)
+            return Result(ResultType.FAILED, str(e))
+
+
 class RegisterJujuUserStep(BaseStep, JujuStepHelper):
     """Register user in juju."""
 
@@ -349,6 +399,12 @@ class RegisterJujuUserStep(BaseStep, JujuStepHelper):
         new_password_re = r"Enter a new password"
         confirm_password_re = r"Confirm password"
         controller_name_re = r"Enter a name for this controller"
+        expect_list = [
+            new_password_re,
+            confirm_password_re,
+            controller_name_re,
+            pexpect.EOF,
+        ]
 
         # TOCHK: password is saved as a macroon with 24hours shelf life and juju
         # client need to login/logout?
@@ -363,17 +419,10 @@ class RegisterJujuUserStep(BaseStep, JujuStepHelper):
                 PEXPECT_TIMEOUT,
             )
             while True:
-                index = child.expect(
-                    [
-                        new_password_re,
-                        confirm_password_re,
-                        controller_name_re,
-                        pexpect.EOF,
-                    ],
-                    PEXPECT_TIMEOUT,
-                )
+                index = child.expect(expect_list, PEXPECT_TIMEOUT)
                 LOG.debug(
-                    f"Juju registraton: expect got regex related to index {index}"
+                    "Juju registraton: expect got regex related to "
+                    f"{expect_list[index]}"
                 )
                 if index == 0 or index == 1:
                     child.sendline(password)
@@ -389,7 +438,7 @@ class RegisterJujuUserStep(BaseStep, JujuStepHelper):
                     break
         except pexpect.TIMEOUT as e:
             LOG.exception("Error registering juju user {self.username}")
-            LOG.warning(e.stderr)
+            LOG.warning(e)
             return Result(ResultType.FAILED, str(e))
 
         return Result(ResultType.COMPLETED)
@@ -413,14 +462,15 @@ class AddJujuMachineStep(BaseStep, JujuStepHelper):
                  ResultType.COMPLETED or ResultType.FAILED otherwise
         """
         try:
-            machines = self._juju_cmd("machines")
+            machines = self._juju_cmd("machines", "-m", CONTROLLER_MODEL)
             LOG.debug(f"Found machines: {machines}")
             machines = machines.get("machines", {})
 
             for machine, details in machines.items():
                 if self.machine_ip in details.get("ip-addresses"):
                     LOG.debug("Machine already exists")
-                    return Result(ResultType.SKIPPED)
+                    return Result(ResultType.SKIPPED, machine)
+
         except subprocess.CalledProcessError as e:
             LOG.exception("Error getting machines list from juju.")
             LOG.warning(e.stderr)
@@ -436,6 +486,7 @@ class AddJujuMachineStep(BaseStep, JujuStepHelper):
         :return:
         """
         auth_message_re = "Are you sure you want to continue connecting"
+        expect_list = [auth_message_re, pexpect.EOF]
         try:
             child = pexpect.spawn(
                 self._get_juju_binary(),
@@ -443,9 +494,10 @@ class AddJujuMachineStep(BaseStep, JujuStepHelper):
                 PEXPECT_TIMEOUT * 3,  # 3 minutes
             )
             while True:
-                index = child.expect([auth_message_re, pexpect.EOF], PEXPECT_TIMEOUT)
+                index = child.expect(expect_list, PEXPECT_TIMEOUT)
                 LOG.debug(
-                    f"Juju add-machine: expect got regex related to index {index}"
+                    "Juju add-machine: expect got regex related to "
+                    f"{expect_list[index]}"
                 )
                 if index == 0:
                     child.sendline("yes")
@@ -457,9 +509,95 @@ class AddJujuMachineStep(BaseStep, JujuStepHelper):
 
                     LOG.debug("Add machine successful")
                     break
+
+            # TODO(hemanth): Need to wait until machine comes to active state
+            # from planned state?
+
+            machines = self._juju_cmd("machines", "-m", CONTROLLER_MODEL)
+            LOG.debug(f"Found machines: {machines}")
+            machines = machines.get("machines", {})
+            for machine, details in machines.items():
+                if self.machine_ip in details.get("ip-addresses"):
+                    return Result(ResultType.COMPLETED, machine)
+
+            # respond with machine id as -1 if machine is not reflected in juju
+            return Result(ResultType.COMPLETED, "-1")
         except pexpect.TIMEOUT as e:
             LOG.exception("Error adding machine {self.machine_ip}")
-            LOG.warning(e.stderr)
+            LOG.warning(e)
             return Result(ResultType.FAILED, "TIMED OUT to add machine")
 
+
+class RemoveJujuMachineStep(BaseStep, JujuStepHelper):
+    """Remove machine in juju."""
+
+    def __init__(self, name: str):
+        super().__init__("Remove machine", "Remove machine from model")
+
+        self.name = name
+        self.machine_id = -1
+
+        home = os.environ.get("SNAP_REAL_HOME")
+        os.environ["JUJU_DATA"] = f"{home}/.local/share/juju"
+
+    def is_skip(self, status: Optional["Status"] = None) -> Result:
+        """Determines if the step should be skipped or not.
+
+        :return: ResultType.SKIPPED if the Step should be skipped,
+                 ResultType.COMPLETED or ResultType.FAILED otherwise
+        """
+        try:
+            # TODO(hemanth): Update to get node details for a given node
+            # instead of getting all nodes information. Need changes in
+            # sunbeam-microcluster to expose the API
+            client = clusterClient()
+            nodes = client.cluster.list_nodes()
+            for node in nodes:
+                if node.get("name") == self.name:
+                    self.machine_id = node.get("machineid")
+
+            machines = self._juju_cmd("machines", "-m", CONTROLLER_MODEL)
+            LOG.debug(f"Found machines: {machines}")
+            machines = machines.get("machines", {})
+
+            if str(self.machine_id) not in machines:
+                LOG.debug("Machine does not exist")
+                return Result(ResultType.SKIPPED)
+        except subprocess.CalledProcessError as e:
+            LOG.exception("Error getting machines list from juju.")
+            LOG.warning(e.stderr)
+            return Result(ResultType.FAILED, str(e))
+
         return Result(ResultType.COMPLETED)
+
+    def run(self, status: Optional["Status"] = None) -> Result:
+        """Run the step to completion.
+
+        Invoked when the step is run and returns a ResultType to indicate
+
+        :return:
+        """
+        try:
+            if self.machine_id == -1:
+                return Result(
+                    ResultType.FAILED, "Not able to retrieve machine id from cluster DB"
+                )
+
+            cmd = [
+                self._get_juju_binary(),
+                "remove-machine",
+                "-m",
+                CONTROLLER_MODEL,
+                str(self.machine_id),
+            ]
+            LOG.debug(f'Running command {" ".join(cmd)}')
+            process = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            LOG.debug(
+                f"Command finished. stdout={process.stdout}, stderr={process.stderr}"
+            )
+
+            return Result(ResultType.COMPLETED)
+        except subprocess.CalledProcessError as e:
+            LOG.exception(f"Error removing machine {self.machine_id} from Juju model")
+            LOG.warning(e.stderr)
+            return Result(ResultType.FAILED, str(e))

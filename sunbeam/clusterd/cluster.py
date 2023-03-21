@@ -117,6 +117,11 @@ class ExtendedAPIService(service.BaseService):
         """Remove Node information from cluster database."""
         self._delete(f"1.0/nodes/{name}")
 
+    def update_node_info(self, name: str, role: str = "", machineid: int = -1) -> None:
+        """Update role and machineid for node."""
+        data = {"role": role, "machineid": machineid}
+        self._put(f"1.0/nodes/{name}", data=json.dumps(data))
+
     def add_juju_user(self, name: str, token: str) -> None:
         """Add juju user to cluster database."""
         data = {"username": name, "token": token}
@@ -152,6 +157,7 @@ class ClusterService(MicroClusterService, ExtendedAPIService):
 
         # If node is part of cluster, remove node from cluster
         if name in member_names:
+            self.remove_juju_user(name)
             self.remove_node_info(name)
             self.remove(name)
         else:

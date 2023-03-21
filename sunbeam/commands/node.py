@@ -26,11 +26,14 @@ from sunbeam.commands.clusterd import (
     ClusterJoinNodeStep,
     ClusterListNodeStep,
     ClusterRemoveNodeStep,
+    ClusterUpdateNodeStep,
 )
 from sunbeam.commands.juju import (
     AddJujuMachineStep,
     CreateJujuUserStep,
     RegisterJujuUserStep,
+    RemoveJujuMachineStep,
+    # RemoveJujuUserStep,
 )
 from sunbeam.jobs.common import (
     run_plan,
@@ -92,12 +95,20 @@ def join(token: str, role: str) -> None:
     cloud_name = snap.config.get("juju.cloud.name")
     controller_name = f"{cloud_name}-default"
 
-    plan = [
+    plan1 = [
         ClusterJoinNodeStep(token, role.upper()),
         RegisterJujuUserStep(name, controller_name),
         AddJujuMachineStep(ip),
     ]
-    run_plan(plan, console)
+    plan1_results = run_plan(plan1, console)
+
+    machine_id = -1
+    add_juju_machine_step_result = plan1_results.get("AddJujuMachineStep")
+    if add_juju_machine_step_result.result_type != ResultType.FAILED:
+        machine_id = int(add_juju_machine_step_result.message)
+
+    plan2 = [ClusterUpdateNodeStep(name, role="", machine_id=machine_id)]
+    run_plan(plan2, console)
 
     click.echo(f"Node has been joined as a {role} node")
 
@@ -126,7 +137,21 @@ def remove(name: str) -> None:
     If the node does not exist, it removes the node
     from the token records.
     """
-    plan = [ClusterRemoveNodeStep(name)]
+    plan = [
+        RemoveJujuMachineStep(name),
+        # Cannot remove user as the same user name cannot be resued,
+        # so commenting the RemoveJujuUserStep
+        # RemoveJujuUserStep(name),
+        ClusterRemoveNodeStep(name),
+    ]
     run_plan(plan, console)
 
     click.echo(f"Removed Node {name} from the cluster")
+    # Removing machine does not clean up all deployed juju components. This is
+    # deliberate, see https://bugs.launchpad.net/juju/+bug/1851489.
+    # Without the workaround mentioned in LP#1851489, it is not possible to
+    # reprovision the machine back.
+    click.echo(
+        f"Run command 'sudo /sbin/remove-juju-services' on node {name} "
+        "to reuse the machine."
+    )
