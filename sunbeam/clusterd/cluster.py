@@ -147,7 +147,7 @@ class ExtendedAPIService(service.BaseService):
 
     def update_config(self, key: str, value: Any):
         """Update configuration in database, create if missing."""
-        self._put(f"/1.0/config/{key}", data=json.dumps(value))
+        self._put(f"/1.0/config/{key}", data=value)
 
     def delete_config(self, key: str):
         """Remove configuration from database."""

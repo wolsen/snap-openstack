@@ -16,6 +16,10 @@ architectures:
 system-usernames:
   snap_daemon: shared
 
+layout:
+  /usr/share/terraform/plugins:
+    symlink: $SNAP_DATA/terraform-plugins
+
 apps:
   clusterd:
     command: commands/clusterd.start
@@ -32,6 +36,17 @@ apps:
       - network
       - network-bind
       - ssh-keys
+    environment:
+      PATH: $PATH:$SNAP/juju/bin
+  terraform:
+    command: bin/terraform
+    plugs:
+      - home
+      - network
+      - ssh-public-keys
+      - juju-client-observe
+    environment:
+      PATH: $PATH:$SNAP/juju/bin
 
 parts:
   sunbeam:
@@ -112,6 +127,33 @@ parts:
       go build -o "${SNAPCRAFT_PART_INSTALL}/bin/sunbeamd" -tags=libsqlite3 ./cmd/sunbeamd
     prime:
       - bin/sunbeamd
+
+  terraform:
+    plugin: go
+    source: https://github.com/hashicorp/terraform
+    source-depth: 1
+    source-type: git
+    source-tag: "v1.3.7"
+    build-snaps: [go]
+    build-environment:
+      - CGO_ENABLED: "0"
+      - GOFLAGS: "-mod=readonly"
+    override-build: |
+      go mod download
+      go build -ldflags "-s -w"
+      mkdir -p $SNAPCRAFT_PART_INSTALL/bin
+      cp terraform $SNAPCRAFT_PART_INSTALL/bin/terraform
+    stage:
+      - bin/terraform
+
+  terraform-plan:
+    after: [terraform]
+    plugin: dump
+    source: cloud/
+    override-build: |
+      craftctl default
+      cd $SNAPCRAFT_PART_INSTALL/etc/deploy-microk8s
+      $SNAPCRAFT_STAGE/bin/terraform providers mirror $SNAPCRAFT_STAGE/terraform-providers
 
   wrappers:
     plugin: dump
