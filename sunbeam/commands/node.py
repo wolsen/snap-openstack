@@ -17,7 +17,9 @@ import logging
 
 import click
 from rich.console import Console
+from snaphelpers import Snap
 
+from sunbeam import utils
 from sunbeam.commands.clusterd import (
     ClusterAddJujuUserStep,
     ClusterAddNodeStep,
@@ -26,7 +28,9 @@ from sunbeam.commands.clusterd import (
     ClusterRemoveNodeStep,
 )
 from sunbeam.commands.juju import (
+    AddJujuMachineStep,
     CreateJujuUserStep,
+    RegisterJujuUserStep,
 )
 from sunbeam.jobs.common import (
     run_plan,
@@ -35,6 +39,7 @@ from sunbeam.jobs.common import (
 
 LOG = logging.getLogger(__name__)
 console = Console()
+snap = Snap()
 
 
 @click.command()
@@ -80,8 +85,17 @@ def join(token: str, role: str) -> None:
 
     Join the node to the cluster.
     """
+    # Resgister juju user with same name as Node fqdn
+    name = utils.get_fqdn()
+    ip = utils.get_local_ip_by_default_route()
+
+    cloud_name = snap.config.get("juju.cloud.name")
+    controller_name = f"{cloud_name}-default"
+
     plan = [
         ClusterJoinNodeStep(token, role.upper()),
+        RegisterJujuUserStep(name, controller_name),
+        AddJujuMachineStep(ip),
     ]
     run_plan(plan, console)
 
