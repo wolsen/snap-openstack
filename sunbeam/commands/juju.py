@@ -510,7 +510,7 @@ class AddJujuMachineStep(BaseStep, JujuStepHelper):
                     LOG.debug("Add machine successful")
                     break
 
-            # TODO(hemanth): Need to wait until machine comes to active state
+            # TODO(hemanth): Need to wait until machine comes to started state
             # from planned state?
 
             machines = self._juju_cmd("machines", "-m", CONTROLLER_MODEL)

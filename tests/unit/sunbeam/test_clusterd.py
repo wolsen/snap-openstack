@@ -21,10 +21,13 @@ from requests.exceptions import HTTPError
 from sunbeam.clusterd.cluster import ClusterService
 import sunbeam.clusterd.service as service
 from sunbeam.commands.clusterd import (
+    ClusterAddJujuUserStep,
     ClusterAddNodeStep,
-    ClusterJoinNodeStep,
     ClusterInitStep,
+    ClusterJoinNodeStep,
     ClusterListNodeStep,
+    ClusterRemoveNodeStep,
+    ClusterUpdateNodeStep,
 )
 from sunbeam.jobs.common import ResultType
 
@@ -64,6 +67,36 @@ class TestClusterdSteps:
         result = list_node_step.run()
         assert result.result_type == ResultType.COMPLETED
         list_node_step.client.cluster.get_cluster_members.assert_called_once()
+
+    def test_update_node_step(self, mocker, snap):
+        mocker.patch.object(service, "Snap", return_value=snap)
+        update_node_step = ClusterUpdateNodeStep(
+            name="node-2", role="converged", machine_id=1
+        )
+        update_node_step.client = MagicMock()
+        result = update_node_step.run()
+        assert result.result_type == ResultType.COMPLETED
+        update_node_step.client.cluster.update_node_info.assert_called_once_with(
+            "node-2", "converged", 1
+        )
+
+    def test_remove_node_step(self, mocker, snap):
+        mocker.patch.object(service, "Snap", return_value=snap)
+        remove_node_step = ClusterRemoveNodeStep(name="node-2")
+        remove_node_step.client = MagicMock()
+        result = remove_node_step.run()
+        assert result.result_type == ResultType.COMPLETED
+        remove_node_step.client.cluster.remove_node.assert_called_once_with("node-2")
+
+    def test_add_juju_user_step(self, mocker, snap):
+        mocker.patch.object(service, "Snap", return_value=snap)
+        add_juju_user_step = ClusterAddJujuUserStep(name="node-2", token="FAKETOKEN")
+        add_juju_user_step.client = MagicMock()
+        result = add_juju_user_step.run()
+        assert result.result_type == ResultType.COMPLETED
+        add_juju_user_step.client.cluster.add_juju_user.assert_called_once_with(
+            "node-2", "FAKETOKEN"
+        )
 
 
 class TestClusterService:
@@ -506,3 +539,55 @@ class TestClusterService:
 
         cs = ClusterService(mock_session)
         cs.remove_node_info("node-1")
+
+    def test_list_nodes(self, mocker, snap):
+        json_data = {
+            "type": "sync",
+            "status": "Success",
+            "status_code": 200,
+            "operation": "",
+            "error_code": 0,
+            "error": "",
+            "metadata": [
+                {
+                    "name": "node-1",
+                    "role": "converged",
+                    "machineid": 0,
+                }
+            ],
+        }
+        mock_response = self._mock_response(
+            status=200,
+            json_data=json_data,
+        )
+        mock_session = MagicMock()
+        mock_session.request.return_value = mock_response
+        mocker.patch.object(service, "Snap", return_value=snap)
+
+        cs = ClusterService(mock_session)
+        nodes = cs.list_nodes()
+        nodes_from_call = [node.get("name") for node in nodes]
+        nodes_from_mock = [node.get("name") for node in json_data.get("metadata")]
+        assert nodes_from_mock == nodes_from_call
+
+    def test_update_node_info(self, mocker, snap):
+        json_data = {
+            "type": "sync",
+            "status": "Success",
+            "status_code": 200,
+            "operation": "",
+            "error_code": 0,
+            "error": "",
+            "metadata": {},
+        }
+        mock_response = self._mock_response(
+            status=200,
+            json_data=json_data,
+        )
+
+        mock_session = MagicMock()
+        mock_session.request.return_value = mock_response
+        mocker.patch.object(service, "Snap", return_value=snap)
+
+        cs = ClusterService(mock_session)
+        cs.update_node_info("node-2", "converged", "2")
