@@ -118,6 +118,10 @@ class BaseService(ABC):
                 raise NodeNotExistInClusterException(
                     "Node does not exist in the sunbeam cluster"
                 )
+            elif "Node not found" in error:
+                raise NodeNotExistInClusterException(
+                    "Node does not exist in the sunbeam cluster"
+                )
             elif "Failed to join cluster with the given join token" in error:
                 raise NodeJoinException(
                     "Join node to cluster failed with the given token"
