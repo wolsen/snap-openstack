@@ -15,6 +15,7 @@
 
 import json
 import logging
+from typing import Any
 
 from sunbeam.clusterd import service
 
@@ -139,6 +140,18 @@ class ExtendedAPIService(service.BaseService):
     def remove_juju_user(self, name: str) -> None:
         """Remove Juju user from cluster database."""
         self._delete(f"1.0/jujuusers/{name}")
+
+    def get_config(self, key: str) -> Any:
+        """Fetch configuration from database."""
+        return self._get(f"/1.0/config/{key}").get("metadata")
+
+    def update_config(self, key: str, value: Any):
+        """Update configuration in database, create if missing."""
+        self._put(f"/1.0/config/{key}", data=json.dumps(value))
+
+    def delete_config(self, key: str):
+        """Remove configuration from database."""
+        self._delete(f"/1.0/config/{key}")
 
 
 class ClusterService(MicroClusterService, ExtendedAPIService):

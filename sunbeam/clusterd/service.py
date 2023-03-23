@@ -43,6 +43,12 @@ class ClusterServiceUnavailableException(RemoteException):
     pass
 
 
+class ConfigItemNotFoundException(RemoteException):
+    """Raise when ConfigItem cannot be found on the remote"""
+
+    pass
+
+
 class NodeAlreadyExistsException(RemoteException):
     """Raised when the node already exists"""
 
@@ -148,6 +154,8 @@ class BaseService(ABC):
                 raise ClusterAlreadyBootstrappedException(
                     "Already cluster is bootstrapped."
                 )
+            elif "ConfigItem not found" in error:
+                raise ConfigItemNotFoundException("ConfigItem not found")
             raise e
 
         return response.json()
