@@ -19,7 +19,8 @@ import os
 import re
 import subprocess
 import tempfile
-from typing import Optional
+import time
+from typing import List, Optional
 
 import pexpect
 import pwgen
@@ -146,6 +147,43 @@ class JujuStepHelper:
             )
 
         return True
+
+    def wait_application_ready(
+        self,
+        name: str,
+        model: str = CONTROLLER_MODEL,
+        accepted_status: Optional[List[str]] = None,
+        timeout: int = 3600,
+    ):
+        """Block execution until application is ready
+
+        The function early exits if the application is missing from the model
+
+        :name: Name of the application to wait for
+        :model: Name of the model where the application is located
+        :accepted status: List of status acceptable to exit the waiting loop, default:
+            ["active"]
+        :timeout: Waiting timeout in seconds
+        """
+        if accepted_status is None:
+            accepted_status = ["active"]
+        start = time.time()
+        while time.time() < start + timeout:
+            application = self._juju_cmd("status", name, "-m", model)[
+                "applications"
+            ].get(name)
+
+            if application is None:
+                LOG.debug(f"Application {name} is missing from model {model}")
+                return
+
+            status = application["application-status"]["current"]
+            LOG.debug(f"Application {name} is in status: {status}")
+
+            if status in accepted_status:
+                return
+
+            time.sleep(10)
 
 
 class BootstrapJujuStep(BaseStep, JujuStepHelper):

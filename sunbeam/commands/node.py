@@ -35,7 +35,9 @@ from sunbeam.commands.juju import (
     RemoveJujuMachineStep,
     # RemoveJujuUserStep,
 )
+from sunbeam.commands.microk8s import AddMicrok8sUnitStep, RemoveMicrok8sUnitStep
 from sunbeam.jobs.common import (
+    Role,
     run_plan,
     ResultType,
 )
@@ -88,7 +90,7 @@ def join(token: str, role: str) -> None:
 
     Join the node to the cluster.
     """
-    # Resgister juju user with same name as Node fqdn
+    # Register juju user with same name as Node fqdn
     name = utils.get_fqdn()
     ip = utils.get_local_ip_by_default_route()
 
@@ -107,7 +109,13 @@ def join(token: str, role: str) -> None:
     if add_juju_machine_step_result.result_type != ResultType.FAILED:
         machine_id = int(add_juju_machine_step_result.message)
 
-    plan2 = [ClusterUpdateNodeStep(name, role="", machine_id=machine_id)]
+    plan2 = [
+        ClusterUpdateNodeStep(name, role="", machine_id=machine_id),
+    ]
+
+    if Role[role.upper()].is_control_node():
+        plan2.append(AddMicrok8sUnitStep(name))
+
     run_plan(plan2, console)
 
     click.echo(f"Node has been joined as a {role} node")
@@ -138,6 +146,7 @@ def remove(name: str) -> None:
     from the token records.
     """
     plan = [
+        RemoveMicrok8sUnitStep(name),
         RemoveJujuMachineStep(name),
         # Cannot remove user as the same user name cannot be resued,
         # so commenting the RemoveJujuUserStep

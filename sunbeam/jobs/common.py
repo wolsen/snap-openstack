@@ -192,7 +192,12 @@ def run_plan(plan: list, console: Console) -> dict:
     for step in plan:
         LOG.debug(f"Starting step {step.name}")
         message = f"{step.description} ... "
-        with console.status(f"{step.description} ... "):
+        with console.status(f"{step.description} ... ") as status:
+            if step.has_prompts():
+                status.stop()
+                step.prompt(console)
+                status.start()
+
             skip_result = step.is_skip()
             if skip_result.result_type == ResultType.SKIPPED:
                 results[step.__class__.__name__] = skip_result
