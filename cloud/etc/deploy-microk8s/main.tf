@@ -14,11 +14,16 @@
 # limitations under the License.
 
 terraform {
+
   required_providers {
     juju = {
       source  = "juju/juju"
       version = ">= 0.6.0"
     }
+  }
+
+  backend "http" {
+    skip_cert_verification = true
   }
 }
 
