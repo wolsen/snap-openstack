@@ -13,10 +13,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
+from dataclasses import asdict, dataclass
 import json
 import logging
 import os
+from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import time
@@ -35,7 +39,53 @@ from sunbeam.jobs.common import BaseStep, Result, ResultType
 
 LOG = logging.getLogger(__name__)
 CONTROLLER_MODEL = "admin/controller"
+CONTROLLER = "sunbeam-controller"
 PEXPECT_TIMEOUT = 60
+ACCOUNT_FILE = "account.yaml"
+
+
+class JujuException(Exception):
+    """Main juju exception, to be subclassed."""
+
+    pass
+
+
+class ControllerNotFoundException(JujuException):
+    """Raised when controller is missing."""
+
+    pass
+
+
+class JujuAccountNotFound(JujuException):
+    """Raised when account in snap's user_data is missing."""
+
+    pass
+
+
+@dataclass
+class JujuAccount:
+    user: str
+    password: str
+
+    def to_dict(self):
+        return asdict(self)
+
+    @classmethod
+    def load(cls, data_location: Path) -> "JujuAccount":
+        data_file = data_location / ACCOUNT_FILE
+        try:
+            with data_file.open() as file:
+                return JujuAccount(**yaml.safe_load(file))
+        except FileNotFoundError as e:
+            raise JujuAccountNotFound() from e
+
+    def write(self, data_location: Path):
+        data_file = data_location / ACCOUNT_FILE
+        if not data_file.exists():
+            data_file.touch()
+        data_file.chmod(0o660)
+        with data_file.open("w") as file:
+            yaml.safe_dump(self.to_dict(), file)
 
 
 class JujuStepHelper:
@@ -119,6 +169,14 @@ class JujuStepHelper:
         )
         return existing_controllers
 
+    def get_controller(self, controller: str) -> dict:
+        """Get controller definition."""
+        try:
+            return self._juju_cmd("show-controller", controller)[controller]
+        except subprocess.CalledProcessError as e:
+            LOG.warning(e)
+            raise ControllerNotFoundException() from e
+
     def add_cloud(self, cloud_type: str, cloud_name: str) -> bool:
         """Add cloud of type cloud_type."""
         if cloud_type != "manual":
@@ -189,12 +247,12 @@ class JujuStepHelper:
 class BootstrapJujuStep(BaseStep, JujuStepHelper):
     """Bootstraps the Juju controller."""
 
-    def __init__(self, cloud_name: str, cloud_type: str):
+    def __init__(self, cloud_name: str, cloud_type: str, controller: str):
         super().__init__("Bootstrap Juju", "Bootstrapping Juju onto cloud")
 
         self.cloud = cloud_name
         self.cloud_type = cloud_type
-        self.controller_name = None
+        self.controller = controller
         self.juju_clouds = []
 
         home = os.environ.get("SNAP_REAL_HOME")
@@ -207,19 +265,14 @@ class BootstrapJujuStep(BaseStep, JujuStepHelper):
                  ResultType.COMPLETED or ResultType.FAILED otherwise
         """
         try:
+            self.get_controller(self.controller)
+            return Result(ResultType.SKIPPED)
+        except ControllerNotFoundException as e:
+            LOG.debug(str(e))
+        try:
             self.juju_clouds = self.get_clouds(self.cloud_type)
             if not self.juju_clouds:
                 return Result(ResultType.COMPLETED)
-
-            controllers = self.get_controllers(self.juju_clouds)
-            if not controllers:
-                return Result(ResultType.COMPLETED)
-
-            # Simply use the first existing kubernetes controller we find.
-            # We actually probably need to provide a way for this to be
-            # influenced, but for now - we'll use the first controller.
-            self.controller_name = controllers[0]
-            return Result(ResultType.SKIPPED)
         except subprocess.CalledProcessError as e:
             LOG.exception(
                 "Error determining whether to skip the bootstrap "
@@ -241,7 +294,12 @@ class BootstrapJujuStep(BaseStep, JujuStepHelper):
                 if not result:
                     return Result(ResultType.FAILED, "Not able to create cloud")
 
-            cmd = [self._get_juju_binary(), "bootstrap", self.cloud]
+            cmd = [
+                self._get_juju_binary(),
+                "bootstrap",
+                self.cloud,
+                self.controller,
+            ]
             LOG.debug(f'Running command {" ".join(cmd)}')
             process = subprocess.run(cmd, capture_output=True, text=True, check=True)
             LOG.debug(
@@ -321,7 +379,7 @@ class CreateJujuUserStep(BaseStep, JujuStepHelper):
                 "grant",
                 self.username,
                 "write",
-                "controller",
+                CONTROLLER_MODEL,
             ]
             LOG.debug(f'Running command {" ".join(cmd)}')
             process = subprocess.run(cmd, capture_output=True, text=True, check=True)
@@ -389,11 +447,16 @@ class RemoveJujuUserStep(BaseStep, JujuStepHelper):
 class RegisterJujuUserStep(BaseStep, JujuStepHelper):
     """Register user in juju."""
 
-    def __init__(self, name: str, controller: str):
+    def __init__(
+        self, name: str, controller: str, data_location: Path, replace: bool = False
+    ):
         super().__init__("Register User", "Register juju user using token")
         self.username = name
         self.controller = controller
+        self.data_location = data_location
+        self.replace = replace
         self.registration_token = None
+        self.juju_account = None
 
         home = os.environ.get("SNAP_REAL_HOME")
         os.environ["JUJU_DATA"] = f"{home}/.local/share/juju"
@@ -405,24 +468,28 @@ class RegisterJujuUserStep(BaseStep, JujuStepHelper):
                  ResultType.COMPLETED or ResultType.FAILED otherwise
         """
         try:
-            controllers = self._juju_cmd("controllers")
-            LOG.debug(f"Found controllers: {controllers.keys()}")
-            controllers = controllers.get("controllers", {})
-            if controllers:
+            self.juju_account = JujuAccount.load(self.data_location)
+            LOG.debug(f"Local account found: {self.juju_account.user}")
+        except JujuAccountNotFound as e:
+            LOG.warning(e)
+            return Result(ResultType.FAILED, "Account was not registered locally")
+        try:
+            user = self._juju_cmd("show-user")
+            LOG.debug(f"Found user: {user['user-name']}")
+            username = user["user-name"]
+            if username == self.juju_account.user:
                 return Result(ResultType.SKIPPED)
-
-            # TODO(hemanth): Update to get token for a given user instead of
-            # getting all users information. Need changes in
-            # sunbeam-microcluster to expose the API
-            client = clusterClient()
-            users = client.cluster.list_juju_users()
-            users_d = {user.get("username"): user.get("token") for user in users}
-            self.registration_token = users_d.get(self.username)
         except subprocess.CalledProcessError as e:
-            LOG.exception("Error getting controllers list from juju.")
-            LOG.warning(e.stderr)
-            return Result(ResultType.FAILED, str(e))
+            if "No controllers registered" not in e.stderr:
+                LOG.exception("Error getting logged in user from juju.")
+                LOG.warning(e.stderr)
+                return Result(ResultType.FAILED, str(e))
+            # Error is about no controller register, which is okay is this case
+            pass
 
+        client = clusterClient()
+        user = client.cluster.get_juju_user(self.username)
+        self.registration_token = user.get("token")
         return Result(ResultType.COMPLETED)
 
     def run(self, status: Optional["Status"] = None) -> Result:
@@ -449,12 +516,14 @@ class RegisterJujuUserStep(BaseStep, JujuStepHelper):
         # client need to login/logout?
         # Does saving the password in $HOME/.local/share/juju/accounts.yaml
         # avoids login/logout?
-        password = pwgen.pwgen(12)
+        register_args = ["register", self.registration_token]
+        if self.replace:
+            register_args.append("--replace")
 
         try:
             child = pexpect.spawn(
                 self._get_juju_binary(),
-                ["register", self.registration_token],
+                register_args,
                 PEXPECT_TIMEOUT,
             )
             while True:
@@ -464,7 +533,7 @@ class RegisterJujuUserStep(BaseStep, JujuStepHelper):
                     f"{expect_list[index]}"
                 )
                 if index == 0 or index == 1:
-                    child.sendline(password)
+                    child.sendline(self.juju_account.password)
                 elif index == 2:
                     child.sendline(self.controller)
                 elif index == 3:
@@ -476,7 +545,7 @@ class RegisterJujuUserStep(BaseStep, JujuStepHelper):
                     LOG.debug("User registration completed")
                     break
         except pexpect.TIMEOUT as e:
-            LOG.exception("Error registering juju user {self.username}")
+            LOG.exception(f"Error registering juju user {self.username}")
             LOG.warning(e)
             return Result(ResultType.FAILED, str(e))
 
@@ -638,3 +707,93 @@ class RemoveJujuMachineStep(BaseStep, JujuStepHelper):
             LOG.exception(f"Error removing machine {self.machine_id} from Juju model")
             LOG.warning(e.stderr)
             return Result(ResultType.FAILED, str(e))
+
+
+class BackupBootstrapUserStep(BaseStep, JujuStepHelper):
+    """Backup bootstrap user credentials"""
+
+    def __init__(self, name: str, data_location: Path):
+        super().__init__("Backup Default User", "Backup bootstrap user credentials")
+        self.username = name
+        self.data_location = data_location
+
+        home = os.environ.get("SNAP_REAL_HOME")
+        self.juju_data = Path(f"{home}/.local/share/juju")
+
+    def is_skip(self, status: Optional["Status"] = None) -> Result:
+        """Determines if the step should be skipped or not.
+
+        :return: ResultType.SKIPPED if the Step should be skipped,
+                 ResultType.COMPLETED or ResultType.FAILED otherwise
+        """
+        try:
+            user = self._juju_cmd("show-user")
+            LOG.debug(f"Found user: {user['user-name']}")
+            username = user["user-name"]
+            if username == "admin":
+                return Result(ResultType.COMPLETED)
+        except subprocess.CalledProcessError as e:
+            LOG.exception("Error getting user from juju.")
+            LOG.warning(e.stderr)
+            return Result(ResultType.FAILED, str(e))
+
+        return Result(ResultType.SKIPPED)
+
+    def run(self, status: Optional["Status"] = None) -> Result:
+        """Run the step to completion.
+
+        Invoked when the step is run and returns a ResultType to indicate
+
+        :return:
+        """
+        original_accounts = self.juju_data / "accounts.yaml"
+        backup_accounts = self.data_location / "accounts.yaml.bk"
+
+        shutil.copy(original_accounts, backup_accounts)
+        backup_accounts.chmod(0o660)
+
+        return Result(ResultType.COMPLETED)
+
+
+class SaveJujuUserLocallyStep(BaseStep):
+    """Save user locally."""
+
+    def __init__(self, name: str, data_location: Path):
+        super().__init__("Save User", "Save juju user locally, generating password")
+        self.username = name
+        self.data_location = data_location
+
+    def is_skip(self, status: Optional["Status"] = None) -> Result:
+        """Determines if the step should be skipped or not.
+
+        :return: ResultType.SKIPPED if the Step should be skipped,
+                 ResultType.COMPLETED or ResultType.FAILED otherwise
+        """
+        try:
+            juju_account = JujuAccount.load(self.data_location)
+            LOG.debug(f"Local account found: {juju_account.user}")
+            # TODO(gboutry): make user password updateable ?
+            return Result(ResultType.SKIPPED)
+        except JujuAccountNotFound:
+            LOG.debug("Local account not found")
+            pass
+
+        return Result(ResultType.COMPLETED)
+
+    def run(self, status: Optional["Status"] = None) -> Result:
+        """Run the step to completion.
+
+        Invoked when the step is run and returns a ResultType to indicate
+
+        :return:
+        """
+
+        password = pwgen.pwgen(12)
+
+        juju_account = JujuAccount(
+            user=self.username,
+            password=password,
+        )
+        juju_account.write(self.data_location)
+
+        return Result(ResultType.COMPLETED)

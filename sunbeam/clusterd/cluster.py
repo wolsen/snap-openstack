@@ -17,6 +17,9 @@ import json
 import logging
 from typing import Any
 
+from requests import codes
+from requests.models import HTTPError
+
 from sunbeam.clusterd import service
 
 LOG = logging.getLogger(__name__)
@@ -140,6 +143,16 @@ class ExtendedAPIService(service.BaseService):
     def remove_juju_user(self, name: str) -> None:
         """Remove Juju user from cluster database."""
         self._delete(f"1.0/jujuusers/{name}")
+
+    def get_juju_user(self, name: str) -> dict:
+        """Get Juju user from cluster database."""
+        try:
+            user = self._get(f"/1.0/jujuusers/{name}")
+        except HTTPError as e:
+            if e.response.status_code == codes.not_found:
+                raise service.JujuUserNotFoundException()
+            raise e
+        return user.get("metadata")
 
     def get_config(self, key: str) -> Any:
         """Fetch configuration from database."""

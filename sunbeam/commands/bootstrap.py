@@ -23,10 +23,17 @@ from snaphelpers import Snap
 
 from sunbeam import utils
 from sunbeam.commands.clusterd import (
+    ClusterAddJujuUserStep,
     ClusterInitStep,
 )
 from sunbeam.commands.juju import (
+    CONTROLLER,
     BootstrapJujuStep,
+    CreateJujuUserStep,
+    BackupBootstrapUserStep,
+    JujuAccount,
+    RegisterJujuUserStep,
+    SaveJujuUserLocallyStep,
 )
 from sunbeam.commands.microk8s import (
     DeployMicrok8sApplicationStep,
@@ -40,6 +47,7 @@ from sunbeam.jobs.checks import (
     JujuSnapCheck,
 )
 from sunbeam.jobs.common import (
+    get_step_message,
     run_plan,
     Role,
 )
@@ -63,10 +71,14 @@ def bootstrap(role: str) -> None:
     Initialize the sunbeam cluster.
     """
     node_role = Role[role.upper()]
+    fqdn = utils.get_fqdn()
+
     LOG.debug(f"Bootstrap node: role {role}")
 
     cloud_type = snap.config.get("juju.cloud.type")
     cloud_name = snap.config.get("juju.cloud.name")
+
+    data_location = snap.paths.user_data
 
     # NOTE: install to user writable location
     src = snap.paths.snap / "etc" / "deploy-microk8s"
@@ -93,21 +105,48 @@ def bootstrap(role: str) -> None:
     plan = []
     plan.append(ClusterInitStep(role.upper()))
 
+    controller = CONTROLLER
+
+    if node_role.is_control_node():
+        plan.append(BootstrapJujuStep(cloud_name, cloud_type, controller))
+
+    run_plan(plan, console)
+
+    plan2 = []
+    if node_role.is_control_node():
+        plan2.append(CreateJujuUserStep(fqdn))
+
+    plan2_results = run_plan(plan2, console)
+
+    token = get_step_message(plan2_results, CreateJujuUserStep)
+
+    plan3 = []
+    if node_role.is_control_node():
+        plan3.append(ClusterAddJujuUserStep(fqdn, token))
+        plan3.append(BackupBootstrapUserStep(fqdn, data_location))
+        plan3.append(SaveJujuUserLocallyStep(fqdn, data_location))
+
+    run_plan(plan3, console)
+
+    user = JujuAccount.load(data_location)
     tfhelper = TerraformHelper(
         path=snap.paths.user_common / "etc" / "deploy-microk8s",
         plan="microk8s-plan",
         parallelism=1,
+        env=dict(JUJU_USERNAME=user.user, JUJU_PASSWORD=user.password),
         backend="http",
     )
 
+    plan4 = []
     if node_role.is_control_node():
-        fqdn = utils.get_fqdn()
-        plan.append(BootstrapJujuStep(cloud_name, cloud_type))
-        plan.append(TerraformInitStep(tfhelper))
-        plan.append(DeployMicrok8sApplicationStep(tfhelper))
-        plan.append(AddMicrok8sUnitStep(fqdn))
+        plan4.append(
+            RegisterJujuUserStep(fqdn, controller, data_location, replace=True)
+        )
+        plan4.append(TerraformInitStep(tfhelper))
+        plan4.append(DeployMicrok8sApplicationStep(tfhelper))
+        plan4.append(AddMicrok8sUnitStep(fqdn))
 
-    run_plan(plan, console)
+    run_plan(plan4, console)
 
     click.echo(f"Node has been bootstrapped as a {role} node")
 

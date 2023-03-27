@@ -15,7 +15,7 @@
 
 import enum
 import logging
-from typing import Optional
+from typing import Optional, Type
 
 import click
 from rich.console import Console
@@ -221,3 +221,11 @@ def run_plan(plan: list, console: Console) -> dict:
     # Returns results object only when all steps have results of type
     # COMPLETED or SKIPPED.
     return results
+
+
+def get_step_message(plan_results: dict, step: Type[BaseStep]) -> Optional[str]:
+    """Utility to get a step result's message."""
+    result = plan_results.get(step.__name__)
+    if result:
+        return result.message
+    return None

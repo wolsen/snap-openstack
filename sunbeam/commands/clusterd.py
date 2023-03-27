@@ -22,6 +22,7 @@ from sunbeam.clusterd.client import Client as clusterClient
 from sunbeam.clusterd.service import (
     ClusterAlreadyBootstrappedException,
     ClusterServiceUnavailableException,
+    JujuUserNotFoundException,
     LastNodeRemovalFromClusterException,
     NodeAlreadyExistsException,
     NodeJoinException,
@@ -256,15 +257,15 @@ class ClusterAddJujuUserStep(BaseStep):
                  ResultType.COMPLETED or ResultType.FAILED otherwise
         """
         try:
-            users = self.client.cluster.list_juju_users()
-            user_names = [user.get("username") for user in users]
-            if self.username in user_names:
-                return Result(ResultType.SKIPPED)
+            user = self.client.cluster.get_juju_user(self.username)
+            LOG.debug(f"JujuUser {user} found in database.")
         except ClusterServiceUnavailableException as e:
             LOG.warning(e)
             return Result(ResultType.FAILED, str(e))
+        except JujuUserNotFoundException:
+            return Result(ResultType.COMPLETED)
 
-        return Result(ResultType.COMPLETED)
+        return Result(ResultType.SKIPPED)
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Add node to sunbeam cluster"""

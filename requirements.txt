@@ -15,3 +15,6 @@ pwgen
 
 # Interactive subprocess execution
 pexpect
+
+# YAML parsing library
+pyyaml>=6.0
