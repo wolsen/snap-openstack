@@ -25,7 +25,9 @@ from rich.status import Status
 from snaphelpers import Snap
 
 from sunbeam import utils
+from sunbeam.clusterd.client import Client as clusterClient
 from sunbeam.jobs.common import BaseStep, Result, ResultType
+from sunbeam.jobs.juju import JujuAccount, JujuController
 
 LOG = logging.getLogger(__name__)
 
@@ -51,6 +53,7 @@ class TerraformHelper:
         env: Optional[dict] = None,
         parallelism: Optional[int] = None,
         backend: Optional[str] = None,
+        data_location: Optional[Path] = None,
     ):
         self.snap = Snap()
         self.path = path
@@ -58,6 +61,7 @@ class TerraformHelper:
         self.env = env
         self.parallelism = parallelism
         self.backend = backend
+        self.data_location = data_location
         self.terraform = str(self.snap.paths.snap / "bin" / "terraform")
 
     def write_tfvars(self, vars: dict, location: Optional[Path] = None) -> None:
@@ -89,6 +93,22 @@ class TerraformHelper:
 
         return os_env
 
+    def update_juju_provider_credentials(self) -> dict:
+        os_env = {}
+        if self.data_location:
+            LOG.debug("Updating terraform env variables related to juju credentials")
+            client = clusterClient()
+            account = JujuAccount.load(self.data_location)
+            controller = JujuController.load(client)
+            os_env.update(
+                JUJU_USERNAME=account.user,
+                JUJU_PASSWORD=account.password,
+                JUJU_CONTROLLER_ADDRESSES=",".join(controller.api_endpoints),
+                JUJU_CA_CERT=controller.ca_cert,
+            )
+
+        return os_env
+
     def init(self) -> None:
         """terraform init"""
         os_env = os.environ.copy()
@@ -99,6 +119,8 @@ class TerraformHelper:
             os_env.update(self.env)
         if self.backend:
             os_env.update(self.update_backend_env_variables())
+        if self.data_location:
+            os_env.update(self.update_juju_provider_credentials())
 
         try:
             cmd = [self.terraform, "init"]
@@ -129,6 +151,9 @@ class TerraformHelper:
             os_env.update(self.env)
         if self.backend:
             os_env.update(self.update_backend_env_variables())
+        if self.data_location:
+            os_env.update(self.update_juju_provider_credentials())
+
         try:
             cmd = [self.terraform, "apply", "-auto-approve"]
             if self.parallelism is not None:

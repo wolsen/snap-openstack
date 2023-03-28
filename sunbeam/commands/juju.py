@@ -14,17 +14,16 @@
 # limitations under the License.
 
 
-from dataclasses import asdict, dataclass
+import asyncio
 import json
 import logging
 import os
-from pathlib import Path
 import re
 import shutil
 import subprocess
 import tempfile
-import time
-from typing import List, Optional
+from pathlib import Path
+from typing import Optional
 
 import pexpect
 import pwgen
@@ -35,57 +34,16 @@ from sunbeam import utils
 from sunbeam.clusterd.client import Client as clusterClient
 from sunbeam.clusterd.service import NodeNotExistInClusterException
 from sunbeam.jobs.common import BaseStep, Result, ResultType
+from sunbeam.jobs.juju import (
+    CONTROLLER_MODEL,
+    ControllerNotFoundException,
+    JujuAccount,
+    JujuAccountNotFound,
+)
 
 
 LOG = logging.getLogger(__name__)
-CONTROLLER_MODEL = "admin/controller"
-CONTROLLER = "sunbeam-controller"
 PEXPECT_TIMEOUT = 60
-ACCOUNT_FILE = "account.yaml"
-
-
-class JujuException(Exception):
-    """Main juju exception, to be subclassed."""
-
-    pass
-
-
-class ControllerNotFoundException(JujuException):
-    """Raised when controller is missing."""
-
-    pass
-
-
-class JujuAccountNotFound(JujuException):
-    """Raised when account in snap's user_data is missing."""
-
-    pass
-
-
-@dataclass
-class JujuAccount:
-    user: str
-    password: str
-
-    def to_dict(self):
-        return asdict(self)
-
-    @classmethod
-    def load(cls, data_location: Path) -> "JujuAccount":
-        data_file = data_location / ACCOUNT_FILE
-        try:
-            with data_file.open() as file:
-                return JujuAccount(**yaml.safe_load(file))
-        except FileNotFoundError as e:
-            raise JujuAccountNotFound() from e
-
-    def write(self, data_location: Path):
-        data_file = data_location / ACCOUNT_FILE
-        if not data_file.exists():
-            data_file.touch()
-        data_file.chmod(0o660)
-        with data_file.open("w") as file:
-            yaml.safe_dump(self.to_dict(), file)
 
 
 class JujuStepHelper:
@@ -205,43 +163,6 @@ class JujuStepHelper:
             )
 
         return True
-
-    def wait_application_ready(
-        self,
-        name: str,
-        model: str = CONTROLLER_MODEL,
-        accepted_status: Optional[List[str]] = None,
-        timeout: int = 3600,
-    ):
-        """Block execution until application is ready
-
-        The function early exits if the application is missing from the model
-
-        :name: Name of the application to wait for
-        :model: Name of the model where the application is located
-        :accepted status: List of status acceptable to exit the waiting loop, default:
-            ["active"]
-        :timeout: Waiting timeout in seconds
-        """
-        if accepted_status is None:
-            accepted_status = ["active"]
-        start = time.time()
-        while time.time() < start + timeout:
-            application = self._juju_cmd("status", name, "-m", model)[
-                "applications"
-            ].get(name)
-
-            if application is None:
-                LOG.debug(f"Application {name} is missing from model {model}")
-                return
-
-            status = application["application-status"]["current"]
-            LOG.debug(f"Application {name} is in status: {status}")
-
-            if status in accepted_status:
-                return
-
-            time.sleep(10)
 
 
 class BootstrapJujuStep(BaseStep, JujuStepHelper):

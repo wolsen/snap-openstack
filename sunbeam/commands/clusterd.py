@@ -17,11 +17,14 @@ import logging
 from typing import Optional
 
 from sunbeam import utils
+from sunbeam.commands.juju import JujuStepHelper
 from sunbeam.jobs.common import BaseStep, Result, ResultType, Status
+from sunbeam.jobs.juju import JujuController
 from sunbeam.clusterd.client import Client as clusterClient
 from sunbeam.clusterd.service import (
     ClusterAlreadyBootstrappedException,
     ClusterServiceUnavailableException,
+    ConfigItemNotFoundException,
     JujuUserNotFoundException,
     LastNodeRemovalFromClusterException,
     NodeAlreadyExistsException,
@@ -275,3 +278,53 @@ class ClusterAddJujuUserStep(BaseStep):
         except ClusterServiceUnavailableException as e:
             LOG.warning(e)
             return Result(ResultType.FAILED, str(e))
+
+
+class ClusterUpdateJujuControllerStep(BaseStep, JujuStepHelper):
+    """Save Juju controller in cluster database."""
+
+    def __init__(self, controller: str):
+        super().__init__(
+            "Save Juju Controller in Cluster DB",
+            "Save Juju Controller in cluster database",
+        )
+
+        self.client = clusterClient()
+        self.controller = controller
+
+    def is_skip(self, status: Optional[Status] = None) -> Result:
+        """Determines if the step should be skipped or not.
+
+        :return: ResultType.SKIPPED if the Step should be skipped,
+                 ResultType.COMPLETED or ResultType.FAILED otherwise
+        """
+        try:
+            juju_controller = JujuController.load(self.client)
+            LOG.debug(f"Controller(s) present at: {juju_controller.api_endpoints}")
+            # Controller found, and parsed successfully
+            return Result(ResultType.SKIPPED)
+        except ClusterServiceUnavailableException as e:
+            LOG.warning(e)
+            return Result(ResultType.FAILED, str(e))
+        except ConfigItemNotFoundException:
+            pass  # Credentials missing, schedule for record
+        except TypeError as e:
+            # Note(gboutry): Credentials invalid, schedule for record
+            LOG.warning(e)
+
+        return Result(ResultType.COMPLETED)
+
+    def run(self, status: Optional[Status] = None) -> Result:
+        """Save controller in sunbeam cluster."""
+        controller = self.get_controller(self.controller)["details"]
+
+        juju_controller = JujuController(
+            api_endpoints=controller["api-endpoints"], ca_cert=controller["ca-cert"]
+        )
+        try:
+            juju_controller.write(self.client)
+        except ClusterServiceUnavailableException as e:
+            LOG.warning(e)
+            return Result(ResultType.FAILED, str(e))
+
+        return Result(result_type=ResultType.COMPLETED)
