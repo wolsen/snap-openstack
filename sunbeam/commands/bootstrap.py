@@ -94,7 +94,10 @@ def bootstrap(role: str) -> None:
     plan.append(ClusterInitStep(role.upper()))
 
     tfhelper = TerraformHelper(
-        path=snap.paths.user_common / "etc" / "deploy-microk8s", parallelism=1
+        path=snap.paths.user_common / "etc" / "deploy-microk8s",
+        plan="microk8s-plan",
+        parallelism=1,
+        backend="http",
     )
 
     if node_role.is_control_node():
