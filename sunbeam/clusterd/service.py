@@ -85,6 +85,12 @@ class TokenNotFoundException(RemoteException):
     pass
 
 
+class JujuUserNotFoundException(RemoteException):
+    """Raise when jujuuser is not found"""
+
+    pass
+
+
 class BaseService(ABC):
     """BaseService is the base service class for sunbeam clusterd services."""
 

@@ -29,15 +29,18 @@ from sunbeam.commands.clusterd import (
     ClusterUpdateNodeStep,
 )
 from sunbeam.commands.juju import (
+    CONTROLLER,
     AddJujuMachineStep,
     CreateJujuUserStep,
     RegisterJujuUserStep,
     RemoveJujuMachineStep,
+    SaveJujuUserLocallyStep,
     # RemoveJujuUserStep,
 )
 from sunbeam.commands.microk8s import AddMicrok8sUnitStep, RemoveMicrok8sUnitStep
 from sunbeam.jobs.common import (
     Role,
+    get_step_message,
     run_plan,
     ResultType,
 )
@@ -61,10 +64,7 @@ def add_node(name: str) -> None:
 
     plan1_results = run_plan(plan1, console)
 
-    user_token = None
-    create_juju_user_step_result = plan1_results.get("CreateJujuUserStep")
-    if create_juju_user_step_result:
-        user_token = create_juju_user_step_result.message
+    user_token = get_step_message(plan1_results, CreateJujuUserStep)
 
     plan2 = [ClusterAddJujuUserStep(name, user_token)]
     run_plan(plan2, console)
@@ -94,24 +94,24 @@ def join(token: str, role: str) -> None:
     name = utils.get_fqdn()
     ip = utils.get_local_ip_by_default_route()
 
-    cloud_name = snap.config.get("juju.cloud.name")
-    controller_name = f"{cloud_name}-default"
+    controller = CONTROLLER
+    data_location = snap.paths.user_data
 
     plan1 = [
         ClusterJoinNodeStep(token, role.upper()),
-        RegisterJujuUserStep(name, controller_name),
+        SaveJujuUserLocallyStep(name, data_location),
+        RegisterJujuUserStep(name, controller, data_location),
         AddJujuMachineStep(ip),
     ]
     plan1_results = run_plan(plan1, console)
 
     machine_id = -1
-    add_juju_machine_step_result = plan1_results.get("AddJujuMachineStep")
-    if add_juju_machine_step_result.result_type != ResultType.FAILED:
-        machine_id = int(add_juju_machine_step_result.message)
+    machine_id_result = get_step_message(plan1_results, AddJujuMachineStep)
+    if machine_id_result is not None:
+        machine_id = int(machine_id_result)
 
-    plan2 = [
-        ClusterUpdateNodeStep(name, role="", machine_id=machine_id),
-    ]
+    plan2 = []
+    plan2.append(ClusterUpdateNodeStep(name, role="", machine_id=machine_id))
 
     if Role[role.upper()].is_control_node():
         plan2.append(AddMicrok8sUnitStep(name))
