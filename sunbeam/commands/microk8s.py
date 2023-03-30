@@ -39,6 +39,7 @@ from sunbeam.jobs.juju import (
     MODEL,
     ApplicationNotFoundException,
     JujuHelper,
+    TimeoutException,
     run_sync,
 )
 
@@ -131,9 +132,11 @@ class DeployMicrok8sApplicationStep(BaseStep, JujuStepHelper):
     def run(self, status: Optional[Status] = None) -> Result:
         """Apply terraform configuration to deploy microk8s"""
         machine_ids = []
-        application = run_sync(self.jhelper.get_application(APPLICATION, MODEL))
-        if application is not None:
+        try:
+            application = run_sync(self.jhelper.get_application(APPLICATION, MODEL))
             machine_ids.extend(unit.machine.id for unit in application.units)
+        except ApplicationNotFoundException as e:
+            LOG.debug(str(e))
 
         self.tfhelper.write_tfvars({"machine_ids": machine_ids})
         try:
@@ -143,14 +146,19 @@ class DeployMicrok8sApplicationStep(BaseStep, JujuStepHelper):
 
         # Note(gboutry): application is in state unknown when it's deployed
         # without units
-        run_sync(
-            self.jhelper.wait_application_ready(
-                APPLICATION,
-                MODEL,
-                accepted_status=["active", "unknown"],
-                timeout=MICROK8S_APP_TIMEOUT,
+        try:
+            run_sync(
+                self.jhelper.wait_application_ready(
+                    APPLICATION,
+                    MODEL,
+                    accepted_status=["active", "unknown"],
+                    timeout=MICROK8S_APP_TIMEOUT,
+                )
             )
-        )
+        except TimeoutException as e:
+            LOG.warning(str(e))
+            return Result(ResultType.FAILED, str(e))
+
         return Result(ResultType.COMPLETED)
 
 
@@ -196,15 +204,18 @@ class AddMicrok8sUnitStep(BaseStep, JujuStepHelper):
     def run(self, status: Optional[Status] = None) -> Result:
         """Add unit to microk8s application on Juju model."""
         try:
-            run_sync(self.jhelper.add_unit(APPLICATION, MODEL, str(self.machine_id)))
+            unit = run_sync(
+                self.jhelper.add_unit(APPLICATION, MODEL, str(self.machine_id))
+            )
             run_sync(
-                self.jhelper.wait_application_ready(
-                    APPLICATION, MODEL, timeout=MICROK8S_UNIT_TIMEOUT
+                self.jhelper.wait_unit_ready(
+                    unit.name, MODEL, timeout=MICROK8S_UNIT_TIMEOUT
                 )
             )
-        except ApplicationNotFoundException as e:
+        except (ApplicationNotFoundException, TimeoutException) as e:
             LOG.warning(str(e))
             return Result(ResultType.FAILED, str(e))
+
         return Result(ResultType.COMPLETED)
 
 
@@ -230,8 +241,10 @@ class RemoveMicrok8sUnitStep(BaseStep, JujuStepHelper):
             LOG.debug(f"Machine {self.name} does not exist, skipping.")
             return Result(ResultType.SKIPPED)
 
-        application = run_sync(self.jhelper.get_application(APPLICATION, MODEL))
-        if application is None:
+        try:
+            application = run_sync(self.jhelper.get_application(APPLICATION, MODEL))
+        except ApplicationNotFoundException as e:
+            LOG.debug(str(e))
             return Result(
                 ResultType.SKIPPED, "MicroK8S application has not been deployed yet"
             )
@@ -253,7 +266,7 @@ class RemoveMicrok8sUnitStep(BaseStep, JujuStepHelper):
                     APPLICATION, MODEL, timeout=MICROK8S_UNIT_TIMEOUT
                 )
             )
-        except ApplicationNotFoundException as e:
+        except (ApplicationNotFoundException, TimeoutException) as e:
             LOG.warning(str(e))
             return Result(ResultType.FAILED, str(e))
 

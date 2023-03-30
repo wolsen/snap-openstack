@@ -19,12 +19,13 @@ import json
 from dataclasses import asdict, dataclass
 from functools import wraps
 from pathlib import Path
-from typing import Awaitable, List, Optional, TypeVar, cast
+from typing import Awaitable, Dict, List, Optional, TypeVar, cast
 
 import yaml
 from juju.application import Application
 from juju.controller import Controller
 from juju.model import Model
+from juju.unit import Unit
 
 from sunbeam.clusterd.client import Client as clusterClient
 
@@ -78,6 +79,18 @@ class JujuAccountNotFound(JujuException):
 
 class ApplicationNotFoundException(JujuException):
     """Raised when application is missing from model."""
+
+    pass
+
+
+class UnitNotFoundException(JujuException):
+    """Raised when unit is missing from model."""
+
+    pass
+
+
+class TimeoutException(JujuException):
+    """Raised when a query timed out"""
 
     pass
 
@@ -176,7 +189,34 @@ class JujuHelper:
         :model: Name of the model where the application is located
         """
         model_impl = await self.get_model(model)
-        return model_impl.applications.get(name)
+        application = model_impl.applications.get(name)
+        if application is None:
+            raise ApplicationNotFoundException(
+                f"Application missing from model: {model!r}"
+            )
+        return application
+
+    @controller
+    async def get_unit(self, name: str, model: str) -> Unit:
+        """Fetch an application's unit in model.
+
+        :name: Name of the unit to wait for, name format is application/id
+        :model: Name of the model where the unit is located"""
+        parts = name.split("/")
+        if len(parts) != 2:
+            raise ValueError(
+                f"Name {name!r} has invalid format, "
+                "should be a valid unit of format application/id"
+            )
+        model_impl = await self.get_model(model)
+
+        unit = model_impl.units.get(name)
+
+        if unit is None:
+            raise UnitNotFoundException(
+                f"Unit {name!r} is missing from model {model!r}"
+            )
+        return unit
 
     @controller
     async def add_unit(
@@ -184,7 +224,7 @@ class JujuHelper:
         name: str,
         model: str,
         machine: Optional[str] = None,
-    ):
+    ) -> Unit:
         """Add unit to application, can be optionnally placed on a machine.
 
         :name: Application name
@@ -198,11 +238,13 @@ class JujuHelper:
 
         if application is None:
             raise ApplicationNotFoundException(
-                f"Application {name} is missing from model {model}"
+                f"Application {name!r} is missing from model {model!r}"
             )
 
-        # add_unit waits for unit to be added to model, but does not check status
-        await application.add_unit(1, machine)
+        # Note(gboutry): add_unit waits for unit to be added to model,
+        # but does not check status
+        # we add only one unit, so it's ok to get the first result
+        return (await application.add_unit(1, machine))[0]
 
     @controller
     async def remove_unit(self, name: str, unit: str, model: str):
@@ -219,7 +261,7 @@ class JujuHelper:
 
         if application is None:
             raise ApplicationNotFoundException(
-                f"Application {name} is missing from model {model}"
+                f"Application {name!r} is missing from model {model!r}"
             )
 
         await application.destroy_unit(unit)
@@ -245,18 +287,81 @@ class JujuHelper:
             accepted_status = ["active"]
 
         model_impl = await self.get_model(model)
-        application = model_impl.applications.get(name)
 
-        if application is None:
-            LOG.debug(f"Application {name} is missing from model {model}")
+        try:
+            application = await self.get_application(name, model)
+        except ApplicationNotFoundException as e:
+            LOG.debug(str(e))
             return
 
-        LOG.debug(f"Application {name} is in status: {application.status}")
+        if application is None:
+            LOG.debug(f"Application {name!r} is missing from model {model!r}")
+            return
 
-        await model_impl.block_until(
-            lambda: model_impl.applications[name].status in accepted_status,
-            timeout=timeout,
+        LOG.debug(f"Application {name!r} is in status: {application.status!r}")
+
+        try:
+            await model_impl.block_until(
+                lambda: model_impl.applications[name].status in accepted_status,
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError as e:
+            raise TimeoutException(
+                f"Timed out while waiting for application {name!r} to be ready"
+            ) from e
+
+    @controller
+    async def wait_unit_ready(
+        self,
+        name: str,
+        model: str,
+        accepted_status: Optional[Dict[str, List[str]]] = None,
+        timeout: Optional[int] = None,
+    ):
+        """Block execution until unit is ready
+        The function early exits if the unit is missing from the model
+
+        :name: Name of the unit to wait for, name format is application/id
+        :model: Name of the model where the unit is located
+        :accepted status: map of accepted statuses for "workload" and "agent"
+        :timeout: Waiting timeout in seconds
+        """
+
+        if accepted_status is None:
+            accepted_status = {}
+
+        agent_accepted_status = accepted_status.get("agent", ["idle"])
+        workload_accepted_status = accepted_status.get("workload", ["active"])
+
+        model_impl = await self.get_model(model)
+
+        try:
+            unit = await self.get_unit(name, model)
+        except UnitNotFoundException as e:
+            LOG.debug(str(e))
+            return
+
+        LOG.debug(
+            f"Unit {name!r} is in status: "
+            f"agent={unit.agent_status!r}, workload={unit.workload_status!r}"
         )
+
+        def condition() -> bool:
+            """Computes readiness for unit"""
+            unit = model_impl.units[name]
+            agent_ready = unit.agent_status in agent_accepted_status
+            workload_ready = unit.workload_status in workload_accepted_status
+            return agent_ready and workload_ready
+
+        try:
+            await model_impl.block_until(
+                condition,
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError as e:
+            raise TimeoutException(
+                f"Timed out while waiting for unit {name!r} to be ready"
+            ) from e
 
     @controller
     async def wait_until_active(
@@ -264,18 +369,19 @@ class JujuHelper:
         model: str,
         timeout: Optional[int] = None,
     ) -> None:
-        """Wait for all units in model to reach active status
+        """Wait for all agents in model to reach idle status
 
         :model: Name of the model to wait for readiness
         :timeout: Waiting timeout in seconds
         """
         model_impl = await self.get_model(model)
 
-        await model_impl.block_until(
-            lambda: all(
-                unit.workload_status == "active"
-                for application in model_impl.applications.values()
-                for unit in application.units
-            ),
-            timeout=timeout,
-        )
+        try:
+            await model_impl.block_until(
+                lambda: model_impl.all_units_idle(),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError as e:
+            raise TimeoutException(
+                f"Timed out while waiting for model {model!r} to be ready"
+            ) from e
