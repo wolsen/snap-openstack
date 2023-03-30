@@ -25,13 +25,12 @@ from sunbeam import utils
 from sunbeam.commands.clusterd import (
     ClusterAddJujuUserStep,
     ClusterInitStep,
+    ClusterUpdateJujuControllerStep,
 )
 from sunbeam.commands.juju import (
-    CONTROLLER,
     BootstrapJujuStep,
     CreateJujuUserStep,
     BackupBootstrapUserStep,
-    JujuAccount,
     RegisterJujuUserStep,
     SaveJujuUserLocallyStep,
 )
@@ -51,6 +50,7 @@ from sunbeam.jobs.common import (
     run_plan,
     Role,
 )
+from sunbeam.jobs.juju import CONTROLLER, JujuHelper
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -115,6 +115,7 @@ def bootstrap(role: str) -> None:
     plan2 = []
     if node_role.is_control_node():
         plan2.append(CreateJujuUserStep(fqdn))
+        plan2.append(ClusterUpdateJujuControllerStep(controller))
 
     plan2_results = run_plan(plan2, console)
 
@@ -128,14 +129,14 @@ def bootstrap(role: str) -> None:
 
     run_plan(plan3, console)
 
-    user = JujuAccount.load(data_location)
     tfhelper = TerraformHelper(
         path=snap.paths.user_common / "etc" / "deploy-microk8s",
         plan="microk8s-plan",
         parallelism=1,
-        env=dict(JUJU_USERNAME=user.user, JUJU_PASSWORD=user.password),
         backend="http",
+        data_location=data_location,
     )
+    jhelper = JujuHelper(data_location)
 
     plan4 = []
     if node_role.is_control_node():
@@ -143,8 +144,8 @@ def bootstrap(role: str) -> None:
             RegisterJujuUserStep(fqdn, controller, data_location, replace=True)
         )
         plan4.append(TerraformInitStep(tfhelper))
-        plan4.append(DeployMicrok8sApplicationStep(tfhelper))
-        plan4.append(AddMicrok8sUnitStep(fqdn))
+        plan4.append(DeployMicrok8sApplicationStep(tfhelper, jhelper))
+        plan4.append(AddMicrok8sUnitStep(fqdn, jhelper))
 
     run_plan(plan4, console)
 

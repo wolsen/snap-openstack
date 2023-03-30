@@ -29,7 +29,6 @@ from sunbeam.commands.clusterd import (
     ClusterUpdateNodeStep,
 )
 from sunbeam.commands.juju import (
-    CONTROLLER,
     AddJujuMachineStep,
     CreateJujuUserStep,
     RegisterJujuUserStep,
@@ -44,6 +43,7 @@ from sunbeam.jobs.common import (
     run_plan,
     ResultType,
 )
+from sunbeam.jobs.juju import CONTROLLER, JujuHelper
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -97,6 +97,8 @@ def join(token: str, role: str) -> None:
     controller = CONTROLLER
     data_location = snap.paths.user_data
 
+    jhelper = JujuHelper(data_location)
+
     plan1 = [
         ClusterJoinNodeStep(token, role.upper()),
         SaveJujuUserLocallyStep(name, data_location),
@@ -110,11 +112,12 @@ def join(token: str, role: str) -> None:
     if machine_id_result is not None:
         machine_id = int(machine_id_result)
 
+    jhelper = JujuHelper(data_location)
     plan2 = []
     plan2.append(ClusterUpdateNodeStep(name, role="", machine_id=machine_id))
 
     if Role[role.upper()].is_control_node():
-        plan2.append(AddMicrok8sUnitStep(name))
+        plan2.append(AddMicrok8sUnitStep(name, jhelper))
 
     run_plan(plan2, console)
 
@@ -145,8 +148,11 @@ def remove(name: str) -> None:
     If the node does not exist, it removes the node
     from the token records.
     """
+    data_location = snap.paths.user_data
+    jhelper = JujuHelper(data_location)
+
     plan = [
-        RemoveMicrok8sUnitStep(name),
+        RemoveMicrok8sUnitStep(name, jhelper),
         RemoveJujuMachineStep(name),
         # Cannot remove user as the same user name cannot be resued,
         # so commenting the RemoveJujuUserStep
