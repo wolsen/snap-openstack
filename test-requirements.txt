@@ -16,3 +16,4 @@ codespell>=2.2.2 # GPL v2
 
 pytest
 pytest-mock
+pytest-asyncio
