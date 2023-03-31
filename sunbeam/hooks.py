@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import logging
 
 from snaphelpers import Snap
@@ -21,6 +22,7 @@ LOG = logging.getLogger(__name__)
 DEFAULT_CONFIG = {
     "juju.cloud.type": "manual",
     "juju.cloud.name": "sunbeam",
+    "daemon.group": "snap_daemon",
 }
 
 
@@ -73,7 +75,7 @@ def configure(snap: Snap) -> None:
 
     This method is invoked when the configure hook is executed by the snapd
     daemon. The `configure` hook is invoked when the user runs a sudo snap
-    set openstack-hypervisor.<foo> setting.
+    set openstack.<foo> setting.
 
     :param snap: the snap reference
     :type snap: Snap

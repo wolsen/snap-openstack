@@ -12,7 +12,6 @@ grade: devel
 architectures:
   - build-on: amd64
 
-
 system-usernames:
   snap_daemon: shared
 
