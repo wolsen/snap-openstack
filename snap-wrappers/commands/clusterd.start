@@ -1,4 +1,5 @@
 #!/bin/sh
 export DQLITE_SOCKET="@snap.${SNAP_INSTANCE_NAME}.dqlite"
+export SOCKET_GROUP="$(snapctl get 'daemon.group')"
 
-exec sunbeamd --state-dir "${SNAP_COMMON}/state"
+exec sunbeamd --state-dir "${SNAP_COMMON}/state" --socket-group "${SOCKET_GROUP}"
