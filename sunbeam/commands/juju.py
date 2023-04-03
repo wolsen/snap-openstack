@@ -192,8 +192,7 @@ class BootstrapJujuStep(BaseStep, JujuStepHelper):
             LOG.debug(str(e))
         try:
             self.juju_clouds = self.get_clouds(self.cloud_type)
-            if not self.juju_clouds:
-                return Result(ResultType.COMPLETED)
+            return Result(ResultType.COMPLETED)
         except subprocess.CalledProcessError as e:
             LOG.exception(
                 "Error determining whether to skip the bootstrap "

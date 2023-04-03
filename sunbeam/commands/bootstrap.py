@@ -37,6 +37,10 @@ from sunbeam.commands.juju import (
 from sunbeam.commands.microk8s import (
     DeployMicrok8sApplicationStep,
     AddMicrok8sUnitStep,
+    AddMicrok8sCloudStep,
+)
+from sunbeam.commands.openstack import (
+    DeployControlPlaneStep,
 )
 from sunbeam.commands.terraform import (
     TerraformHelper,
@@ -81,10 +85,11 @@ def bootstrap(role: str) -> None:
     data_location = snap.paths.user_data
 
     # NOTE: install to user writable location
-    src = snap.paths.snap / "etc" / "deploy-microk8s"
-    dst = snap.paths.user_common / "etc" / "deploy-microk8s"
-    LOG.debug(f"Updating {dst} from {src}...")
-    shutil.copytree(src, dst, dirs_exist_ok=True)
+    for tfplan_dir in ["deploy-microk8s", "deploy-openstack"]:
+        src = snap.paths.snap / "etc" / tfplan_dir
+        dst = snap.paths.user_common / "etc" / tfplan_dir
+        LOG.debug(f"Updating {dst} from {src}...")
+        shutil.copytree(src, dst, dirs_exist_ok=True)
 
     preflight_checks = []
     if node_role.is_control_node():
@@ -136,6 +141,13 @@ def bootstrap(role: str) -> None:
         backend="http",
         data_location=data_location,
     )
+    tfhelper_openstack_deploy = TerraformHelper(
+        path=snap.paths.user_common / "etc" / "deploy-openstack",
+        plan="openstack-plan",
+        parallelism=1,
+        backend="http",
+        data_location=data_location,
+    )
     jhelper = JujuHelper(data_location)
 
     plan4 = []
@@ -146,6 +158,9 @@ def bootstrap(role: str) -> None:
         plan4.append(TerraformInitStep(tfhelper))
         plan4.append(DeployMicrok8sApplicationStep(tfhelper, jhelper))
         plan4.append(AddMicrok8sUnitStep(fqdn, jhelper))
+        plan4.append(AddMicrok8sCloudStep(jhelper))
+        plan4.append(TerraformInitStep(tfhelper_openstack_deploy))
+        plan4.append(DeployControlPlaneStep(tfhelper_openstack_deploy, jhelper))
 
     run_plan(plan4, console)
 

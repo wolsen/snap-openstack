@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import asyncio
+import base64
 import logging
 import json
 from dataclasses import asdict, dataclass
@@ -24,6 +25,8 @@ from typing import Awaitable, Dict, List, Optional, TypeVar, cast
 import yaml
 from juju.application import Application
 from juju.controller import Controller
+from juju.client import client as jujuClient
+from juju.errors import JujuAPIError
 from juju.model import Model
 from juju.unit import Unit
 
@@ -89,8 +92,20 @@ class UnitNotFoundException(JujuException):
     pass
 
 
+class LeaderNotFoundException(JujuException):
+    """Raised when no unit is designated as leader."""
+
+    pass
+
+
 class TimeoutException(JujuException):
     """Raised when a query timed out"""
+
+    pass
+
+
+class ActionFailedException(JujuException):
+    """Raised when Juju run failed."""
 
     pass
 
@@ -167,6 +182,11 @@ class JujuHelper:
     def __init__(self, data_location: Path):
         self.data_location = data_location
         self.controller = None
+
+    @controller
+    async def get_clouds(self) -> dict:
+        clouds = await self.controller.clouds()
+        return clouds.clouds
 
     @controller
     async def get_model(self, model: str) -> Model:
@@ -269,6 +289,111 @@ class JujuHelper:
             )
 
         await application.destroy_unit(unit)
+
+    @controller
+    async def get_leader_unit(self, name: str, model: str) -> str:
+        """Get leader unit.
+
+        :name: Application name
+        :model: Name of the model where the application is located
+        :returns: Unit name
+        """
+        model_impl = await self.get_model(model)
+
+        try:
+            for unit in model_impl.applications[name].units:
+                is_leader = await unit.is_leader_from_status()
+                if is_leader:
+                    return unit.entity_id
+        except KeyError:
+            raise ApplicationNotFoundException(
+                f"Application {name!r} is missing from model {model!r}"
+            )
+
+        raise LeaderNotFoundException(
+            f"Leader for application {name!r} is missing from model {model!r}"
+        )
+
+    @controller
+    async def run_action(
+        self, name: str, model: str, action_name: str, action_params={}
+    ) -> Dict:
+        """Run action and return the response
+
+        :name: Unit name
+        :model: Name of the model where the application is located
+        :action: Action name
+        :kwargs: Arguments to action
+        :returns: dict of action results
+        :raises: UnitNotFoundException, ActionFailedException,
+                 Exception when action not defined
+        """
+        model_impl = await self.get_model(model)
+
+        unit = await self.get_unit(name, model)
+        action_obj = await unit.run_action(action_name, **action_params)
+        await action_obj.wait()
+        if action_obj._status != "completed":
+            output = await model_impl.get_action_output(action_obj.id)
+            raise ActionFailedException(output)
+
+        return action_obj.results
+
+    @controller
+    async def scp_from(self, name: str, model: str, source: str, destination: str):
+        """scp files from unit to local
+
+        :name: Unit name
+        :model: Name of the model where the application is located
+        :source: source file path in the unit
+        :destination: destination file path on local
+        """
+        unit = await self.get_unit(name, model)
+        # NOTE: User, proxy, scp_options left to defaults
+        await unit.scp_from(source, destination)
+
+    @controller
+    async def add_k8s_cloud(
+        self, cloud_name: str, credential_name: str, kubeconfig: Path
+    ):
+        cfg = {}
+        try:
+            with kubeconfig.open() as file:
+                cfg = yaml.safe_load(file)
+        except FileNotFoundError as e:
+            raise e
+
+        contexts = {v["name"]: v["context"] for v in cfg["contexts"]}
+        clusters = {v["name"]: v["cluster"] for v in cfg["clusters"]}
+        users = {v["name"]: v["user"] for v in cfg["users"]}
+
+        ctx = contexts.get(cfg.get("current-context"))
+        cluster = clusters.get(ctx.get("cluster"))
+        user = users.get(ctx.get("user"))
+
+        ep = cluster["server"]
+        caCert = base64.b64decode(cluster["certificate-authority-data"]).decode("utf-8")
+
+        try:
+            cloud = jujuClient.Cloud(
+                auth_types=["oauth2"],
+                ca_certificates=[caCert],
+                endpoint=ep,
+                host_cloud_region="microk8s/localhost",
+                regions=[jujuClient.CloudRegion(endpoint=ep, name="localhost")],
+                type_="kubernetes",
+            )
+            cloud = await self.controller.add_cloud(cloud_name, cloud)
+        except JujuAPIError as e:
+            if "already exists" not in str(e):
+                raise e
+
+        cred = jujuClient.CloudCredential(
+            auth_type="oauth2", attrs={"Token": user["token"]}
+        )
+        await self.controller.add_credential(
+            credential_name, credential=cred, cloud=cloud_name
+        )
 
     @controller
     async def wait_application_ready(
