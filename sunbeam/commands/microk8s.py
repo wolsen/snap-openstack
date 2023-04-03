@@ -183,12 +183,13 @@ class AddMicrok8sUnitStep(BaseStep, JujuStepHelper):
         except NodeNotExistInClusterException as e:
             return Result(ResultType.FAILED, str(e))
 
-        application = run_sync(self.jhelper.get_application(APPLICATION, MODEL))
-
-        if application is None:
+        try:
+            application = run_sync(self.jhelper.get_application(APPLICATION, MODEL))
+        except ApplicationNotFoundException:
             return Result(
                 ResultType.FAILED, "MicroK8S application has not been deployed yet"
             )
+
         for unit in application.units:
             if unit.machine.id == self.machine_id:
                 LOG.debug(
