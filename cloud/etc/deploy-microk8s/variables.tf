@@ -33,7 +33,7 @@ variable "addons" {
   description = "Addon configuration to enable on the deployment"
   type        = map(string)
   default = {
-    dns              = "8.8.8.8,8.8.4.4"
+    dns              = ""
     hostpath-storage = ""
     metallb          = "10.20.21.1-10.20.21.10"
   }
