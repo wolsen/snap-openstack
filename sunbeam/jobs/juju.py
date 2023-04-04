@@ -178,7 +178,7 @@ class JujuHelper:
             return await self.controller.get_model(model)
         except Exception as e:
             if "HTTP 400" in str(e):
-                raise ModelNotFoundException
+                raise ModelNotFoundException(f"Model {model!r} not found")
             raise e
 
     @controller
@@ -202,12 +202,7 @@ class JujuHelper:
 
         :name: Name of the unit to wait for, name format is application/id
         :model: Name of the model where the unit is located"""
-        parts = name.split("/")
-        if len(parts) != 2:
-            raise ValueError(
-                f"Name {name!r} has invalid format, "
-                "should be a valid unit of format application/id"
-            )
+        self._validate_unit(name)
         model_impl = await self.get_model(model)
 
         unit = model_impl.units.get(name)
@@ -217,6 +212,15 @@ class JujuHelper:
                 f"Unit {name!r} is missing from model {model!r}"
             )
         return unit
+
+    def _validate_unit(self, unit: str):
+        """Validate unit name."""
+        parts = unit.split("/")
+        if len(parts) != 2:
+            raise ValueError(
+                f"Name {unit!r} has invalid format, "
+                "should be a valid unit of format application/id"
+            )
 
     @controller
     async def add_unit(
@@ -254,7 +258,7 @@ class JujuHelper:
         :unit: Unit tag
         :model: Name of the model where the application is located
         """
-
+        self._validate_unit(unit)
         model_impl = await self.get_model(model)
 
         application = model_impl.applications.get(name)
@@ -294,10 +298,6 @@ class JujuHelper:
             LOG.debug(str(e))
             return
 
-        if application is None:
-            LOG.debug(f"Application {name!r} is missing from model {model!r}")
-            return
-
         LOG.debug(f"Application {name!r} is in status: {application.status!r}")
 
         try:
@@ -333,6 +333,7 @@ class JujuHelper:
         agent_accepted_status = accepted_status.get("agent", ["idle"])
         workload_accepted_status = accepted_status.get("workload", ["active"])
 
+        self._validate_unit(name)
         model_impl = await self.get_model(model)
 
         try:
