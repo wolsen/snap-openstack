@@ -52,9 +52,6 @@ MICROK8S_UNIT_TIMEOUT = 1200  # 15 minutes, adding / removing units can take a l
 
 def microk8s_addons_questions():
     return {
-        "dns": questions.PromptQuestion(
-            "Nameserver addresses", default_value="8.8.8.8,8.8.4.4"
-        ),
         "metallb": questions.PromptQuestion(
             "Metallb range", default_value="10.20.21.10-10.20.21.20"
         ),
@@ -104,7 +101,8 @@ class DeployMicrok8sApplicationStep(BaseStep, JujuStepHelper):
             accept_defaults=self.accept_defaults,
         )
         # Microk8s configuration
-        self.variables["addons"]["dns"] = microk8s_addons_bank.dns.ask()
+        # Let microk8s handle dns server configuration
+        self.variables["addons"]["dns"] = ""
         self.variables["addons"]["metallb"] = microk8s_addons_bank.metallb.ask()
         self.variables["addons"]["hostpath-storage"] = ""
 
