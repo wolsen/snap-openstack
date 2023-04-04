@@ -123,7 +123,7 @@ class TerraformHelper:
             os_env.update(self.update_juju_provider_credentials())
 
         try:
-            cmd = [self.terraform, "init"]
+            cmd = [self.terraform, "init", "-no-color"]
             LOG.debug(f'Running command {" ".join(cmd)}')
             process = subprocess.run(
                 cmd,
@@ -155,7 +155,7 @@ class TerraformHelper:
             os_env.update(self.update_juju_provider_credentials())
 
         try:
-            cmd = [self.terraform, "apply", "-auto-approve"]
+            cmd = [self.terraform, "apply", "-auto-approve", "-no-color"]
             if self.parallelism is not None:
                 cmd.append(f"-parallelism={self.parallelism}")
             LOG.debug(f'Running command {" ".join(cmd)}')
