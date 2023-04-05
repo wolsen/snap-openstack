@@ -19,6 +19,7 @@ import click
 
 from sunbeam import log
 from sunbeam.commands import bootstrap as bootstrap_cmds
+from sunbeam.commands import ssh_init as ssh_init_cmds
 from sunbeam.commands import node as node_cmds
 
 LOG = logging.getLogger()
@@ -55,6 +56,7 @@ def main():
     cluster.add_command(node_cmds.join)
     cluster.add_command(node_cmds.list)
     cluster.add_command(node_cmds.remove)
+    cluster.add_command(ssh_init_cmds.ssh_init)
     cli()
 
 
