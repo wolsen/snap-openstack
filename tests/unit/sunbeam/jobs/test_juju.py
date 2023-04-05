@@ -27,9 +27,23 @@ import sunbeam.jobs.juju as juju
 @pytest.fixture
 def applications() -> dict[str, Application]:
     mock = MagicMock()
+    microk8s_unit_mock = AsyncMock(
+        entity_id="microk8s/0",
+        agent_status="idle",
+        workload_status="active",
+    )
+    microk8s_unit_mock.is_leader_from_status.return_value = True
+
+    macrok8s_unit_mock = AsyncMock(
+        entity_id="macrok8s/0",
+        agent_status="idle",
+        workload_status="active",
+    )
+    macrok8s_unit_mock.is_leader_from_status.return_value = False
+
     app_dict = {
-        "microk8s": AsyncMock(status="active"),
-        "macrok8s": AsyncMock(status="unknown"),
+        "microk8s": AsyncMock(status="active", units=[microk8s_unit_mock]),
+        "macrok8s": AsyncMock(status="unknown", units=[macrok8s_unit_mock]),
     }
     mock.get.side_effect = app_dict.get
     mock.__getitem__.side_effect = app_dict.__getitem__
@@ -39,15 +53,29 @@ def applications() -> dict[str, Application]:
 @pytest.fixture
 def units() -> dict[str, Unit]:
     mock = MagicMock()
+    microk8s_0_unit_mock = AsyncMock(
+        entity_id="microk8s/0",
+        agent_status="idle",
+        workload_status="active",
+    )
+    microk8s_0_unit_mock.run_action.return_value = AsyncMock(
+        _status="completed",
+        results={"exit_code": 0},
+    )
+
+    microk8s_1_unit_mock = AsyncMock(
+        entity_id="microk8s/1",
+        agent_status="unknown",
+        workload_status="unknown",
+    )
+    microk8s_1_unit_mock.run_action.return_value = AsyncMock(
+        _status="failed",
+        results={"exit_code": 1},
+    )
+
     unit_dict = {
-        "microk8s/0": AsyncMock(
-            agent_status="idle",
-            workload_status="active",
-        ),
-        "microk8s/1": AsyncMock(
-            agent_status="unknown",
-            workload_status="unknown",
-        ),
+        "microk8s/0": microk8s_0_unit_mock,
+        "microk8s/1": microk8s_1_unit_mock,
     }
     mock.get.side_effect = unit_dict.get
     mock.__getitem__.side_effect = unit_dict.__getitem__
@@ -70,6 +98,8 @@ def model(applications, units) -> Model:
         return result
 
     model.block_until.side_effect = test_condition
+
+    model.get_action_output.return_value = "action failed..."
 
     return model
 
@@ -102,6 +132,12 @@ def jhelper_unknown_error(jhelper_base: juju.JujuHelper):
 def jhelper(mocker, jhelper_base: juju.JujuHelper, model):
     jhelper_base.controller.get_model.return_value = model
     yield jhelper_base
+
+
+@pytest.mark.asyncio
+async def test_jhelper_get_clouds(jhelper: juju.JujuHelper):
+    await jhelper.get_clouds()
+    jhelper.controller.clouds.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -153,6 +189,38 @@ async def test_jhelper_get_unit_invalid_name(jhelper: juju.JujuHelper):
         ),
     ):
         await jhelper.get_unit("microk8s", "control-plane")
+
+
+@pytest.mark.asyncio
+async def test_jhelper_get_leader_unit(
+    jhelper: juju.JujuHelper, applications: dict[str, Application]
+):
+    app = "microk8s"
+    unit = await jhelper.get_leader_unit(app, "control-plane")
+    assert unit is not None
+    assert applications.get.called_with(app)
+
+
+@pytest.mark.asyncio
+async def test_jhelper_get_leader_unit_missing_application(jhelper: juju.JujuHelper):
+    model = "control-plane"
+    app = "mysql"
+    with pytest.raises(
+        juju.ApplicationNotFoundException,
+        match=f"Application {app!r} is missing from model {model!r}",
+    ):
+        await jhelper.get_leader_unit(app, model)
+
+
+@pytest.mark.asyncio
+async def test_jhelper_get_leader_unit_missing(jhelper: juju.JujuHelper):
+    model = "control-plane"
+    app = "macrok8s"
+    with pytest.raises(
+        juju.LeaderNotFoundException,
+        match=f"Leader for application {app!r} is missing from model {model!r}",
+    ):
+        await jhelper.get_leader_unit(app, model)
 
 
 @pytest.mark.asyncio
@@ -237,6 +305,30 @@ async def test_jhelper_remove_unit_invalid_unit(
         ),
     ):
         await jhelper.remove_unit("microk8s", "microk8s", "control-plane")
+
+
+@pytest.mark.asyncio
+async def test_jhelper_run_action(jhelper: juju.JujuHelper, units):
+    unit = "microk8s/0"
+    action_name = "get-action"
+    await jhelper.run_action(unit, "control-plane", action_name)
+    units.get(unit).run_action.assert_called_once_with(action_name)
+
+
+@pytest.mark.asyncio
+async def test_jhelper_run_action_failed(jhelper: juju.JujuHelper):
+    with pytest.raises(
+        juju.ActionFailedException,
+        match="action failed...",
+    ):
+        await jhelper.run_action("microk8s/1", "control-plane", "get-action")
+
+
+@pytest.mark.asyncio
+async def test_jhelper_scp_from(jhelper: juju.JujuHelper, units):
+    unit = "microk8s/0"
+    await jhelper.scp_from(unit, "control-plane", "source", "destination")
+    units.get(unit).scp_from.assert_called_once_with("source", "destination")
 
 
 test_data_microk8s = [
