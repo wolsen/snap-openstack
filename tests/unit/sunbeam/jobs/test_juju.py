@@ -230,7 +230,7 @@ async def test_jhelper_get_leader_unit_missing_application(jhelper: juju.JujuHel
     app = "mysql"
     with pytest.raises(
         juju.ApplicationNotFoundException,
-        match=f"Application {app!r} is missing from model {model!r}",
+        match=f"Application missing from model: {model!r}",
     ):
         await jhelper.get_leader_unit(app, model)
 
@@ -368,7 +368,6 @@ test_data_microk8s = [
         "unit 'microk8s/0'",
         [{"agent": "idle", "workload": "blocked"}],
     ),
-    ("wait_until_active", "control-plane", "model 'control-plane'", []),
 ]
 
 test_data_custom_status = [
@@ -387,11 +386,7 @@ test_data_missing = [
 async def test_jhelper_wait_ready(
     jhelper: juju.JujuHelper, model: Model, method: str, entity: str, error: str, args
 ):
-    if "until" in method:
-        model.all_units_idle.return_value = True
-        await getattr(jhelper, method)(entity)
-    else:
-        await getattr(jhelper, method)(entity, "control-plane")
+    await getattr(jhelper, method)(entity, "control-plane")
     assert model.block_until.call_count == 1
     assert model.block_until.result is True
 
@@ -401,7 +396,6 @@ async def test_jhelper_wait_ready(
 async def test_jhelper_wait_application_ready_timeout(
     jhelper: juju.JujuHelper, model: Model, method: str, entity: str, error: str, args
 ):
-    model.all_units_idle.return_value = False
     with pytest.raises(
         juju.TimeoutException,
         match=f"Timed out while waiting for {error} to be ready",
@@ -432,3 +426,9 @@ async def test_jhelper_wait_ready_missing_application(
 ):
     await getattr(jhelper, method)(entity, "control-plane")
     assert model.block_until.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_jhelper_wait_until_active(jhelper: juju.JujuHelper, model):
+    await jhelper.wait_until_active("control-plane")
+    assert model.wait_for_idle.call_count == 1

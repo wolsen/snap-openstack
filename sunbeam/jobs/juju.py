@@ -298,17 +298,12 @@ class JujuHelper:
         :model: Name of the model where the application is located
         :returns: Unit name
         """
-        model_impl = await self.get_model(model)
+        application = await self.get_application(name, model)
 
-        try:
-            for unit in model_impl.applications[name].units:
-                is_leader = await unit.is_leader_from_status()
-                if is_leader:
-                    return unit.entity_id
-        except KeyError:
-            raise ApplicationNotFoundException(
-                f"Application {name!r} is missing from model {model!r}"
-            )
+        for unit in application.units:
+            is_leader = await unit.is_leader_from_status()
+            if is_leader:
+                return unit.entity_id
 
         raise LeaderNotFoundException(
             f"Leader for application {name!r} is missing from model {model!r}"
@@ -496,10 +491,8 @@ class JujuHelper:
         model_impl = await self.get_model(model)
 
         try:
-            await model_impl.block_until(
-                lambda: model_impl.all_units_idle(),
-                timeout=timeout,
-            )
+            # Wait for all the unit workload status to active and Agent status to idle
+            await model_impl.wait_for_idle(status="active", timeout=timeout)
         except asyncio.TimeoutError as e:
             raise TimeoutException(
                 f"Timed out while waiting for model {model!r} to be ready"
