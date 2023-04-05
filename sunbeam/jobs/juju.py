@@ -354,20 +354,13 @@ class JujuHelper:
 
     @controller
     async def add_k8s_cloud(
-        self, cloud_name: str, credential_name: str, kubeconfig: Path
+        self, cloud_name: str, credential_name: str, kubeconfig: dict
     ):
-        cfg = {}
-        try:
-            with kubeconfig.open() as file:
-                cfg = yaml.safe_load(file)
-        except FileNotFoundError as e:
-            raise e
+        contexts = {v["name"]: v["context"] for v in kubeconfig["contexts"]}
+        clusters = {v["name"]: v["cluster"] for v in kubeconfig["clusters"]}
+        users = {v["name"]: v["user"] for v in kubeconfig["users"]}
 
-        contexts = {v["name"]: v["context"] for v in cfg["contexts"]}
-        clusters = {v["name"]: v["cluster"] for v in cfg["clusters"]}
-        users = {v["name"]: v["user"] for v in cfg["users"]}
-
-        ctx = contexts.get(cfg.get("current-context"))
+        ctx = contexts.get(kubeconfig.get("current-context"))
         cluster = clusters.get(ctx.get("cluster"))
         user = users.get(ctx.get("user"))
 

@@ -19,6 +19,7 @@ from typing import Optional
 
 from rich.console import Console
 from rich.status import Status
+import yaml
 
 from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import NodeNotExistInClusterException
@@ -316,12 +317,15 @@ class AddMicrok8sCloudStep(BaseStep, JujuStepHelper):
             # NOTE: source path is hardcoded in microk8s charm
             # https://github.com/canonical/charm-microk8s/issues/65
             # TODO(hemanth): Action should return the content of kubeconfig file
+            kubeconfig = {}
+            with Path(source).open() as file:
+                kubeconfig = yaml.safe_load(file)
+
             run_sync(
-                self.jhelper.add_k8s_cloud(
-                    self.name, self.credential_name, Path(source)
-                )
+                self.jhelper.add_k8s_cloud(self.name, self.credential_name, kubeconfig)
             )
         except (
+            FileNotFoundError,
             ApplicationNotFoundException,
             LeaderNotFoundException,
             ActionFailedException,

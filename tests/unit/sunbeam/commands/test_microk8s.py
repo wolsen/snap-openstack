@@ -327,9 +327,12 @@ class TestAddMicrok8sCloudStep(unittest.TestCase):
 
         assert result.result_type == ResultType.SKIPPED
 
-    def test_run(self):
-        result = {"kubeconfig": "/home/ubuntu/config"}
-        self.jhelper.run_action.return_value = result
+    @patch("yaml.safe_load")
+    @patch.object(Path, "open")
+    def test_run(self, mock_path, mock_yaml):
+        mock_yaml.return_value = {}
+        action_result = {"kubeconfig": "/home/ubuntu/config"}
+        self.jhelper.run_action.return_value = action_result
 
         step = AddMicrok8sCloudStep(self.jhelper)
         result = step.run()
