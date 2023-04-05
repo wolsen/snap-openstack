@@ -21,6 +21,7 @@ import pytest
 
 from sunbeam.clusterd.service import NodeNotExistInClusterException
 from sunbeam.commands.microk8s import (
+    AddMicrok8sCloudStep,
     AddMicrok8sUnitStep,
     DeployMicrok8sApplicationStep,
     RemoveMicrok8sUnitStep,
@@ -29,7 +30,12 @@ from sunbeam.commands.terraform import TerraformException
 from sunbeam.jobs.common import (
     ResultType,
 )
-from sunbeam.jobs.juju import ApplicationNotFoundException, TimeoutException
+from sunbeam.jobs.juju import (
+    ActionFailedException,
+    ApplicationNotFoundException,
+    LeaderNotFoundException,
+    TimeoutException,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -294,3 +300,79 @@ class TestRemoveMicrok8sUnitStep(unittest.TestCase):
         self.jhelper.wait_application_ready.assert_called_once()
         assert result.result_type == ResultType.FAILED
         assert result.message == "timed out"
+
+
+class TestAddMicrok8sCloudStep(unittest.TestCase):
+    def __init__(self, methodName: str = "runTest") -> None:
+        super().__init__(methodName)
+
+    def setUp(self):
+        self.jhelper = AsyncMock()
+
+    def test_is_skip(self):
+        clouds = {}
+        self.jhelper.get_clouds.return_value = clouds
+
+        step = AddMicrok8sCloudStep(self.jhelper)
+        result = step.is_skip()
+
+        assert result.result_type == ResultType.COMPLETED
+
+    def test_is_skip_cloud_already_deployed(self):
+        clouds = {"cloud-sunbeam-microk8s": {"endpoint": "10.0.10.1"}}
+        self.jhelper.get_clouds.return_value = clouds
+
+        step = AddMicrok8sCloudStep(self.jhelper)
+        result = step.is_skip()
+
+        assert result.result_type == ResultType.SKIPPED
+
+    @patch("yaml.safe_load")
+    @patch.object(Path, "open")
+    def test_run(self, mock_path, mock_yaml):
+        mock_yaml.return_value = {}
+        action_result = {"kubeconfig": "/home/ubuntu/config"}
+        self.jhelper.run_action.return_value = action_result
+
+        step = AddMicrok8sCloudStep(self.jhelper)
+        result = step.run()
+
+        self.jhelper.get_leader_unit.assert_called_once()
+        self.jhelper.run_action.assert_called_once()
+        self.jhelper.add_k8s_cloud.assert_called_once()
+        assert result.result_type == ResultType.COMPLETED
+
+    def test_run_application_not_found(self):
+        self.jhelper.get_leader_unit.side_effect = ApplicationNotFoundException(
+            "Application missing..."
+        )
+
+        step = AddMicrok8sCloudStep(self.jhelper)
+        result = step.run()
+
+        self.jhelper.get_leader_unit.assert_called_once()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == "Application missing..."
+
+    def test_run_leader_not_found(self):
+        self.jhelper.get_leader_unit.side_effect = LeaderNotFoundException(
+            "Leader missing..."
+        )
+
+        step = AddMicrok8sCloudStep(self.jhelper)
+        result = step.run()
+
+        self.jhelper.get_leader_unit.assert_called_once()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == "Leader missing..."
+
+    def test_run_action_failed(self):
+        self.jhelper.run_action.side_effect = ActionFailedException("Action failed...")
+
+        step = AddMicrok8sCloudStep(self.jhelper)
+        result = step.run()
+
+        self.jhelper.get_leader_unit.assert_called_once()
+        self.jhelper.run_action.assert_called_once()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == "Action failed..."

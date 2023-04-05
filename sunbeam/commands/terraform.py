@@ -19,6 +19,7 @@ import os
 import subprocess
 from datetime import datetime
 from pathlib import Path
+from string import Template
 from typing import Optional
 
 from rich.status import Status
@@ -30,6 +31,20 @@ from sunbeam.jobs.common import BaseStep, Result, ResultType
 from sunbeam.jobs.juju import JujuAccount, JujuController
 
 LOG = logging.getLogger(__name__)
+
+http_backend_template = """
+terraform {
+  backend "http" {
+    address = "$http_address"
+    update_method = "PUT"
+    lock_address = "$lock_address"
+    lock_method = "PUT"
+    unlock_address = "$unlock_address"
+    unlock_method = "PUT"
+    skip_cert_verification = true
+  }
+}
+"""
 
 
 class TerraformException(Exception):
@@ -64,34 +79,28 @@ class TerraformHelper:
         self.data_location = data_location
         self.terraform = str(self.snap.paths.snap / "bin" / "terraform")
 
+    def write_backend_tf(self) -> None:
+        if self.backend == "http":
+            local_ip = utils.get_local_ip_by_default_route()
+            http_address = f"https://{local_ip}:7000/1.0/terraformstate/{self.plan}"
+            lock_address = f"https://{local_ip}:7000/1.0/terraformlock/{self.plan}"
+            unlock_address = f"https://{local_ip}:7000/1.0/terraformunlock/{self.plan}"
+
+            backend_obj = Template(http_backend_template)
+            backend = backend_obj.safe_substitute(
+                http_address=http_address,
+                lock_address=lock_address,
+                unlock_address=unlock_address,
+            )
+
+            with Path(self.path / "backend.tf").open(mode="w") as file:
+                file.write(backend)
+
     def write_tfvars(self, vars: dict, location: Optional[Path] = None) -> None:
         """Write terraform variables file"""
         filepath = location or (self.path / "terraform.tfvars.json")
         with filepath.open("w") as tfvars:
             tfvars.write(json.dumps(vars))
-
-    def update_backend_env_variables(self) -> dict:
-        os_env = {}
-        if self.backend == "http":
-            LOG.debug(
-                f"Updating terraform env variables related to backend {self.backend}"
-            )
-            local_ip = utils.get_local_ip_by_default_route()
-            http_address = f"https://{local_ip}:7000/1.0/terraformstate/{self.plan}"
-            lock_address = f"https://{local_ip}:7000/1.0/terraformlock/{self.plan}"
-            unlock_address = f"https://{local_ip}:7000/1.0/terraformunlock/{self.plan}"
-            os_env.update(
-                {
-                    "TF_HTTP_ADDRESS": http_address,
-                    "TF_HTTP_UPDATE_METHOD": "PUT",
-                    "TF_HTTP_LOCK_ADDRESS": lock_address,
-                    "TF_HTTP_LOCK_METHOD": "PUT",
-                    "TF_HTTP_UNLOCK_ADDRESS": unlock_address,
-                    "TF_HTTP_UNLOCK_METHOD": "PUT",
-                }
-            )
-
-        return os_env
 
     def update_juju_provider_credentials(self) -> dict:
         os_env = {}
@@ -118,7 +127,7 @@ class TerraformHelper:
         if self.env:
             os_env.update(self.env)
         if self.backend:
-            os_env.update(self.update_backend_env_variables())
+            self.write_backend_tf()
         if self.data_location:
             os_env.update(self.update_juju_provider_credentials())
 
@@ -149,8 +158,6 @@ class TerraformHelper:
         os_env.update({"TF_LOG": "INFO", "TF_LOG_PATH": tf_log})
         if self.env:
             os_env.update(self.env)
-        if self.backend:
-            os_env.update(self.update_backend_env_variables())
         if self.data_location:
             os_env.update(self.update_juju_provider_credentials())
 

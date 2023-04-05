@@ -146,7 +146,7 @@ parts:
     stage:
       - bin/terraform
 
-  terraform-plan:
+  terraform-microk8s-plan:
     after: [terraform]
     plugin: dump
     source: cloud/
@@ -154,6 +154,21 @@ parts:
       craftctl default
       cd $SNAPCRAFT_PART_INSTALL/etc/deploy-microk8s
       $SNAPCRAFT_STAGE/bin/terraform providers mirror $SNAPCRAFT_STAGE/terraform-providers
+
+  terraform-openstack-plan:
+    after: [terraform]
+    plugin: dump
+    source: https://github.com/openstack-snaps/sunbeam-terraform
+    source-depth: 1
+    source-type: git
+    organize:
+      '*': etc/deploy-openstack/
+    override-build: |
+      craftctl default
+      cd $SNAPCRAFT_PART_INSTALL
+      $SNAPCRAFT_STAGE/bin/terraform init
+      $SNAPCRAFT_STAGE/bin/terraform providers mirror $SNAPCRAFT_STAGE/terraform-providers
+      rm -rf $SNAPCRAFT_PART_INSTALL/.terraform
 
   wrappers:
     plugin: dump

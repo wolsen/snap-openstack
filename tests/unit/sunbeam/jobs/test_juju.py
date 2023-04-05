@@ -20,16 +20,53 @@ import pytest
 from juju.application import Application
 from juju.model import Model
 from juju.unit import Unit
+import yaml
 
 import sunbeam.jobs.juju as juju
+
+
+kubeconfig_yaml = """
+apiVersion: v1
+clusters:
+- cluster:
+    certificate-authority-data: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUREekNDQWZlZ0F3SUJBZ0lVSDh2MmtKZDE0TEs4VWIrM1RmUGVUY21pMWNrd0RRWUpLb1pJaHZjTkFRRUwKQlFBd0Z6RVZNQk1HQTFVRUF3d01NVEF1TVRVeUxqRTRNeTR4TUI0WERUSXpNRFF3TkRBMU1Ua3lOVm9YRFRNegpNRFF3TVRBMU1Ua3lOVm93RnpFVk1CTUdBMVVFQXd3TU1UQXVNVFV5TGpFNE15NHhNSUlCSWpBTkJna3Foa2lHCjl3MEJBUUVGQUFPQ0FROEFNSUlCQ2dLQ0FRRUF4RWkwVFhldmJYNFNvZ2VsRW16T0NQU2tYNHloOURCVGd6WFEKQkdJQTF4TDFwZ09mRkNMNzZYSlROSU4rYUNPT1BoVGp6dXoyR3dpR05pMHVBdnZyUGVrN0p0cEliUjg4YjRSQQpZUTRtMTllMU5zVjdwZ2pHL0JEQzVza1dycVpoZTR5ZTZoOXI2OXpKb1l5NEE4eFZLb1MvdElBZkdSejZvaS9uCndpY0ZzKzQyc29icm92MFdyUm5KbFV4eisyVHB2TFA1TW40eUExZHpGV0RLMTVCemVHa1YyYTVDeHBqcFBBTE4KVzUwVWlvSittbHBmTmwvYzZKWmFaZDR4S1NxclppU2dCY3BOQlhvWjJYVHpDOVNJTFF5RGZpZUpVNWxOcEIwSgpvSUphT0UvOTNseGp1bUdsSlRLSS9ucmpYM241UDFyaFFlWTNxV2p5S21ZNlFucjRqUUlEQVFBQm8xTXdVVEFkCkJnTlZIUTRFRmdRVU0yVTBMSTZtcGFaOTVkTnlIRGs1ZlZCck5ISXdId1lEVlIwakJCZ3dGb0FVTTJVMExJNm0KcGFaOTVkTnlIRGs1ZlZCck5ISXdEd1lEVlIwVEFRSC9CQVV3QXdFQi96QU5CZ2txaGtpRzl3MEJBUXNGQUFPQwpBUUVBZzZITWk4eTQrSENrOCtlb1FuamlmOHd4MytHVDZFNk02SWdRWWRvSFJjYXNYZ0JWLzd6OVRHQnpNeG1aCmdrL0Fnc08yQitLUFh3NmdQZU1GL1JLMjhGNlovK0FjYWMzdUtjT1N1WUJiL2lRKzI1cU9BazZaTStoSTVxMWQKUm1uVzBIQmpzNmg1bVlDODJrSVcrWStEYWN5bUx3OTF3S2ptTXlvMnh4OTBRb0IvWnBSVUxiNjVvWmlkcHZEawpOMStleFg4QmhIeE85S0lhMFFvcThVWFdLTjN4anZRb1pVanFieXY1VWFvcjBwbWpKT1NLKzJLMllRSk9FbUxaCkFDdEtzUDNpaU1UTlRXYUpxVjdWUVZaL3dRUVdsQ1h3VFp3WGlicXk0Z0kwb3JrcVNha0gzVFZMblVrRlFKU24KUi8waU1RRVFzQW5kajZBcVhlQml3ZG5aSGc9PQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg==  # noqa: E501
+    server: https://10.5.1.180:16443
+  name: microk8s-cluster
+contexts:
+- context:
+    cluster: microk8s-cluster
+    user: admin
+  name: microk8s
+current-context: microk8s
+kind: Config
+preferences: {}
+users:
+- name: admin
+  user:
+    token: FAKETOKEN
+"""
 
 
 @pytest.fixture
 def applications() -> dict[str, Application]:
     mock = MagicMock()
+    microk8s_unit_mock = AsyncMock(
+        entity_id="microk8s/0",
+        agent_status="idle",
+        workload_status="active",
+    )
+    microk8s_unit_mock.is_leader_from_status.return_value = True
+
+    macrok8s_unit_mock = AsyncMock(
+        entity_id="macrok8s/0",
+        agent_status="idle",
+        workload_status="active",
+    )
+    macrok8s_unit_mock.is_leader_from_status.return_value = False
+
     app_dict = {
-        "microk8s": AsyncMock(status="active"),
-        "macrok8s": AsyncMock(status="unknown"),
+        "microk8s": AsyncMock(status="active", units=[microk8s_unit_mock]),
+        "macrok8s": AsyncMock(status="unknown", units=[macrok8s_unit_mock]),
     }
     mock.get.side_effect = app_dict.get
     mock.__getitem__.side_effect = app_dict.__getitem__
@@ -39,15 +76,29 @@ def applications() -> dict[str, Application]:
 @pytest.fixture
 def units() -> dict[str, Unit]:
     mock = MagicMock()
+    microk8s_0_unit_mock = AsyncMock(
+        entity_id="microk8s/0",
+        agent_status="idle",
+        workload_status="active",
+    )
+    microk8s_0_unit_mock.run_action.return_value = AsyncMock(
+        _status="completed",
+        results={"exit_code": 0},
+    )
+
+    microk8s_1_unit_mock = AsyncMock(
+        entity_id="microk8s/1",
+        agent_status="unknown",
+        workload_status="unknown",
+    )
+    microk8s_1_unit_mock.run_action.return_value = AsyncMock(
+        _status="failed",
+        results={"exit_code": 1},
+    )
+
     unit_dict = {
-        "microk8s/0": AsyncMock(
-            agent_status="idle",
-            workload_status="active",
-        ),
-        "microk8s/1": AsyncMock(
-            agent_status="unknown",
-            workload_status="unknown",
-        ),
+        "microk8s/0": microk8s_0_unit_mock,
+        "microk8s/1": microk8s_1_unit_mock,
     }
     mock.get.side_effect = unit_dict.get
     mock.__getitem__.side_effect = unit_dict.__getitem__
@@ -70,6 +121,8 @@ def model(applications, units) -> Model:
         return result
 
     model.block_until.side_effect = test_condition
+
+    model.get_action_output.return_value = "action failed..."
 
     return model
 
@@ -102,6 +155,12 @@ def jhelper_unknown_error(jhelper_base: juju.JujuHelper):
 def jhelper(mocker, jhelper_base: juju.JujuHelper, model):
     jhelper_base.controller.get_model.return_value = model
     yield jhelper_base
+
+
+@pytest.mark.asyncio
+async def test_jhelper_get_clouds(jhelper: juju.JujuHelper):
+    await jhelper.get_clouds()
+    jhelper.controller.clouds.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -153,6 +212,38 @@ async def test_jhelper_get_unit_invalid_name(jhelper: juju.JujuHelper):
         ),
     ):
         await jhelper.get_unit("microk8s", "control-plane")
+
+
+@pytest.mark.asyncio
+async def test_jhelper_get_leader_unit(
+    jhelper: juju.JujuHelper, applications: dict[str, Application]
+):
+    app = "microk8s"
+    unit = await jhelper.get_leader_unit(app, "control-plane")
+    assert unit is not None
+    assert applications.get.called_with(app)
+
+
+@pytest.mark.asyncio
+async def test_jhelper_get_leader_unit_missing_application(jhelper: juju.JujuHelper):
+    model = "control-plane"
+    app = "mysql"
+    with pytest.raises(
+        juju.ApplicationNotFoundException,
+        match=f"Application missing from model: {model!r}",
+    ):
+        await jhelper.get_leader_unit(app, model)
+
+
+@pytest.mark.asyncio
+async def test_jhelper_get_leader_unit_missing(jhelper: juju.JujuHelper):
+    model = "control-plane"
+    app = "macrok8s"
+    with pytest.raises(
+        juju.LeaderNotFoundException,
+        match=f"Leader for application {app!r} is missing from model {model!r}",
+    ):
+        await jhelper.get_leader_unit(app, model)
 
 
 @pytest.mark.asyncio
@@ -239,6 +330,36 @@ async def test_jhelper_remove_unit_invalid_unit(
         await jhelper.remove_unit("microk8s", "microk8s", "control-plane")
 
 
+@pytest.mark.asyncio
+async def test_jhelper_run_action(jhelper: juju.JujuHelper, units):
+    unit = "microk8s/0"
+    action_name = "get-action"
+    await jhelper.run_action(unit, "control-plane", action_name)
+    units.get(unit).run_action.assert_called_once_with(action_name)
+
+
+@pytest.mark.asyncio
+async def test_jhelper_run_action_failed(jhelper: juju.JujuHelper):
+    with pytest.raises(
+        juju.ActionFailedException,
+        match="action failed...",
+    ):
+        await jhelper.run_action("microk8s/1", "control-plane", "get-action")
+
+
+@pytest.mark.asyncio
+async def test_jhelper_scp_from(jhelper: juju.JujuHelper, units):
+    unit = "microk8s/0"
+    await jhelper.scp_from(unit, "control-plane", "source", "destination")
+    units.get(unit).scp_from.assert_called_once_with("source", "destination")
+
+
+@pytest.mark.asyncio
+async def test_jhelper_add_k8s_cloud(jhelper: juju.JujuHelper):
+    kubeconfig = yaml.safe_load(kubeconfig_yaml)
+    await jhelper.add_k8s_cloud("microk8s", "microk8s-creds", kubeconfig)
+
+
 test_data_microk8s = [
     ("wait_application_ready", "microk8s", "application 'microk8s'", [["blocked"]]),
     (
@@ -247,7 +368,6 @@ test_data_microk8s = [
         "unit 'microk8s/0'",
         [{"agent": "idle", "workload": "blocked"}],
     ),
-    ("wait_until_active", "control-plane", "model 'control-plane'", []),
 ]
 
 test_data_custom_status = [
@@ -266,11 +386,7 @@ test_data_missing = [
 async def test_jhelper_wait_ready(
     jhelper: juju.JujuHelper, model: Model, method: str, entity: str, error: str, args
 ):
-    if "until" in method:
-        model.all_units_idle.return_value = True
-        await getattr(jhelper, method)(entity)
-    else:
-        await getattr(jhelper, method)(entity, "control-plane")
+    await getattr(jhelper, method)(entity, "control-plane")
     assert model.block_until.call_count == 1
     assert model.block_until.result is True
 
@@ -280,7 +396,6 @@ async def test_jhelper_wait_ready(
 async def test_jhelper_wait_application_ready_timeout(
     jhelper: juju.JujuHelper, model: Model, method: str, entity: str, error: str, args
 ):
-    model.all_units_idle.return_value = False
     with pytest.raises(
         juju.TimeoutException,
         match=f"Timed out while waiting for {error} to be ready",
@@ -311,3 +426,9 @@ async def test_jhelper_wait_ready_missing_application(
 ):
     await getattr(jhelper, method)(entity, "control-plane")
     assert model.block_until.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_jhelper_wait_until_active(jhelper: juju.JujuHelper, model):
+    await jhelper.wait_until_active("control-plane")
+    assert model.wait_for_idle.call_count == 1

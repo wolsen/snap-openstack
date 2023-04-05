@@ -19,6 +19,7 @@ from typing import Optional
 
 from rich.console import Console
 from rich.status import Status
+import yaml
 
 from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import NodeNotExistInClusterException
@@ -37,17 +38,22 @@ from sunbeam.jobs.common import (
 )
 from sunbeam.jobs.juju import (
     MODEL,
+    ActionFailedException,
     ApplicationNotFoundException,
     JujuHelper,
+    LeaderNotFoundException,
     TimeoutException,
     run_sync,
 )
 
 
 LOG = logging.getLogger(__name__)
+MICROK8S_CLOUD = "sunbeam-microk8s"
 APPLICATION = "microk8s"
 MICROK8S_APP_TIMEOUT = 180  # 3 minutes, managing the application should be fast
 MICROK8S_UNIT_TIMEOUT = 1200  # 15 minutes, adding / removing units can take a long time
+CREDENTIAL_SUFFIX = "-creds"
+MICROK8S_DEFAULT_STORAGECLASS = "microk8s-hostpath"
 
 
 def microk8s_addons_questions():
@@ -266,6 +272,62 @@ class RemoveMicrok8sUnitStep(BaseStep, JujuStepHelper):
                 )
             )
         except (ApplicationNotFoundException, TimeoutException) as e:
+            LOG.warning(str(e))
+            return Result(ResultType.FAILED, str(e))
+
+        return Result(ResultType.COMPLETED)
+
+
+class AddMicrok8sCloudStep(BaseStep, JujuStepHelper):
+    def __init__(self, jhelper: JujuHelper):
+        super().__init__("Add MicroK8S cloud", "Add MicroK8S cloud to Juju controller")
+
+        self.name = MICROK8S_CLOUD
+        self.jhelper = jhelper
+        self.credential_name = f"{MICROK8S_CLOUD}{CREDENTIAL_SUFFIX}"
+
+    def is_skip(self, status: Optional[Status] = None) -> Result:
+        """Determines if the step should be skipped or not.
+
+        :return: ResultType.SKIPPED if the Step should be skipped,
+                ResultType.COMPLETED or ResultType.FAILED otherwise
+        """
+        clouds = run_sync(self.jhelper.get_clouds())
+        LOG.debug(f"Clouds registered in the controller: {clouds}")
+        # TODO(hemanth): Need to check if cloud credentials are also created?
+        if f"cloud-{self.name}" in clouds.keys():
+            return Result(ResultType.SKIPPED)
+
+        return Result(ResultType.COMPLETED)
+
+    def run(self, status: Optional[Status] = None) -> Result:
+        """Add microk8s clouds to Juju controller."""
+        try:
+            unit = run_sync(self.jhelper.get_leader_unit(APPLICATION, MODEL))
+            result = run_sync(self.jhelper.run_action(unit, MODEL, "kubeconfig"))
+            source = result.get("kubeconfig")
+            # NOTE: snap has no permission to run scp, so commenting the below lines.
+            # Directly use source path in add_k8s_cloud as action is run on same
+            # machine as add_k8s_cloud.
+            # destination = f"{self.jhelper.data_location}/microk8s_kubeconfig"
+            # run_sync(self.jhelper.scp_from(unit, MODEL, source, destination))
+
+            # NOTE: source path is hardcoded in microk8s charm
+            # https://github.com/canonical/charm-microk8s/issues/65
+            # TODO(hemanth): Action should return the content of kubeconfig file
+            kubeconfig = {}
+            with Path(source).open() as file:
+                kubeconfig = yaml.safe_load(file)
+
+            run_sync(
+                self.jhelper.add_k8s_cloud(self.name, self.credential_name, kubeconfig)
+            )
+        except (
+            FileNotFoundError,
+            ApplicationNotFoundException,
+            LeaderNotFoundException,
+            ActionFailedException,
+        ) as e:
             LOG.warning(str(e))
             return Result(ResultType.FAILED, str(e))
 
