@@ -42,6 +42,9 @@ from sunbeam.commands.microk8s import (
 from sunbeam.commands.openstack import (
     DeployControlPlaneStep,
 )
+from sunbeam.commands.hypervisor import (
+    DeployHypervisorStep,
+)
 from sunbeam.commands.terraform import (
     TerraformHelper,
     TerraformInitStep,
@@ -85,7 +88,11 @@ def bootstrap(role: str) -> None:
     data_location = snap.paths.user_data
 
     # NOTE: install to user writable location
-    for tfplan_dir in ["deploy-microk8s", "deploy-openstack"]:
+    for tfplan_dir in [
+        "deploy-microk8s",
+        "deploy-openstack",
+        "deploy-openstack-hypervisor",
+    ]:
         src = snap.paths.snap / "etc" / tfplan_dir
         dst = snap.paths.user_common / "etc" / tfplan_dir
         LOG.debug(f"Updating {dst} from {src}...")
@@ -148,6 +155,13 @@ def bootstrap(role: str) -> None:
         backend="http",
         data_location=data_location,
     )
+    tfhelper_hypervisor_deploy = TerraformHelper(
+        path=snap.paths.user_common / "etc" / "deploy-openstack-hypervisor",
+        plan="hypervisor-plan",
+        parallelism=1,
+        backend="http",
+        data_location=data_location,
+    )
     jhelper = JujuHelper(data_location)
 
     plan4 = []
@@ -161,6 +175,8 @@ def bootstrap(role: str) -> None:
         plan4.append(AddMicrok8sCloudStep(jhelper))
         plan4.append(TerraformInitStep(tfhelper_openstack_deploy))
         plan4.append(DeployControlPlaneStep(tfhelper_openstack_deploy, jhelper))
+        plan4.append(TerraformInitStep(tfhelper_hypervisor_deploy))
+        plan4.append(DeployHypervisorStep(tfhelper_hypervisor_deploy, jhelper))
 
     run_plan(plan4, console)
 
