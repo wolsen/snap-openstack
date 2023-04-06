@@ -78,3 +78,28 @@ resource "juju_integration" "hypervisor_amqp" {
   }
 }
 
+resource "juju_integration" "hypervisor_identity" {
+  model = var.hypervisor_model
+
+  application {
+    name     = juju_application.openstack-hypervisor.name
+    endpoint = "identity-credentials"
+  }
+
+  application {
+    offer_url = juju_offer.keystone_offer.url
+  }
+}
+
+resource "juju_integration" "hypervisor_certs" {
+  model = var.hypervisor_model
+
+  application {
+    name     = juju_application.openstack-hypervisor.name
+    endpoint = "certificates"
+  }
+
+  application {
+    offer_url = juju_offer.ca_offer.url
+  }
+}
