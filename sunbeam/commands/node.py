@@ -37,11 +37,13 @@ from sunbeam.commands.juju import (
     # RemoveJujuUserStep,
 )
 from sunbeam.commands.microk8s import AddMicrok8sUnitStep, RemoveMicrok8sUnitStep
+from sunbeam.jobs.checks import JujuSnapCheck, SshKeysConnectedCheck
 from sunbeam.jobs.common import (
     Role,
     get_step_message,
     run_plan,
     ResultType,
+    run_preflight_checks,
 )
 from sunbeam.jobs.juju import CONTROLLER, JujuHelper
 
@@ -93,6 +95,12 @@ def join(token: str, role: str) -> None:
     # Register juju user with same name as Node fqdn
     name = utils.get_fqdn()
     ip = utils.get_local_ip_by_default_route()
+
+    preflight_checks = []
+    preflight_checks.append(JujuSnapCheck())
+    preflight_checks.append(SshKeysConnectedCheck())
+
+    run_preflight_checks(preflight_checks, console)
 
     controller = CONTROLLER
     data_location = snap.paths.user_data
