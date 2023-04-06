@@ -60,8 +60,9 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         self.tfhelper.write_tfvars(
             {
                 "model": self.model,
-                # Make this configurable
+                # Make these channel options configurable by the user
                 "openstack_channel": "yoga/edge",
+                "ovn_channel": "22.03/edge",
                 "cloud": self.cloud,
                 "credential": f"{self.cloud}{CREDENTIAL_SUFFIX}",
                 "config": {"workload-storage": MICROK8S_DEFAULT_STORAGECLASS},

@@ -47,6 +47,12 @@ resource "juju_offer" "ca_offer" {
   endpoint         = "certificates"
 }
 
+resource "juju_offer" "ovn_offer" {
+  model            = var.openstack_model
+  application_name = "ovn-relay"
+  endpoint         = "ovsdb-cms-relay"
+}
+
 resource "juju_application" "openstack-hypervisor" {
   name  = "openstack-hypervisor"
   trust = false
@@ -101,5 +107,18 @@ resource "juju_integration" "hypervisor_certs" {
 
   application {
     offer_url = juju_offer.ca_offer.url
+  }
+}
+
+resource "juju_integration" "hypervisor_ovn" {
+  model = var.hypervisor_model
+
+  application {
+    name     = juju_application.openstack-hypervisor.name
+    endpoint = "ovsdb-cms"
+  }
+
+  application {
+    offer_url = juju_offer.ovn_offer.url
   }
 }
