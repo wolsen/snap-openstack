@@ -48,11 +48,13 @@ from sunbeam.commands.terraform import (
 )
 from sunbeam.jobs.checks import (
     JujuSnapCheck,
+    SshKeysConnectedCheck,
 )
 from sunbeam.jobs.common import (
     get_step_message,
     run_plan,
     Role,
+    run_preflight_checks,
 )
 from sunbeam.jobs.juju import CONTROLLER, JujuHelper
 
@@ -92,20 +94,10 @@ def bootstrap(role: str) -> None:
         shutil.copytree(src, dst, dirs_exist_ok=True)
 
     preflight_checks = []
-    if node_role.is_control_node():
-        preflight_checks.extend([JujuSnapCheck()])
+    preflight_checks.append(JujuSnapCheck())
+    preflight_checks.append(SshKeysConnectedCheck())
 
-    for check in preflight_checks:
-        LOG.debug(f"Starting pre-flight check {check.name}")
-        message = f"{check.description} ... "
-        with console.status(f"{check.description} ... "):
-            result = check.run()
-            if result:
-                console.print(f"{message}[green]done[/green]")
-            else:
-                console.print(f"{message}[red]failed[/red]")
-                console.print()
-                raise click.ClickException(check.message)
+    run_preflight_checks(preflight_checks, console)
 
     plan = []
     plan.append(ClusterInitStep(role.upper()))

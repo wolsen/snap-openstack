@@ -15,7 +15,7 @@
 
 import logging
 
-from snaphelpers import Snap
+from snaphelpers import Snap, SnapCtl
 
 LOG = logging.getLogger(__name__)
 
@@ -65,4 +65,29 @@ class JujuSnapCheck(Check):
 
             return False
 
+        return True
+
+
+class SshKeysConnectedCheck(Check):
+    """Check if ssh-keys interface is connected or not."""
+
+    def __init__(self):
+        super().__init__(
+            "Check for ssh-keys interface",
+            "Checking for presence of ssh-keys interface",
+        )
+
+    def run(self) -> bool:
+        """Check for ssh-keys interface."""
+
+        snap = Snap()
+        snap_ctl = SnapCtl()
+        connect = f"sudo snap connect {snap.name}:ssh-keys"
+
+        if not snap_ctl.is_connected("ssh-keys"):
+            self.message = (
+                "ssh-keys interface not detected: please connect ssh-keys interface "
+                f"by running {connect!r}"
+            )
+            return False
         return True

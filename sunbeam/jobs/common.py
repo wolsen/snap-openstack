@@ -178,6 +178,26 @@ class BaseStep:
         pass
 
 
+def run_preflight_checks(checks: list, console: Console):
+    """Run preflight checks sequentially.
+
+    Runs each checks, logs whether the check passed or failed.
+    Exits at first failure.
+
+    Raise ClickException in case of Result Failures.
+    """
+    for check in checks:
+        LOG.debug(f"Starting pre-flight check {check.name}")
+        message = f"{check.description} ... "
+        with console.status(message):
+            if check.run():
+                console.print(f"{message}[green]done[/green]")
+            else:
+                console.print(f"{message}[red]failed[/red]")
+                console.print()
+                raise click.ClickException(check.message)
+
+
 def run_plan(plan: list, console: Console) -> dict:
     """Run plans sequentially.
 
