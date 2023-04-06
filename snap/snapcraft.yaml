@@ -31,7 +31,6 @@ apps:
     command: bin/sunbeam
     plugs:
       - dot-local-share-juju
-      - dot-kube
       - home
       - network
       - network-bind
@@ -184,8 +183,3 @@ plugs:
     interface: personal-files
     write:
       - $HOME/.local/share/juju
-
-  dot-kube:
-    interface: personal-files
-    read:
-      - $HOME/.kube
