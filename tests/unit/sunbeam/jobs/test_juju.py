@@ -17,13 +17,12 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
+import yaml
 from juju.application import Application
 from juju.model import Model
 from juju.unit import Unit
-import yaml
 
 import sunbeam.jobs.juju as juju
-
 
 kubeconfig_yaml = """
 apiVersion: v1

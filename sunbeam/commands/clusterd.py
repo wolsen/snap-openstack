@@ -17,9 +17,6 @@ import logging
 from typing import Optional
 
 from sunbeam import utils
-from sunbeam.commands.juju import JujuStepHelper
-from sunbeam.jobs.common import BaseStep, Result, ResultType, Status
-from sunbeam.jobs.juju import JujuController
 from sunbeam.clusterd.client import Client as clusterClient
 from sunbeam.clusterd.service import (
     ClusterAlreadyBootstrappedException,
@@ -33,6 +30,9 @@ from sunbeam.clusterd.service import (
     TokenAlreadyGeneratedException,
     TokenNotFoundException,
 )
+from sunbeam.commands.juju import JujuStepHelper
+from sunbeam.jobs.common import BaseStep, Result, ResultType, Status
+from sunbeam.jobs.juju import JujuController
 
 CLUSTERD_PORT = 7000
 LOG = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ class ClusterInitStep(BaseStep):
     """Bootstrap clustering on sunbeam clusterd."""
 
     def __init__(self, role: str):
-        super().__init__("Bootstrap Cluster", "Bootstrapping sunbeam cluster")
+        super().__init__("Bootstrap Cluster", "Bootstrapping Sunbeam cluster")
 
         self.port = CLUSTERD_PORT
         self.role = role
@@ -88,7 +88,7 @@ class ClusterAddNodeStep(BaseStep):
     def __init__(self, name: str):
         super().__init__(
             "Add Node Cluster",
-            "Generate token for new node to add to cluster",
+            "Generating token for new node to join cluster",
         )
 
         self.node_name = name
@@ -134,7 +134,7 @@ class ClusterJoinNodeStep(BaseStep):
     """Join node to the sunbeam cluster."""
 
     def __init__(self, token, role):
-        super().__init__("Join node to Cluster", "Join node to sunbeam cluster")
+        super().__init__("Join node to Cluster", "Adding node to Sunbeam cluster")
 
         self.port = CLUSTERD_PORT
         self.client = clusterClient()
@@ -181,7 +181,7 @@ class ClusterListNodeStep(BaseStep):
     """List nodes in the sunbeam cluster."""
 
     def __init__(self):
-        super().__init__("List nodes of Cluster", "List nodes in sunbeam cluster")
+        super().__init__("List nodes of Cluster", "Listing nodes in Sunbeam cluster")
         self.client = clusterClient()
 
     def run(self, status: Optional[Status] = None) -> Result:
@@ -199,7 +199,7 @@ class ClusterUpdateNodeStep(BaseStep):
     """Update node info in the cluster database."""
 
     def __init__(self, name: str, role: str = "", machine_id: int = -1):
-        super().__init__("Update node info", "Update node info in cluster database")
+        super().__init__("Update node info", "Updating node info in cluster database")
         self.client = clusterClient()
         self.name = name
         self.role = role
@@ -219,7 +219,9 @@ class ClusterRemoveNodeStep(BaseStep):
     """Remove node from the sunbeam cluster."""
 
     def __init__(self, name: str):
-        super().__init__("Remove node from Cluster", "Remove node from sunbeam cluster")
+        super().__init__(
+            "Remove node from Cluster", "Removing node from Sunbeam cluster"
+        )
         self.node_name = name
         self.client = clusterClient()
 
@@ -245,8 +247,8 @@ class ClusterAddJujuUserStep(BaseStep):
 
     def __init__(self, name: str, token: str):
         super().__init__(
-            "Add Juju User in Cluster DB",
-            "Add Juju user in cluster database",
+            "Add Juju user to cluster DB",
+            "Adding Juju user to cluster database",
         )
 
         self.username = name
@@ -285,8 +287,8 @@ class ClusterUpdateJujuControllerStep(BaseStep, JujuStepHelper):
 
     def __init__(self, controller: str):
         super().__init__(
-            "Save Juju Controller in Cluster DB",
-            "Save Juju Controller in cluster database",
+            "Add Juju controller to cluster DB",
+            "Adding Juju controller to cluster database",
         )
 
         self.client = clusterClient()

@@ -20,32 +20,18 @@ from rich.status import Status
 
 from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import NodeNotExistInClusterException
-from sunbeam.commands.terraform import (
-    TerraformException,
-    TerraformHelper,
-)
-from sunbeam.commands.juju import (
-    JujuStepHelper,
-)
-from sunbeam.jobs.common import (
-    BaseStep,
-    Result,
-    ResultType,
-)
+from sunbeam.commands.juju import JujuStepHelper
+from sunbeam.commands.openstack import OPENSTACK_MODEL
+from sunbeam.commands.terraform import TerraformException, TerraformHelper
+from sunbeam.jobs.common import BaseStep, Result, ResultType
 from sunbeam.jobs.juju import (
+    CONTROLLER_MODEL,
     MODEL,
     ApplicationNotFoundException,
     JujuHelper,
     TimeoutException,
     run_sync,
 )
-from sunbeam.jobs.juju import (
-    CONTROLLER_MODEL,
-)
-from sunbeam.commands.openstack import (
-    OPENSTACK_MODEL,
-)
-
 
 LOG = logging.getLogger(__name__)
 APPLICATION = "openstack-hypervisor"

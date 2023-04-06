@@ -19,8 +19,8 @@ import click
 
 from sunbeam import log
 from sunbeam.commands import bootstrap as bootstrap_cmds
-from sunbeam.commands import ssh_init as ssh_init_cmds
 from sunbeam.commands import node as node_cmds
+from sunbeam.commands import ssh_init as ssh_init_cmds
 
 LOG = logging.getLogger()
 

@@ -18,7 +18,6 @@ import logging
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-
 import yaml
 from rich.console import Console
 from rich.prompt import Prompt

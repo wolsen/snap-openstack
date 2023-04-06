@@ -13,8 +13,8 @@
 # limitations under the License.
 
 import asyncio
-from pathlib import Path
 import unittest
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -26,13 +26,8 @@ from sunbeam.commands.hypervisor import (
     RemoveHypervisorUnitStep,
 )
 from sunbeam.commands.terraform import TerraformException
-from sunbeam.jobs.common import (
-    ResultType,
-)
-from sunbeam.jobs.juju import (
-    ApplicationNotFoundException,
-    TimeoutException,
-)
+from sunbeam.jobs.common import ResultType
+from sunbeam.jobs.juju import ApplicationNotFoundException, TimeoutException
 
 
 @pytest.fixture(autouse=True)

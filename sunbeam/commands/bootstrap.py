@@ -27,39 +27,26 @@ from sunbeam.commands.clusterd import (
     ClusterInitStep,
     ClusterUpdateJujuControllerStep,
 )
+from sunbeam.commands.hypervisor import (
+    AddHypervisorUnitStep,
+    DeployHypervisorApplicationStep,
+)
 from sunbeam.commands.juju import (
+    BackupBootstrapUserStep,
     BootstrapJujuStep,
     CreateJujuUserStep,
-    BackupBootstrapUserStep,
     RegisterJujuUserStep,
     SaveJujuUserLocallyStep,
 )
 from sunbeam.commands.microk8s import (
-    DeployMicrok8sApplicationStep,
-    AddMicrok8sUnitStep,
     AddMicrok8sCloudStep,
+    AddMicrok8sUnitStep,
+    DeployMicrok8sApplicationStep,
 )
-from sunbeam.commands.openstack import (
-    DeployControlPlaneStep,
-)
-from sunbeam.commands.hypervisor import (
-    DeployHypervisorApplicationStep,
-    AddHypervisorUnitStep,
-)
-from sunbeam.commands.terraform import (
-    TerraformHelper,
-    TerraformInitStep,
-)
-from sunbeam.jobs.checks import (
-    JujuSnapCheck,
-    SshKeysConnectedCheck,
-)
-from sunbeam.jobs.common import (
-    get_step_message,
-    run_plan,
-    Role,
-    run_preflight_checks,
-)
+from sunbeam.commands.openstack import DeployControlPlaneStep
+from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
+from sunbeam.jobs.checks import JujuSnapCheck
+from sunbeam.jobs.common import Role, get_step_message, run_plan, run_preflight_checks
 from sunbeam.jobs.juju import CONTROLLER, JujuHelper
 
 LOG = logging.getLogger(__name__)
