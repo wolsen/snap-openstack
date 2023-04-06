@@ -19,7 +19,8 @@ from rich.console import Console
 console = Console()
 
 
-SSH_INIT_TEMPLATE = """ssh-keygen -b 4096 -f $HOME/.ssh/id_rsa -t rsa -N ""
+SSH_INIT_TEMPLATE = """# Generate keypair and set-up prompt-less access to local machine
+ssh-keygen -b 4096 -f $HOME/.ssh/id_rsa -t rsa -N ""
 cat $HOME/.ssh/id_rsa.pub >> $HOME/.ssh/authorized_keys
 ssh-keyscan -H $(hostname --all-ip-addresses) >> $HOME/.ssh/known_hosts
 """
@@ -27,5 +28,5 @@ ssh-keyscan -H $(hostname --all-ip-addresses) >> $HOME/.ssh/known_hosts
 
 @click.command()
 def ssh_init() -> None:
-    """Generate ssh init script"""
+    """Generate SSH init script"""
     console.print(SSH_INIT_TEMPLATE)
