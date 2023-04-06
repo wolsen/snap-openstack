@@ -18,8 +18,8 @@ from unittest.mock import MagicMock
 import pytest
 from requests.exceptions import HTTPError
 
-from sunbeam.clusterd.cluster import ClusterService
 import sunbeam.clusterd.service as service
+from sunbeam.clusterd.cluster import ClusterService
 from sunbeam.commands.clusterd import (
     ClusterAddJujuUserStep,
     ClusterAddNodeStep,

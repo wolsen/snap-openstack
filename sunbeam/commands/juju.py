@@ -41,7 +41,6 @@ from sunbeam.jobs.juju import (
     JujuAccountNotFound,
 )
 
-
 LOG = logging.getLogger(__name__)
 PEXPECT_TIMEOUT = 60
 
@@ -169,7 +168,7 @@ class BootstrapJujuStep(BaseStep, JujuStepHelper):
     """Bootstraps the Juju controller."""
 
     def __init__(self, cloud_name: str, cloud_type: str, controller: str):
-        super().__init__("Bootstrap Juju", "Bootstrapping Juju onto cloud")
+        super().__init__("Bootstrap Juju", "Bootstrapping Juju onto machine")
 
         self.cloud = cloud_name
         self.cloud_type = cloud_type
@@ -237,7 +236,7 @@ class CreateJujuUserStep(BaseStep, JujuStepHelper):
     """Create user in juju and grant superuser access."""
 
     def __init__(self, name: str):
-        super().__init__("Create User", "Create user in juju")
+        super().__init__("Create User", "Creating user for machine in Juju")
         self.username = name
         self.registration_token_regex = r"juju register (.*?)\n"
 
@@ -282,7 +281,7 @@ class CreateJujuUserStep(BaseStep, JujuStepHelper):
             )
             token = re_groups.group(1)
             if not token:
-                return Result(ResultType.FAILED, "Not able to parse Registration token")
+                return Result(ResultType.FAILED, "Not able to parse registration token")
 
             # Grant superuser access to user.
             cmd = [self._get_juju_binary(), "grant", self.username, "superuser"]
@@ -318,7 +317,7 @@ class RemoveJujuUserStep(BaseStep, JujuStepHelper):
     """Remove user in juju."""
 
     def __init__(self, name: str):
-        super().__init__("Remove User", "Remove user in juju")
+        super().__init__("Remove User", "Removing machine user from Juju")
         self.username = name
 
         home = os.environ.get("SNAP_REAL_HOME")
@@ -336,7 +335,7 @@ class RemoveJujuUserStep(BaseStep, JujuStepHelper):
             if self.username not in user_names:
                 return Result(ResultType.SKIPPED)
         except subprocess.CalledProcessError as e:
-            LOG.exception("Error getting users list from juju.")
+            LOG.exception("Error getting list of users from Juju.")
             LOG.warning(e.stderr)
             return Result(ResultType.FAILED, str(e))
 
@@ -359,7 +358,7 @@ class RemoveJujuUserStep(BaseStep, JujuStepHelper):
 
             return Result(ResultType.COMPLETED)
         except subprocess.CalledProcessError as e:
-            LOG.exception(f"Error removing user {self.username} in Juju")
+            LOG.exception(f"Error removing user {self.username} from Juju")
             LOG.warning(e.stderr)
             return Result(ResultType.FAILED, str(e))
 
@@ -370,7 +369,7 @@ class RegisterJujuUserStep(BaseStep, JujuStepHelper):
     def __init__(
         self, name: str, controller: str, data_location: Path, replace: bool = False
     ):
-        super().__init__("Register User", "Register juju user using token")
+        super().__init__("Register Juju User", "Registering Juju user using token")
         self.username = name
         self.controller = controller
         self.data_location = data_location
@@ -401,7 +400,7 @@ class RegisterJujuUserStep(BaseStep, JujuStepHelper):
                 return Result(ResultType.SKIPPED)
         except subprocess.CalledProcessError as e:
             if "No controllers registered" not in e.stderr:
-                LOG.exception("Error getting logged in user from juju.")
+                LOG.exception("Error retrieving authenticated user from Juju.")
                 LOG.warning(e.stderr)
                 return Result(ResultType.FAILED, str(e))
             # Error is about no controller register, which is okay is this case
@@ -420,7 +419,9 @@ class RegisterJujuUserStep(BaseStep, JujuStepHelper):
         :return:
         """
         if not self.registration_token:
-            return Result(ResultType.FAILED, "No registration token in Cluster DB")
+            return Result(
+                ResultType.FAILED, "No registration token found in Cluster database"
+            )
 
         new_password_re = r"Enter a new password"
         confirm_password_re = r"Confirm password"
@@ -465,7 +466,7 @@ class RegisterJujuUserStep(BaseStep, JujuStepHelper):
                     LOG.debug("User registration completed")
                     break
         except pexpect.TIMEOUT as e:
-            LOG.exception(f"Error registering juju user {self.username}")
+            LOG.exception(f"Error registering user {self.username} in Juju")
             LOG.warning(e)
             return Result(ResultType.FAILED, str(e))
 
@@ -476,7 +477,7 @@ class AddJujuMachineStep(BaseStep, JujuStepHelper):
     """Add machine in juju."""
 
     def __init__(self, ip: str):
-        super().__init__("Add machine", "Add machine to juju")
+        super().__init__("Add machine", "Adding machine to Juju model")
 
         self.machine_ip = ip
 
@@ -500,7 +501,7 @@ class AddJujuMachineStep(BaseStep, JujuStepHelper):
                     return Result(ResultType.SKIPPED, machine)
 
         except subprocess.CalledProcessError as e:
-            LOG.exception("Error getting machines list from juju.")
+            LOG.exception("Error retrieving machines list from Juju")
             LOG.warning(e.stderr)
             return Result(ResultType.FAILED, str(e))
 
@@ -551,7 +552,7 @@ class AddJujuMachineStep(BaseStep, JujuStepHelper):
             # respond with machine id as -1 if machine is not reflected in juju
             return Result(ResultType.COMPLETED, "-1")
         except pexpect.TIMEOUT as e:
-            LOG.exception("Error adding machine {self.machine_ip}")
+            LOG.exception("Error adding machine {self.machine_ip} to Juju")
             LOG.warning(e)
             return Result(ResultType.FAILED, "TIMED OUT to add machine")
 
@@ -560,7 +561,7 @@ class RemoveJujuMachineStep(BaseStep, JujuStepHelper):
     """Remove machine in juju."""
 
     def __init__(self, name: str):
-        super().__init__("Remove machine", "Remove machine from model")
+        super().__init__("Remove machine", f"Removing machine {name} from Juju model")
 
         self.name = name
         self.machine_id = -1
@@ -590,7 +591,7 @@ class RemoveJujuMachineStep(BaseStep, JujuStepHelper):
                 LOG.debug("Machine does not exist")
                 return Result(ResultType.SKIPPED)
         except subprocess.CalledProcessError as e:
-            LOG.exception("Error getting machines list from juju.")
+            LOG.exception("Error retrieving machine list from Juju")
             LOG.warning(e.stderr)
             return Result(ResultType.FAILED, str(e))
 
@@ -606,7 +607,8 @@ class RemoveJujuMachineStep(BaseStep, JujuStepHelper):
         try:
             if self.machine_id == -1:
                 return Result(
-                    ResultType.FAILED, "Not able to retrieve machine id from cluster DB"
+                    ResultType.FAILED,
+                    "Not able to retrieve machine id from Cluster database",
                 )
 
             cmd = [
@@ -624,7 +626,7 @@ class RemoveJujuMachineStep(BaseStep, JujuStepHelper):
 
             return Result(ResultType.COMPLETED)
         except subprocess.CalledProcessError as e:
-            LOG.exception(f"Error removing machine {self.machine_id} from Juju model")
+            LOG.exception(f"Error removing machine {self.machine_id} from Juju")
             LOG.warning(e.stderr)
             return Result(ResultType.FAILED, str(e))
 
@@ -633,7 +635,7 @@ class BackupBootstrapUserStep(BaseStep, JujuStepHelper):
     """Backup bootstrap user credentials"""
 
     def __init__(self, name: str, data_location: Path):
-        super().__init__("Backup Default User", "Backup bootstrap user credentials")
+        super().__init__("Backup Bootstrap User", "Saving bootstrap user credentials")
         self.username = name
         self.data_location = data_location
 
@@ -653,7 +655,7 @@ class BackupBootstrapUserStep(BaseStep, JujuStepHelper):
             if username == "admin":
                 return Result(ResultType.COMPLETED)
         except subprocess.CalledProcessError as e:
-            LOG.exception("Error getting user from juju.")
+            LOG.exception("Error retrieving user from Juju")
             LOG.warning(e.stderr)
             return Result(ResultType.FAILED, str(e))
 
@@ -679,7 +681,7 @@ class SaveJujuUserLocallyStep(BaseStep):
     """Save user locally."""
 
     def __init__(self, name: str, data_location: Path):
-        super().__init__("Save User", "Save juju user locally, generating password")
+        super().__init__("Save User", "Save Juju user for local usage")
         self.username = name
         self.data_location = data_location
 

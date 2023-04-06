@@ -18,29 +18,15 @@ from typing import Optional
 
 from rich.status import Status
 
-from sunbeam.commands.juju import (
-    JujuStepHelper,
-)
+from sunbeam.commands.juju import JujuStepHelper
 from sunbeam.commands.microk8s import (
     CREDENTIAL_SUFFIX,
     MICROK8S_CLOUD,
     MICROK8S_DEFAULT_STORAGECLASS,
 )
-from sunbeam.commands.terraform import (
-    TerraformException,
-    TerraformHelper,
-)
-from sunbeam.jobs.common import (
-    BaseStep,
-    Result,
-    ResultType,
-)
-from sunbeam.jobs.juju import (
-    JujuHelper,
-    TimeoutException,
-    run_sync,
-)
-
+from sunbeam.commands.terraform import TerraformException, TerraformHelper
+from sunbeam.jobs.common import BaseStep, Result, ResultType
+from sunbeam.jobs.juju import JujuHelper, TimeoutException, run_sync
 
 LOG = logging.getLogger(__name__)
 OPENSTACK_MODEL = "openstack"

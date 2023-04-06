@@ -28,21 +28,20 @@ from sunbeam.commands.clusterd import (
     ClusterRemoveNodeStep,
     ClusterUpdateNodeStep,
 )
+from sunbeam.commands.juju import AddJujuMachineStep  # RemoveJujuUserStep,
 from sunbeam.commands.juju import (
-    AddJujuMachineStep,
     CreateJujuUserStep,
     RegisterJujuUserStep,
     RemoveJujuMachineStep,
     SaveJujuUserLocallyStep,
-    # RemoveJujuUserStep,
 )
 from sunbeam.commands.microk8s import AddMicrok8sUnitStep, RemoveMicrok8sUnitStep
 from sunbeam.jobs.checks import JujuSnapCheck, SshKeysConnectedCheck
 from sunbeam.jobs.common import (
+    ResultType,
     Role,
     get_step_message,
     run_plan,
-    ResultType,
     run_preflight_checks,
 )
 from sunbeam.jobs.juju import CONTROLLER, JujuHelper
@@ -81,7 +80,7 @@ def add_node(name: str) -> None:
                 f"{add_node_step_result.message}"
             )
         else:
-            click.echo("Node already part of the sunbeam cluster")
+            click.echo("Node already a member of the Sunbeam cluster")
 
 
 @click.command()
@@ -129,7 +128,7 @@ def join(token: str, role: str) -> None:
 
     run_plan(plan2, console)
 
-    click.echo(f"Node has been joined as a {role} node")
+    click.echo(f"Node has joined cluster as a {role} node")
 
 
 @click.command()
@@ -169,7 +168,7 @@ def remove(name: str) -> None:
     ]
     run_plan(plan, console)
 
-    click.echo(f"Removed Node {name} from the cluster")
+    click.echo(f"Removed node {name} from the cluster")
     # Removing machine does not clean up all deployed juju components. This is
     # deliberate, see https://bugs.launchpad.net/juju/+bug/1851489.
     # Without the workaround mentioned in LP#1851489, it is not possible to

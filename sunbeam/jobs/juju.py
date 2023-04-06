@@ -15,8 +15,8 @@
 
 import asyncio
 import base64
-import logging
 import json
+import logging
 from dataclasses import asdict, dataclass
 from functools import wraps
 from pathlib import Path
@@ -24,8 +24,8 @@ from typing import Awaitable, Dict, List, Optional, TypeVar, cast
 
 import yaml
 from juju.application import Application
-from juju.controller import Controller
 from juju.client import client as jujuClient
+from juju.controller import Controller
 from juju.errors import JujuAPIError
 from juju.model import Model
 from juju.unit import Unit

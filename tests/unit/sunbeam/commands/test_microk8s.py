@@ -13,8 +13,8 @@
 # limitations under the License.
 
 import asyncio
-from pathlib import Path
 import unittest
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -27,9 +27,7 @@ from sunbeam.commands.microk8s import (
     RemoveMicrok8sUnitStep,
 )
 from sunbeam.commands.terraform import TerraformException
-from sunbeam.jobs.common import (
-    ResultType,
-)
+from sunbeam.jobs.common import ResultType
 from sunbeam.jobs.juju import (
     ActionFailedException,
     ApplicationNotFoundException,
@@ -164,7 +162,7 @@ class TestAddMicrok8sUnitStep(unittest.TestCase):
 
         self.jhelper.get_application.assert_called_once()
         assert result.result_type == ResultType.FAILED
-        assert result.message == "MicroK8S application has not been deployed yet"
+        assert result.message == "MicroK8S has not been deployed"
 
     def test_is_skip_unit_already_deployed(self):
         id = "1"

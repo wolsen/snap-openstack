@@ -17,25 +17,16 @@ import logging
 from pathlib import Path
 from typing import Optional
 
+import yaml
 from rich.console import Console
 from rich.status import Status
-import yaml
 
 from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import NodeNotExistInClusterException
-from sunbeam.commands.terraform import (
-    TerraformException,
-    TerraformHelper,
-)
-from sunbeam.commands.juju import (
-    JujuStepHelper,
-)
+from sunbeam.commands.juju import JujuStepHelper
+from sunbeam.commands.terraform import TerraformException, TerraformHelper
 from sunbeam.jobs import questions
-from sunbeam.jobs.common import (
-    BaseStep,
-    Result,
-    ResultType,
-)
+from sunbeam.jobs.common import BaseStep, Result, ResultType
 from sunbeam.jobs.juju import (
     MODEL,
     ActionFailedException,
@@ -45,7 +36,6 @@ from sunbeam.jobs.juju import (
     TimeoutException,
     run_sync,
 )
-
 
 LOG = logging.getLogger(__name__)
 MICROK8S_CLOUD = "sunbeam-microk8s"
@@ -59,13 +49,13 @@ MICROK8S_DEFAULT_STORAGECLASS = "microk8s-hostpath"
 def microk8s_addons_questions():
     return {
         "metallb": questions.PromptQuestion(
-            "Metallb range", default_value="10.20.21.10-10.20.21.20"
+            "MetalLB address allocation range", default_value="10.20.21.10-10.20.21.20"
         ),
     }
 
 
 class DeployMicrok8sApplicationStep(BaseStep, JujuStepHelper):
-    """Deploy Microk8s application using Terraform cloud"""
+    """Deploy Microk8s application using Terraform"""
 
     _CONFIG = "TerraformVarsMicrok8sAddons"
 
@@ -76,7 +66,7 @@ class DeployMicrok8sApplicationStep(BaseStep, JujuStepHelper):
         preseed_file: Optional[Path] = None,
         accept_defaults: bool = False,
     ):
-        super().__init__("Deploy MicroK8S", "Deploy MicroK8S application onto cloud")
+        super().__init__("Deploy MicroK8S", "Deploying MicroK8S")
         self.tfhelper = tfhelper
         self.jhelper = jhelper
         self.preseed_file = preseed_file
@@ -168,7 +158,7 @@ class DeployMicrok8sApplicationStep(BaseStep, JujuStepHelper):
 
 class AddMicrok8sUnitStep(BaseStep, JujuStepHelper):
     def __init__(self, name: str, jhelper: JujuHelper):
-        super().__init__("Add MicroK8S unit", "Add MicroK8S unit on machine")
+        super().__init__("Add MicroK8S unit", "Adding MicroK8S unit to machine")
 
         self.name = name
         self.jhelper = jhelper
@@ -190,9 +180,7 @@ class AddMicrok8sUnitStep(BaseStep, JujuStepHelper):
         try:
             application = run_sync(self.jhelper.get_application(APPLICATION, MODEL))
         except ApplicationNotFoundException:
-            return Result(
-                ResultType.FAILED, "MicroK8S application has not been deployed yet"
-            )
+            return Result(ResultType.FAILED, "MicroK8S has not been deployed")
 
         for unit in application.units:
             if unit.machine.id == self.machine_id:
@@ -226,7 +214,7 @@ class AddMicrok8sUnitStep(BaseStep, JujuStepHelper):
 
 class RemoveMicrok8sUnitStep(BaseStep, JujuStepHelper):
     def __init__(self, name: str, jhelper: JujuHelper):
-        super().__init__("Remove MicroK8S unit", "Remove MicroK8S unit from machine")
+        super().__init__("Remove MicroK8S unit", "Removing MicroK8S unit from machine")
 
         self.name = name
         self.jhelper = jhelper
@@ -250,9 +238,7 @@ class RemoveMicrok8sUnitStep(BaseStep, JujuStepHelper):
             application = run_sync(self.jhelper.get_application(APPLICATION, MODEL))
         except ApplicationNotFoundException as e:
             LOG.debug(str(e))
-            return Result(
-                ResultType.SKIPPED, "MicroK8S application has not been deployed yet"
-            )
+            return Result(ResultType.SKIPPED, "MicroK8S has not been deployed yet")
 
         for unit in application.units:
             if unit.machine.id == machine_id:
@@ -280,7 +266,9 @@ class RemoveMicrok8sUnitStep(BaseStep, JujuStepHelper):
 
 class AddMicrok8sCloudStep(BaseStep, JujuStepHelper):
     def __init__(self, jhelper: JujuHelper):
-        super().__init__("Add MicroK8S cloud", "Add MicroK8S cloud to Juju controller")
+        super().__init__(
+            "Add MicroK8S cloud", "Adding MicroK8S cloud to Juju controller"
+        )
 
         self.name = MICROK8S_CLOUD
         self.jhelper = jhelper
