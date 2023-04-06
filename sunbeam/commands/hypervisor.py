@@ -73,22 +73,6 @@ class DeployHypervisorApplicationStep(BaseStep, JujuStepHelper):
         self.hypervisor_model = CONTROLLER_MODEL.split("/")[-1]
         self.openstack_model = OPENSTACK_MODEL
 
-    def has_prompts(self) -> bool:
-        """Returns true if the step has prompts that it can ask the user.
-
-        :return: True if the step can ask the user for prompts,
-                 False otherwise
-        """
-        return False
-
-    def is_skip(self, status: Optional[Status] = None) -> Result:
-        """Determines if the step should be skipped or not.
-
-        :return: ResultType.SKIPPED if the Step should be skipped,
-                ResultType.COMPLETED or ResultType.FAILED otherwise
-        """
-        return Result(ResultType.COMPLETED)
-
     def run(self, status: Optional[Status] = None) -> Result:
         """Apply terraform configuration to deploy hypervisor"""
         machine_ids = []
