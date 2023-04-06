@@ -26,6 +26,9 @@ terraform {
 
 provider "juju" {}
 
+# Offers should be in the openstack control plane deployment plan but
+# need to be here for the moment due to
+# https://github.com/juju/terraform-provider-juju/issues/190
 resource "juju_offer" "rabbit_offer" {
   model            = var.openstack_model
   application_name = "rabbitmq"
@@ -48,7 +51,7 @@ resource "juju_application" "openstack-hypervisor" {
   name  = "openstack-hypervisor"
   trust = false
   model = var.hypervisor_model
-  placement = var.placement
+  units = length(var.machine_ids) # need to manage the number of units
 
   charm {
     name    = "openstack-hypervisor"

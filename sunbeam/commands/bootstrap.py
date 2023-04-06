@@ -43,7 +43,8 @@ from sunbeam.commands.openstack import (
     DeployControlPlaneStep,
 )
 from sunbeam.commands.hypervisor import (
-    DeployHypervisorStep,
+    DeployHypervisorApplicationStep,
+    AddHypervisorUnitStep,
 )
 from sunbeam.commands.terraform import (
     TerraformHelper,
@@ -175,10 +176,18 @@ def bootstrap(role: str) -> None:
         plan4.append(AddMicrok8sCloudStep(jhelper))
         plan4.append(TerraformInitStep(tfhelper_openstack_deploy))
         plan4.append(DeployControlPlaneStep(tfhelper_openstack_deploy, jhelper))
-        plan4.append(TerraformInitStep(tfhelper_hypervisor_deploy))
-        plan4.append(DeployHypervisorStep(tfhelper_hypervisor_deploy, jhelper))
 
     run_plan(plan4, console)
+
+    plan5 = []
+    if node_role.is_compute_node():
+        plan5.append(TerraformInitStep(tfhelper_hypervisor_deploy))
+        plan5.append(
+            DeployHypervisorApplicationStep(tfhelper_hypervisor_deploy, jhelper)
+        )
+        plan5.append(AddHypervisorUnitStep(fqdn, jhelper))
+
+    run_plan(plan5, console)
 
     click.echo(f"Node has been bootstrapped as a {role} node")
 
