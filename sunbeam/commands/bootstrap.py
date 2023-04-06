@@ -45,7 +45,7 @@ from sunbeam.commands.microk8s import (
 )
 from sunbeam.commands.openstack import DeployControlPlaneStep
 from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
-from sunbeam.jobs.checks import JujuSnapCheck
+from sunbeam.jobs.checks import JujuSnapCheck, SshKeysConnectedCheck
 from sunbeam.jobs.common import Role, get_step_message, run_plan, run_preflight_checks
 from sunbeam.jobs.juju import CONTROLLER, JujuHelper
 
