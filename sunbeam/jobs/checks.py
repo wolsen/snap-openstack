@@ -14,6 +14,8 @@
 # limitations under the License.
 
 import logging
+import os
+from pathlib import Path
 
 from snaphelpers import Snap, SnapCtl
 
@@ -90,4 +92,37 @@ class SshKeysConnectedCheck(Check):
                 f"by running {connect!r}"
             )
             return False
+
+        return True
+
+
+class DaemonGroupCheck(Check):
+    """Check if user is member of socket group."""
+
+    def __init__(self):
+        snap = Snap()
+
+        self.user = os.environ.get("USER")
+        self.group = snap.config.get("daemon.group")
+        self.clusterd_socket = Path(snap.paths.common / "state" / "control.socket")
+
+        super().__init__(
+            "Check for snap_daemon group membership",
+            f"Checking if user {self.user} is member of group {self.group}",
+        )
+
+    def run(self) -> bool:
+        if not os.access(self.clusterd_socket, os.W_OK):
+            self.message = (
+                "Insufficient permissions to run sunbeam commands\n"
+                f"Add the user {self.user!r} to the {self.group!r} group:\n"
+                "\n"
+                f"    sudo usermod -a -G {self.group} {self.user}\n"
+                "\n"
+                "After this, reload the user groups either via a reboot or by"
+                f" running 'newgrp {self.group}'."
+            )
+
+            return False
+
         return True
