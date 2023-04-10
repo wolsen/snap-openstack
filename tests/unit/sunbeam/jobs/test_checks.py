@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from unittest.mock import Mock
 
 from sunbeam.jobs import checks
@@ -41,3 +42,26 @@ class TestSshKeysConnectedCheck:
 
         assert result is False
         assert "sudo snap connect mysnap:ssh-keys" in check.message
+
+
+class TestDaemonGroupCheck:
+    def test_run(self, mocker, snap):
+        mocker.patch.object(checks, "Snap", return_value=snap)
+        mocker.patch.object(os, "access", return_value=True)
+
+        check = checks.DaemonGroupCheck()
+
+        result = check.run()
+
+        assert result is True
+
+    def test_run_no_daemon_socket_access(self, mocker, snap):
+        mocker.patch.object(checks, "Snap", return_value=snap)
+        mocker.patch.object(os, "access", return_value=False)
+
+        check = checks.DaemonGroupCheck()
+
+        result = check.run()
+
+        assert result is False
+        assert "Insufficient permissions" in check.message

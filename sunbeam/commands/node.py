@@ -36,7 +36,7 @@ from sunbeam.commands.juju import (
     SaveJujuUserLocallyStep,
 )
 from sunbeam.commands.microk8s import AddMicrok8sUnitStep, RemoveMicrok8sUnitStep
-from sunbeam.jobs.checks import JujuSnapCheck, SshKeysConnectedCheck
+from sunbeam.jobs.checks import DaemonGroupCheck, JujuSnapCheck, SshKeysConnectedCheck
 from sunbeam.jobs.common import (
     ResultType,
     Role,
@@ -58,6 +58,9 @@ def add_node(name: str) -> None:
 
     Register new node to the cluster.
     """
+    preflight_checks = [DaemonGroupCheck()]
+    run_preflight_checks(preflight_checks, console)
+
     plan1 = [
         ClusterAddNodeStep(name),
         CreateJujuUserStep(name),
@@ -98,6 +101,7 @@ def join(token: str, role: str) -> None:
     preflight_checks = []
     preflight_checks.append(JujuSnapCheck())
     preflight_checks.append(SshKeysConnectedCheck())
+    preflight_checks.append(DaemonGroupCheck())
 
     run_preflight_checks(preflight_checks, console)
 
@@ -137,6 +141,9 @@ def list() -> None:
 
     List all nodes in the cluster.
     """
+    preflight_checks = [DaemonGroupCheck()]
+    run_preflight_checks(preflight_checks, console)
+
     plan = [ClusterListNodeStep()]
     results = run_plan(plan, console)
 
@@ -157,6 +164,9 @@ def remove(name: str) -> None:
     """
     data_location = snap.paths.user_data
     jhelper = JujuHelper(data_location)
+
+    preflight_checks = [DaemonGroupCheck()]
+    run_preflight_checks(preflight_checks, console)
 
     plan = [
         RemoveMicrok8sUnitStep(name, jhelper),
