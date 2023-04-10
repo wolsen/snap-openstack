@@ -17,7 +17,7 @@ import logging
 from abc import ABC
 from urllib.parse import quote
 
-from requests.exceptions import HTTPError
+from requests.exceptions import ConnectionError, HTTPError
 from requests.sessions import Session
 from requests_unixsocket import DEFAULT_SCHEME
 from snaphelpers import Snap
@@ -113,9 +113,13 @@ class BaseService(ABC):
             path = path[1:]
         netloc = quote(str(self._socket_path), safe="")
         url = f"{DEFAULT_SCHEME}{netloc}/{path}"
-        LOG.debug("[%s] %s, args=%s", method, url, kwargs)
-        response = self.__session.request(method=method, url=url, **kwargs)
-        LOG.debug("Response(%s) = %s", response, response.text)
+
+        try:
+            LOG.debug("[%s] %s, args=%s", method, url, kwargs)
+            response = self.__session.request(method=method, url=url, **kwargs)
+            LOG.debug("Response(%s) = %s", response, response.text)
+        except ConnectionError as e:
+            raise ClusterServiceUnavailableException(str(e))
 
         try:
             response.raise_for_status()
