@@ -26,7 +26,7 @@ from sunbeam.commands.microk8s import (
 )
 from sunbeam.commands.terraform import TerraformException, TerraformHelper
 from sunbeam.jobs.common import BaseStep, Result, ResultType
-from sunbeam.jobs.juju import JujuHelper, TimeoutException, run_sync
+from sunbeam.jobs.juju import JujuHelper, JujuWaitException, TimeoutException, run_sync
 
 LOG = logging.getLogger(__name__)
 OPENSTACK_MODEL = "openstack"
@@ -81,6 +81,9 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
                     timeout=OPENSTACK_DEPLOY_TIMEOUT,
                 )
             )
+        except JujuWaitException as e:
+            LOG.warning(str(e))
+            return Result(ResultType.FAILED, str(e))
         except TimeoutException as e:
             LOG.warning(str(e))
             return Result(ResultType.FAILED, str(e))
