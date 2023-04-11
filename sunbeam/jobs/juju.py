@@ -26,7 +26,13 @@ import yaml
 from juju.application import Application
 from juju.client import client as jujuClient
 from juju.controller import Controller
-from juju.errors import JujuAPIError
+from juju.errors import (
+    JujuAgentError,
+    JujuAPIError,
+    JujuAppError,
+    JujuMachineError,
+    JujuUnitError,
+)
 from juju.model import Model
 from juju.unit import Unit
 
@@ -106,6 +112,12 @@ class TimeoutException(JujuException):
 
 class ActionFailedException(JujuException):
     """Raised when Juju run failed."""
+
+    pass
+
+
+class JujuWaitException(JujuException):
+    """Raised for any errors during wait."""
 
     pass
 
@@ -493,6 +505,10 @@ class JujuHelper:
         try:
             # Wait for all the unit workload status to active and Agent status to idle
             await model_impl.wait_for_idle(status="active", timeout=timeout)
+        except (JujuMachineError, JujuAgentError, JujuUnitError, JujuAppError) as e:
+            raise JujuWaitException(
+                f"Error while waiting for model {model!r} to be ready: {str(e)}"
+            ) from e
         except asyncio.TimeoutError as e:
             raise TimeoutException(
                 f"Timed out while waiting for model {model!r} to be ready"

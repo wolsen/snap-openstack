@@ -431,3 +431,29 @@ async def test_jhelper_wait_ready_missing_application(
 async def test_jhelper_wait_until_active(jhelper: juju.JujuHelper, model):
     await jhelper.wait_until_active("control-plane")
     assert model.wait_for_idle.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_jhelper_wait_until_active_unit_in_error_state(
+    jhelper: juju.JujuHelper, model
+):
+    model.wait_for_idle.side_effect = juju.JujuWaitException("Unit is in error state")
+
+    with pytest.raises(
+        juju.JujuWaitException,
+        match="Unit is in error state",
+    ):
+        await jhelper.wait_until_active("control-plane")
+    assert model.wait_for_idle.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_jhelper_wait_until_active_timed_out(jhelper: juju.JujuHelper, model):
+    model.wait_for_idle.side_effect = juju.TimeoutException("timed out...")
+
+    with pytest.raises(
+        juju.TimeoutException,
+        match="timed out...",
+    ):
+        await jhelper.wait_until_active("control-plane")
+    assert model.wait_for_idle.call_count == 1

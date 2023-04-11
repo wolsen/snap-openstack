@@ -22,7 +22,11 @@ import pytest
 from sunbeam.commands.openstack import DeployControlPlaneStep
 from sunbeam.commands.terraform import TerraformException
 from sunbeam.jobs.common import ResultType
-from sunbeam.jobs.juju import ApplicationNotFoundException, TimeoutException
+from sunbeam.jobs.juju import (
+    ApplicationNotFoundException,
+    JujuWaitException,
+    TimeoutException,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -79,3 +83,15 @@ class TestDeployControlPlaneStep(unittest.TestCase):
         self.jhelper.wait_until_active.assert_called_once()
         assert result.result_type == ResultType.FAILED
         assert result.message == "timed out"
+
+    def test_run_unit_in_error_state(self):
+        self.jhelper.wait_until_active.side_effect = JujuWaitException(
+            "Unit in error: placement/0"
+        )
+
+        step = DeployControlPlaneStep(self.tfhelper, self.jhelper)
+        result = step.run()
+
+        self.jhelper.wait_until_active.assert_called_once()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == "Unit in error: placement/0"
