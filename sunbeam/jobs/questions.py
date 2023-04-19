@@ -20,7 +20,7 @@ from typing import Any, Callable, Optional
 
 import yaml
 from rich.console import Console
-from rich.prompt import Prompt
+from rich.prompt import Confirm, Prompt
 
 from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import ConfigItemNotFoundException
@@ -117,6 +117,14 @@ class PromptQuestion(Question):
     @property
     def question_function(self):
         return Prompt.ask
+
+
+class ConfirmQuestion(Question):
+    """Ask the user a simple yes / no question."""
+
+    @property
+    def question_function(self):
+        return Confirm.ask
 
 
 class QuestionBank:

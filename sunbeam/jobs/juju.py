@@ -245,6 +245,23 @@ class JujuHelper:
             )
         return unit
 
+    @controller
+    async def get_unit_from_machine(
+        self, application: str, machine_id: int, model: str
+    ) -> Unit:
+        """Fetch a application's unit in model on a specific machine.
+
+        :application: application name of the unit to look for
+        :machine_id: Id of machine unit is on
+        :model: Name of the model where the unit is located"""
+        model_impl = await self.get_model(model)
+        application = model_impl.applications.get(application)
+        unit = None
+        for u in application.units:
+            if machine_id == u.machine.entity_id:
+                unit = u
+        return unit
+
     def _validate_unit(self, unit: str):
         """Validate unit name."""
         parts = unit.split("/")
@@ -513,3 +530,14 @@ class JujuHelper:
             raise TimeoutException(
                 f"Timed out while waiting for model {model!r} to be ready"
             ) from e
+
+    @controller
+    async def set_application_config(self, model: str, app: str, config: dict):
+        """Update application configuration
+
+        :model: Name of the model to wait for readiness
+        :application: Application to update
+        :config: Config to be set
+        """
+        model_impl = await self.get_model(model)
+        await model_impl.applications[app].set_config(config)
