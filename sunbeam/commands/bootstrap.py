@@ -40,6 +40,10 @@ from sunbeam.commands.juju import (
     RegisterJujuUserStep,
     SaveJujuUserLocallyStep,
 )
+from sunbeam.commands.microceph import (
+    AddMicrocephUnitStep,
+    DeployMicrocephApplicationStep,
+)
 from sunbeam.commands.microk8s import (
     AddMicrok8sCloudStep,
     AddMicrok8sUnitStep,
@@ -91,6 +95,7 @@ def bootstrap(
     # NOTE: install to user writable location
     for tfplan_dir in [
         "deploy-microk8s",
+        "deploy-microceph",
         "deploy-openstack",
         "deploy-openstack-hypervisor",
     ]:
@@ -155,6 +160,13 @@ def bootstrap(
         backend="http",
         data_location=data_location,
     )
+    tfhelper_microceph_deploy = TerraformHelper(
+        path=snap.paths.user_common / "etc" / "deploy-microceph",
+        plan="microceph-plan",
+        parallelism=1,
+        backend="http",
+        data_location=data_location,
+    )
     jhelper = JujuHelper(data_location)
 
     plan4 = []
@@ -170,6 +182,10 @@ def bootstrap(
         )
         plan4.append(AddMicrok8sUnitStep(fqdn, jhelper))
         plan4.append(AddMicrok8sCloudStep(jhelper))
+        # Adding microceph for testing purpose
+        plan4.append(TerraformInitStep(tfhelper_microceph_deploy))
+        plan4.append(DeployMicrocephApplicationStep(tfhelper_microceph_deploy, jhelper))
+        plan4.append(AddMicrocephUnitStep(fqdn, jhelper))
         plan4.append(TerraformInitStep(tfhelper_openstack_deploy))
         plan4.append(DeployControlPlaneStep(tfhelper_openstack_deploy, jhelper))
 

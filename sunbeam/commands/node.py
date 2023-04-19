@@ -37,6 +37,7 @@ from sunbeam.commands.juju import (
     RemoveJujuMachineStep,
     SaveJujuUserLocallyStep,
 )
+from sunbeam.commands.microceph import AddMicrocephUnitStep
 from sunbeam.commands.microk8s import AddMicrok8sUnitStep, RemoveMicrok8sUnitStep
 from sunbeam.jobs.checks import (
     DaemonGroupCheck,
@@ -137,6 +138,8 @@ def join(token: str, role: str) -> None:
 
     if Role[role.upper()].is_control_node():
         plan2.append(AddMicrok8sUnitStep(name, jhelper))
+        # Adding microceph for testing purpose
+        plan2.append(AddMicrocephUnitStep(name, jhelper))
 
     if Role[role.upper()].is_compute_node():
         plan2.extend(
@@ -186,6 +189,8 @@ def remove(name: str) -> None:
 
     plan = [
         RemoveMicrok8sUnitStep(name, jhelper),
+        # Adding microceph for testing purpose
+        RemoveMicrocephUnitStep(name, jhelper),
         RemoveJujuMachineStep(name),
         # Cannot remove user as the same user name cannot be resued,
         # so commenting the RemoveJujuUserStep
