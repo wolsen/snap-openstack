@@ -35,6 +35,7 @@ class Role(enum.Enum):
     CONTROL = 1
     COMPUTE = 2
     CONVERGED = 3
+    STORAGE = 4
 
     def is_control_node(self) -> bool:
         """Returns True if the node requires control services.
@@ -46,7 +47,7 @@ class Role(enum.Enum):
         :return: True if the node should have control-plane services,
                  False otherwise
         """
-        return self != Role.COMPUTE
+        return self == Role.CONTROL or self == Role.CONVERGED
 
     def is_compute_node(self) -> bool:
         """Returns True if the node requires compute services.
@@ -58,7 +59,7 @@ class Role(enum.Enum):
         :return: True if the node should run Compute services,
                  False otherwise
         """
-        return self != Role.CONTROL
+        return self == Role.COMPUTE or self == Role.CONVERGED
 
     def is_converged_node(self) -> bool:
         """Returns True if the node requires control and compute services.
@@ -71,6 +72,18 @@ class Role(enum.Enum):
                  False otherwise
         """
         return self == Role.CONVERGED
+
+    def is_storage_node(self) -> bool:
+        """Returns True if the node requires storage services.
+
+        Storage services are installed on nodes which are designated
+        for storage nodes only. This helps determine the role that the local
+        node will play.
+
+        :return: True if the node should have storage services,
+                 False otherwise
+        """
+        return self == Role.STORAGE
 
 
 class ResultType(enum.Enum):

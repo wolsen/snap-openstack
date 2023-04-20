@@ -96,15 +96,31 @@ def add(name: str) -> None:
 
 @click.command()
 @click.option("--token", type=str, help="Join token")
-@click.option("--role", default="converged", type=str, help="Role of the node")
+@click.option(
+    "--role",
+    multiple=True,
+    default=["converged"],
+    type=str,
+    help="Specify whether the node will be a control node, a "
+    "compute node, storage node, or a converged node (default)",
+)
 def join(token: str, role: str) -> None:
     """Join node to the cluster.
 
     Join the node to the cluster.
     """
+    node_roles = [Role[role_.upper()] for role_ in role]
+
+    is_control_node = any([role_.is_control_node() for role_ in node_roles])
+    is_compute_node = any([role_.is_compute_node() for role_ in node_roles])
+    is_storage_node = any([role_.is_storage_node() for role_ in node_roles])
+
     # Register juju user with same name as Node fqdn
     name = utils.get_fqdn()
     ip = utils.get_local_ip_by_default_route()
+
+    roles_str = ",".join(role)
+    LOG.debug(f"Joining node: roles {roles_str}")
 
     preflight_checks = []
     preflight_checks.append(JujuSnapCheck())
@@ -120,7 +136,7 @@ def join(token: str, role: str) -> None:
     jhelper = JujuHelper(data_location)
 
     plan1 = [
-        ClusterJoinNodeStep(token, role.upper()),
+        ClusterJoinNodeStep(token, roles_str.upper()),
         SaveJujuUserLocallyStep(name, data_location),
         RegisterJujuUserStep(name, controller, data_location),
         AddJujuMachineStep(ip),
@@ -136,12 +152,13 @@ def join(token: str, role: str) -> None:
     plan2 = []
     plan2.append(ClusterUpdateNodeStep(name, role="", machine_id=machine_id))
 
-    if Role[role.upper()].is_control_node():
+    if is_control_node:
         plan2.append(AddMicrok8sUnitStep(name, jhelper))
-        # Adding microceph for testing purpose
+
+    if is_storage_node:
         plan2.append(AddMicrocephUnitStep(name, jhelper))
 
-    if Role[role.upper()].is_compute_node():
+    if is_compute_node:
         plan2.extend(
             [
                 AddHypervisorUnitStep(name, jhelper),
@@ -151,7 +168,7 @@ def join(token: str, role: str) -> None:
 
     run_plan(plan2, console)
 
-    click.echo(f"Node has joined cluster as a {role} node")
+    click.echo(f"Node has joined cluster as a {roles_str} node")
 
 
 @click.command()

@@ -70,10 +70,13 @@ snap = Snap()
 @click.option("-p", "--preseed", help="Preseed file.", type=click.Path())
 @click.option(
     "--role",
-    default="converged",
-    type=click.Choice(["control", "compute", "converged"], case_sensitive=False),
+    multiple=True,
+    default=["converged"],
+    type=click.Choice(
+        ["control", "compute", "converged", "storage"], case_sensitive=False
+    ),
     help="Specify whether the node will be a control node, a "
-    "compute node, or a converged node (default)",
+    "compute node, storage node, or a converged node (default)",
 )
 def bootstrap(
     role: str, preseed: Optional[Path] = None, accept_defaults: bool = False
@@ -82,10 +85,16 @@ def bootstrap(
 
     Initialize the sunbeam cluster.
     """
-    node_role = Role[role.upper()]
+    node_roles = [Role[role_.upper()] for role_ in role]
+
+    is_control_node = any([role_.is_control_node() for role_ in node_roles])
+    is_compute_node = any([role_.is_compute_node() for role_ in node_roles])
+    is_storage_node = any([role_.is_storage_node() for role_ in node_roles])
+
     fqdn = utils.get_fqdn()
 
-    LOG.debug(f"Bootstrap node: role {role}")
+    roles_str = ",".join(role)
+    LOG.debug(f"Bootstrap node: roles {roles_str}")
 
     cloud_type = snap.config.get("juju.cloud.type")
     cloud_name = snap.config.get("juju.cloud.name")
@@ -113,17 +122,17 @@ def bootstrap(
     run_preflight_checks(preflight_checks, console)
 
     plan = []
-    plan.append(ClusterInitStep(role.upper()))
+    plan.append(ClusterInitStep(roles_str.upper()))
 
     controller = CONTROLLER
 
-    if node_role.is_control_node():
+    if is_control_node:
         plan.append(BootstrapJujuStep(cloud_name, cloud_type, controller))
 
     run_plan(plan, console)
 
     plan2 = []
-    if node_role.is_control_node():
+    if is_control_node:
         plan2.append(CreateJujuUserStep(fqdn))
         plan2.append(ClusterUpdateJujuControllerStep(controller))
 
@@ -132,7 +141,7 @@ def bootstrap(
     token = get_step_message(plan2_results, CreateJujuUserStep)
 
     plan3 = []
-    if node_role.is_control_node():
+    if is_control_node:
         plan3.append(ClusterAddJujuUserStep(fqdn, token))
         plan3.append(BackupBootstrapUserStep(fqdn, data_location))
         plan3.append(SaveJujuUserLocallyStep(fqdn, data_location))
@@ -170,7 +179,7 @@ def bootstrap(
     jhelper = JujuHelper(data_location)
 
     plan4 = []
-    if node_role.is_control_node():
+    if is_control_node:
         plan4.append(
             RegisterJujuUserStep(fqdn, controller, data_location, replace=True)
         )
@@ -182,17 +191,20 @@ def bootstrap(
         )
         plan4.append(AddMicrok8sUnitStep(fqdn, jhelper))
         plan4.append(AddMicrok8sCloudStep(jhelper))
-        # Adding microceph for testing purpose
+
+    if is_storage_node:
         plan4.append(TerraformInitStep(tfhelper_microceph_deploy))
         plan4.append(DeployMicrocephApplicationStep(tfhelper_microceph_deploy, jhelper))
         plan4.append(AddMicrocephUnitStep(fqdn, jhelper))
+
+    if is_control_node:
         plan4.append(TerraformInitStep(tfhelper_openstack_deploy))
         plan4.append(DeployControlPlaneStep(tfhelper_openstack_deploy, jhelper))
 
     run_plan(plan4, console)
 
     plan5 = []
-    if node_role.is_compute_node():
+    if is_compute_node:
         plan5.append(TerraformInitStep(tfhelper_hypervisor_deploy))
         plan5.append(
             DeployHypervisorApplicationStep(tfhelper_hypervisor_deploy, jhelper)
@@ -201,7 +213,7 @@ def bootstrap(
 
     run_plan(plan5, console)
 
-    click.echo(f"Node has been bootstrapped as a {role} node")
+    click.echo(f"Node has been bootstrapped as a {roles_str} node")
 
 
 if __name__ == "__main__":
