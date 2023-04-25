@@ -131,7 +131,7 @@ class JujuStepHelper:
         try:
             return self._juju_cmd("show-controller", controller)[controller]
         except subprocess.CalledProcessError as e:
-            LOG.warning(e)
+            LOG.debug(e)
             raise ControllerNotFoundException() from e
 
     def add_cloud(self, cloud_type: str, cloud_name: str) -> bool:
