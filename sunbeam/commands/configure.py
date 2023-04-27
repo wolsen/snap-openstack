@@ -100,6 +100,7 @@ def ext_net_questions():
         ),
         "nic": sunbeam.jobs.questions.PromptQuestion(
             "Free network interface microstack can use for external traffic",
+            choices=utils.get_free_nics(),
             default_value=utils.get_free_nic(),
         ),
     }
