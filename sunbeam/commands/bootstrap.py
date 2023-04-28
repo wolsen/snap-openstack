@@ -42,6 +42,7 @@ from sunbeam.commands.juju import (
 )
 from sunbeam.commands.microceph import (
     AddMicrocephUnitStep,
+    ConfigureMicrocephOSDStep,
     DeployMicrocephApplicationStep,
 )
 from sunbeam.commands.microk8s import (
@@ -196,6 +197,7 @@ def bootstrap(
         plan4.append(TerraformInitStep(tfhelper_microceph_deploy))
         plan4.append(DeployMicrocephApplicationStep(tfhelper_microceph_deploy, jhelper))
         plan4.append(AddMicrocephUnitStep(fqdn, jhelper))
+        plan4.append(ConfigureMicrocephOSDStep(fqdn, jhelper))
 
     if is_control_node:
         plan4.append(TerraformInitStep(tfhelper_openstack_deploy))

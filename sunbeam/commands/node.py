@@ -37,7 +37,7 @@ from sunbeam.commands.juju import (
     RemoveJujuMachineStep,
     SaveJujuUserLocallyStep,
 )
-from sunbeam.commands.microceph import AddMicrocephUnitStep
+from sunbeam.commands.microceph import AddMicrocephUnitStep, ConfigureMicrocephOSDStep
 from sunbeam.commands.microk8s import AddMicrok8sUnitStep, RemoveMicrok8sUnitStep
 from sunbeam.jobs.checks import (
     DaemonGroupCheck,
@@ -157,6 +157,7 @@ def join(token: str, role: str) -> None:
 
     if is_storage_node:
         plan2.append(AddMicrocephUnitStep(name, jhelper))
+        plan2.append(ConfigureMicrocephOSDStep(name, jhelper))
 
     if is_compute_node:
         plan2.extend(

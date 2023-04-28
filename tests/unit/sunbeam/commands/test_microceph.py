@@ -22,12 +22,17 @@ import pytest
 from sunbeam.clusterd.service import NodeNotExistInClusterException
 from sunbeam.commands.microceph import (
     AddMicrocephUnitStep,
+    ConfigureMicrocephOSDStep,
     DeployMicrocephApplicationStep,
     RemoveMicrocephUnitStep,
 )
 from sunbeam.commands.terraform import TerraformException
 from sunbeam.jobs.common import ResultType
-from sunbeam.jobs.juju import ApplicationNotFoundException, TimeoutException
+from sunbeam.jobs.juju import (
+    ActionFailedException,
+    ApplicationNotFoundException,
+    TimeoutException,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -292,3 +297,47 @@ class TestRemoveMicrocephUnitStep(unittest.TestCase):
         self.jhelper.wait_application_ready.assert_called_once()
         assert result.result_type == ResultType.FAILED
         assert result.message == "timed out"
+
+
+class TestConfigureMicrocephOSDStep(unittest.TestCase):
+    def __init__(self, methodName: str = "runTest") -> None:
+        super().__init__(methodName)
+        self.clientMock = Mock()
+        self.client = patch(
+            "sunbeam.commands.microceph.Client", return_value=self.clientMock
+        )
+
+    def setUp(self):
+        self.client.start()
+        self.jhelper = AsyncMock()
+        self.name = "test-0"
+
+    def tearDown(self):
+        self.client.stop()
+        self.clientMock.reset_mock()
+
+    def test_is_skip(self):
+        step = ConfigureMicrocephOSDStep(self.name, self.jhelper)
+        step.disks = "/dev/sdb,/dev/sdc"
+        result = step.is_skip()
+
+        assert result.result_type == ResultType.COMPLETED
+
+    def test_run(self):
+        step = ConfigureMicrocephOSDStep(self.name, self.jhelper)
+        step.disks = "/dev/sdb,/dev/sdc"
+        result = step.run()
+
+        self.jhelper.run_action.assert_called_once()
+        assert result.result_type == ResultType.COMPLETED
+
+    def test_run_action_failed(self):
+        self.jhelper.run_action.side_effect = ActionFailedException("Action failed...")
+
+        step = ConfigureMicrocephOSDStep(self.name, self.jhelper)
+        step.disks = "/dev/sdb,/dev/sdc"
+        result = step.run()
+
+        self.jhelper.run_action.assert_called_once()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == "Action failed..."
