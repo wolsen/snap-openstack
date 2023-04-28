@@ -138,7 +138,7 @@ def join(token: str, role: str) -> None:
         plan2.extend(
             [
                 AddHypervisorUnitStep(name, jhelper),
-                SetLocalHypervisorOptions(name, jhelper),
+                SetLocalHypervisorOptions(name, jhelper, join_mode=True),
             ]
         )
 

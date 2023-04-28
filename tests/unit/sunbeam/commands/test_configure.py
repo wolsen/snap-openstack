@@ -322,6 +322,17 @@ class TestSetLocalHypervisorOptions:
         step.prompt()
         assert step.nic == "eth12"
 
+    def test_prompt_remote_join(self, cclient, jhelper, load_answers, question_bank):
+        load_answers.return_value = {"user": {"remote_access_location": "remote"}}
+        ext_net_bank_mock = Mock()
+        question_bank.return_value = ext_net_bank_mock
+        ext_net_bank_mock.nic.ask.return_value = "eth12"
+        step = configure.SetLocalHypervisorOptions(
+            "maas0.local", jhelper, join_mode=True
+        )
+        step.prompt()
+        assert step.nic == "eth12"
+
     def test_prompt_local(self, cclient, jhelper, load_answers, question_bank):
         load_answers.return_value = {"user": {"remote_access_location": "local"}}
         ext_net_bank_mock = Mock()
@@ -330,6 +341,17 @@ class TestSetLocalHypervisorOptions:
         step = configure.SetLocalHypervisorOptions("maas0.local", jhelper)
         step.prompt()
         assert step.nic is None
+
+    def test_prompt_local_join(self, cclient, jhelper, load_answers, question_bank):
+        load_answers.return_value = {"user": {"remote_access_location": "local"}}
+        ext_net_bank_mock = Mock()
+        question_bank.return_value = ext_net_bank_mock
+        ext_net_bank_mock.nic.ask.return_value = "eth12"
+        step = configure.SetLocalHypervisorOptions(
+            "maas0.local", jhelper, join_mode=True
+        )
+        step.prompt()
+        assert step.nic == "eth12"
 
     def test_run(self, cclient, jhelper):
         jhelper.run_action.return_value = {"return-code": 0}

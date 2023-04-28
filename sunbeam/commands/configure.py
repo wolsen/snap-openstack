@@ -506,12 +506,14 @@ class SetLocalHypervisorOptions(BaseStep):
         self,
         name,
         jhelper,
+        join_mode: bool = False,
     ):
         super().__init__(
             "Apply local hypervisor settings", "Apply local hypervisor settings"
         )
         self.name = name
         self.jhelper = jhelper
+        self.join_mode = join_mode
         self.client = Client()
 
     def has_prompts(self) -> bool:
@@ -519,10 +521,26 @@ class SetLocalHypervisorOptions(BaseStep):
 
     def prompt(self, console: Optional[Console] = None) -> None:
         self.nic = None
+        # If adding a node before configure step has run then answers will
+        # not be populated yet.
         self.variables = sunbeam.jobs.questions.load_answers(
             self.client, CLOUD_CONFIG_SECTION
         )
-        if self.variables["user"]["remote_access_location"] == utils.REMOTE_ACCESS:
+        remote_access_location = self.variables.get("user", {}).get(
+            "remote_access_location"
+        )
+        # If adding new nodes to the cluster then local access makes no sense
+        # so always prompt for the nic.
+        if self.join_mode:
+            ext_net_bank = sunbeam.jobs.questions.QuestionBank(
+                questions=ext_net_questions(),
+                console=console,
+                preseed={},
+                previous_answers={},
+                accept_defaults=False,
+            )
+            self.nic = ext_net_bank.nic.ask()
+        elif remote_access_location == utils.REMOTE_ACCESS:
             ext_net_bank = sunbeam.jobs.questions.QuestionBank(
                 questions=ext_net_questions(),
                 console=console,
