@@ -54,7 +54,7 @@ snap = Snap()
 
 @click.command()
 @click.option("--name", type=str, prompt=True, help="Fully qualified node name")
-def add_node(name: str) -> None:
+def add(name: str) -> None:
     """Generates a token for a new server.
 
     Register new node to the cluster.
