@@ -157,10 +157,9 @@ parts:
   terraform-openstack-plan:
     after: [terraform]
     plugin: dump
-    source: https://github.com/gnuoy/sunbeam-terraform
+    source: https://github.com/openstack-snaps/sunbeam-terraform
     source-depth: 1
     source-type: git
-    source-branch: mysql-constraint
     organize:
       '*': etc/deploy-openstack/
     override-build: |
