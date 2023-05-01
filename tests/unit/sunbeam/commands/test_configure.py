@@ -17,7 +17,6 @@ import json
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
-import click
 import pytest
 
 import sunbeam.commands.configure as configure
@@ -374,10 +373,8 @@ class TestSetLocalHypervisorOptions:
         jhelper.get_leader_unit.return_value = "openstack-hypervisor/0"
         step = configure.SetLocalHypervisorOptions("maas0.local", jhelper)
         step.nic = "eth11"
-        with pytest.raises(
-            click.ClickException, match="Unable to set local hypervisor config"
-        ):
-            step.run()
+        result = step.run()
+        assert result.result_type == ResultType.FAILED
 
     def test_run_skipped(self, cclient, jhelper):
         step = configure.SetLocalHypervisorOptions("maas0.local", jhelper)

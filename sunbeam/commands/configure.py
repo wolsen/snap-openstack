@@ -159,9 +159,13 @@ def _retrieve_admin_credentials(jhelper: JujuHelper, model: str) -> dict:
     """
     app = "keystone"
     action_cmd = "get-admin-account"
-    unit = run_sync(jhelper.get_leader_unit(app, model))
-    action_result = run_sync(jhelper.run_action(unit, model, action_cmd))
 
+    unit_action_result = run_sync(jhelper.get_leader_unit(app, model))
+    if unit_action_result.get("return-code", 0) > 1:
+        _message = f"Unable to get {app} leader"
+        raise click.ClickException(_message)
+
+    action_result = run_sync(jhelper.run_action(unit, model, action_cmd))
     if action_result.get("return-code", 0) > 1:
         _message = "Unable to retrieve openrc from Keystone service"
         raise click.ClickException(_message)
@@ -572,7 +576,7 @@ class SetLocalHypervisorOptions(BaseStep):
 
         if action_result.get("return-code", 0) > 1:
             _message = "Unable to set local hypervisor config"
-            raise click.ClickException(_message)
+            return Result(ResultType.FAILED, _message)
         return Result(ResultType.COMPLETED)
 
 
