@@ -28,6 +28,9 @@ from sunbeam.commands.clusterd import (
     ClusterRemoveNodeStep,
     ClusterUpdateNodeStep,
 )
+from sunbeam.commands.configure import (
+    SetLocalHypervisorOptions,
+)
 from sunbeam.commands.hypervisor import AddHypervisorUnitStep
 from sunbeam.commands.juju import AddJujuMachineStep  # RemoveJujuUserStep,
 from sunbeam.commands.juju import (
@@ -132,7 +135,12 @@ def join(token: str, role: str) -> None:
         plan2.append(AddMicrok8sUnitStep(name, jhelper))
 
     if Role[role.upper()].is_compute_node():
-        plan2.append(AddHypervisorUnitStep(name, jhelper))
+        plan2.extend(
+            [
+                AddHypervisorUnitStep(name, jhelper),
+                SetLocalHypervisorOptions(name, jhelper, join_mode=True),
+            ]
+        )
 
     run_plan(plan2, console)
 
