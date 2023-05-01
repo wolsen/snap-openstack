@@ -64,7 +64,12 @@ class DeployMicrocephApplicationStep(BaseStep):
         :return: ResultType.SKIPPED if the Step should be skipped,
                 ResultType.COMPLETED or ResultType.FAILED otherwise
         """
-        return Result(ResultType.COMPLETED)
+        try:
+            run_sync(self.jhelper.get_application(APPLICATION, MODEL))
+        except ApplicationNotFoundException:
+            return Result(ResultType.COMPLETED)
+
+        return Result(ResultType.SKIPPED)
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Apply terraform configuration to deploy microceph"""

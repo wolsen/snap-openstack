@@ -64,10 +64,20 @@ class TestDeployMicrocephApplicationStep(unittest.TestCase):
         self.client.stop()
 
     def test_is_skip(self):
+        self.jhelper.get_application.side_effect = ApplicationNotFoundException(
+            "not found"
+        )
+
         step = DeployMicrocephApplicationStep(self.tfhelper, self.jhelper)
         result = step.is_skip()
 
         assert result.result_type == ResultType.COMPLETED
+
+    def test_is_skip_application_already_deployed(self):
+        step = DeployMicrocephApplicationStep(self.tfhelper, self.jhelper)
+        result = step.is_skip()
+
+        assert result.result_type == ResultType.SKIPPED
 
     def test_run_pristine_installation(self):
         self.jhelper.get_application.side_effect = ApplicationNotFoundException(
