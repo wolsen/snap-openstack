@@ -92,6 +92,10 @@ def bootstrap(
     is_compute_node = any([role_.is_compute_node() for role_ in node_roles])
     is_storage_node = any([role_.is_storage_node() for role_ in node_roles])
 
+    if not is_control_node:
+        console.print("Exiting as role control is missing.")
+        return
+
     fqdn = utils.get_fqdn()
 
     roles_str = ",".join(role)
