@@ -52,7 +52,7 @@ def main():
     log.setup_root_logging()
     cli.add_command(cluster)
     cluster.add_command(bootstrap_cmds.bootstrap)
-    cluster.add_command(node_cmds.add_node)
+    cluster.add_command(node_cmds.add)
     cluster.add_command(node_cmds.join)
     cluster.add_command(node_cmds.list)
     cluster.add_command(node_cmds.remove)
