@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import os
+from pathlib import PosixPath
 from unittest.mock import Mock
 
 from sunbeam.jobs import checks
@@ -65,3 +66,28 @@ class TestDaemonGroupCheck:
 
         assert result is False
         assert "Insufficient permissions" in check.message
+
+
+class TestLocalShareCheck:
+    def test_run(self, mocker, snap):
+        mocker.patch.object(checks, "Snap", return_value=snap)
+        mocker.patch("os.path.exists", return_value=True)
+
+        check = checks.LocalShareCheck()
+
+        result = check.run()
+
+        assert result is True
+        os.path.exists.assert_called_with(PosixPath("/home/ubuntu/.local/share"))
+
+    def test_run_missing(self, mocker, snap):
+        mocker.patch.object(checks, "Snap", return_value=snap)
+        mocker.patch("os.path.exists", return_value=False)
+
+        check = checks.LocalShareCheck()
+
+        result = check.run()
+
+        assert result is False
+        assert "directory not detected" in check.message
+        os.path.exists.assert_called_with(PosixPath("/home/ubuntu/.local/share"))
