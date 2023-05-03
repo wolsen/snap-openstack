@@ -160,8 +160,8 @@ def _retrieve_admin_credentials(jhelper: JujuHelper, model: str) -> dict:
     app = "keystone"
     action_cmd = "get-admin-account"
 
-    unit_action_result = run_sync(jhelper.get_leader_unit(app, model))
-    if unit_action_result.get("return-code", 0) > 1:
+    unit = run_sync(jhelper.get_leader_unit(app, model))
+    if not unit:
         _message = f"Unable to get {app} leader"
         raise click.ClickException(_message)
 
