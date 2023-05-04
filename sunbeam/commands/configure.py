@@ -26,22 +26,22 @@ import click
 from rich.console import Console
 from snaphelpers import Snap
 
-from sunbeam.clusterd.client import Client
 import sunbeam.jobs.questions
 from sunbeam import utils
-from sunbeam.jobs.juju import (
-    JujuHelper,
-    ModelNotFoundException,
-    run_sync,
-    CONTROLLER_MODEL,
-)
+from sunbeam.clusterd.client import Client
+from sunbeam.commands.openstack import OPENSTACK_MODEL
 from sunbeam.commands.terraform import (
     TerraformException,
     TerraformHelper,
     TerraformInitStep,
 )
 from sunbeam.jobs.common import BaseStep, Result, ResultType, Status, run_plan
-from sunbeam.commands.openstack import OPENSTACK_MODEL
+from sunbeam.jobs.juju import (
+    CONTROLLER_MODEL,
+    JujuHelper,
+    ModelNotFoundException,
+    run_sync,
+)
 
 CLOUD_CONFIG_SECTION = "CloudConfig"
 LOG = logging.getLogger(__name__)

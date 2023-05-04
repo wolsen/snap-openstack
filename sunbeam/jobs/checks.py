@@ -88,8 +88,11 @@ class SshKeysConnectedCheck(Check):
 
         if not snap_ctl.is_connected("ssh-keys"):
             self.message = (
-                "ssh-keys interface not detected: please connect ssh-keys interface "
-                f"by running {connect!r}"
+                "ssh-keys interface not detected\n"
+                "Please connect ssh-keys interface by running:\n"
+                "\n"
+                f"    {connect}"
+                "\n"
             )
             return False
 
@@ -123,6 +126,34 @@ class DaemonGroupCheck(Check):
                 f" running 'newgrp {self.group}'."
             )
 
+            return False
+
+        return True
+
+
+# NOTE: drop with Juju can do this itself
+class LocalShareCheck(Check):
+    """Check if ~/.local/share exists for Juju use."""
+
+    def __init__(self):
+        super().__init__(
+            "Check for .local/share directory",
+            "Checking for ~/.local/share directory for Juju",
+        )
+
+    def run(self) -> bool:
+        """Check for ~./local/share."""
+        snap = Snap()
+
+        local_share = snap.paths.real_home / ".local" / "share"
+        if not os.path.exists(local_share):
+            self.message = (
+                f"{local_share} directory not detected\n"
+                "Please create by running:\n"
+                "\n"
+                f"    mkdir -p {local_share}"
+                "\n"
+            )
             return False
 
         return True

@@ -28,9 +28,7 @@ from sunbeam.commands.clusterd import (
     ClusterRemoveNodeStep,
     ClusterUpdateNodeStep,
 )
-from sunbeam.commands.configure import (
-    SetLocalHypervisorOptions,
-)
+from sunbeam.commands.configure import SetLocalHypervisorOptions
 from sunbeam.commands.hypervisor import AddHypervisorUnitStep
 from sunbeam.commands.juju import AddJujuMachineStep  # RemoveJujuUserStep,
 from sunbeam.commands.juju import (
@@ -40,7 +38,12 @@ from sunbeam.commands.juju import (
     SaveJujuUserLocallyStep,
 )
 from sunbeam.commands.microk8s import AddMicrok8sUnitStep, RemoveMicrok8sUnitStep
-from sunbeam.jobs.checks import DaemonGroupCheck, JujuSnapCheck, SshKeysConnectedCheck
+from sunbeam.jobs.checks import (
+    DaemonGroupCheck,
+    JujuSnapCheck,
+    LocalShareCheck,
+    SshKeysConnectedCheck,
+)
 from sunbeam.jobs.common import (
     ResultType,
     Role,
@@ -106,6 +109,7 @@ def join(token: str, role: str) -> None:
     preflight_checks.append(JujuSnapCheck())
     preflight_checks.append(SshKeysConnectedCheck())
     preflight_checks.append(DaemonGroupCheck())
+    preflight_checks.append(LocalShareCheck())
 
     run_preflight_checks(preflight_checks, console)
 

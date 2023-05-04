@@ -74,6 +74,13 @@ def thelper():
     yield Mock(path=Path())
 
 
+@pytest.fixture()
+def get_nic_macs():
+    with patch.object(sunbeam.utils, "get_nic_macs") as p:
+        p.return_value = ["00:16:3e:01:6e:75"]
+        yield p
+
+
 class SetHypervisorCharmConfigStep:
     def test_is_skip(self, cclient, jhelper):
         step = configure.SetHypervisorCharmConfigStep(jhelper, "/tmp/dummypath")
@@ -167,7 +174,7 @@ class TestUserQuestions:
         return user_bank_mock, net_bank_mock
 
     def test_prompt_remote_demo_setup(
-        self, cclient, load_answers, question_bank, write_answers
+        self, cclient, load_answers, question_bank, write_answers, get_nic_macs
     ):
         load_answers.return_value = {}
         user_bank_mock, net_bank_mock = self.configure_mocks(question_bank)
@@ -179,7 +186,7 @@ class TestUserQuestions:
         self.check_remote_questions(net_bank_mock)
 
     def test_prompt_remote_no_demo_setup(
-        self, cclient, load_answers, question_bank, write_answers
+        self, cclient, load_answers, question_bank, write_answers, get_nic_macs
     ):
         load_answers.return_value = {}
         user_bank_mock, net_bank_mock = self.configure_mocks(question_bank)
@@ -312,7 +319,9 @@ class TestSetLocalHypervisorOptions:
         step = configure.SetLocalHypervisorOptions("maas0.local", jhelper)
         assert step.has_prompts()
 
-    def test_prompt_remote(self, cclient, jhelper, load_answers, question_bank):
+    def test_prompt_remote(
+        self, cclient, jhelper, load_answers, question_bank, get_nic_macs
+    ):
         load_answers.return_value = {"user": {"remote_access_location": "remote"}}
         ext_net_bank_mock = Mock()
         question_bank.return_value = ext_net_bank_mock
@@ -321,7 +330,9 @@ class TestSetLocalHypervisorOptions:
         step.prompt()
         assert step.nic == "eth12"
 
-    def test_prompt_remote_join(self, cclient, jhelper, load_answers, question_bank):
+    def test_prompt_remote_join(
+        self, cclient, jhelper, load_answers, question_bank, get_nic_macs
+    ):
         load_answers.return_value = {"user": {"remote_access_location": "remote"}}
         ext_net_bank_mock = Mock()
         question_bank.return_value = ext_net_bank_mock
@@ -341,7 +352,9 @@ class TestSetLocalHypervisorOptions:
         step.prompt()
         assert step.nic is None
 
-    def test_prompt_local_join(self, cclient, jhelper, load_answers, question_bank):
+    def test_prompt_local_join(
+        self, cclient, jhelper, load_answers, question_bank, get_nic_macs
+    ):
         load_answers.return_value = {"user": {"remote_access_location": "local"}}
         ext_net_bank_mock = Mock()
         question_bank.return_value = ext_net_bank_mock
