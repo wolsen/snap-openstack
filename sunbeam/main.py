@@ -21,7 +21,7 @@ from sunbeam import log
 from sunbeam.commands import bootstrap as bootstrap_cmds
 from sunbeam.commands import configure as configure_cmds
 from sunbeam.commands import node as node_cmds
-from sunbeam.commands import ssh_init as ssh_init_cmds
+from sunbeam.commands import prepare_node as prepare_node_cmds
 
 LOG = logging.getLogger()
 
@@ -51,6 +51,7 @@ def cluster(ctx):
 
 def main():
     log.setup_root_logging()
+    cli.add_command(prepare_node_cmds.prepare_node_script)
     cli.add_command(cluster)
     cli.add_command(configure_cmds.configure)
     cluster.add_command(bootstrap_cmds.bootstrap)
@@ -58,7 +59,6 @@ def main():
     cluster.add_command(node_cmds.join)
     cluster.add_command(node_cmds.list)
     cluster.add_command(node_cmds.remove)
-    cluster.add_command(ssh_init_cmds.ssh_init)
     cli()
 
 
