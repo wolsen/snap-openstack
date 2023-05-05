@@ -19,7 +19,9 @@ from rich.console import Console
 console = Console()
 
 
-PREPARE_NODE_TEMPLATE = """#!/bin/bash
+JUJU_CHANNEL = "3.2/beta"
+
+PREPARE_NODE_TEMPLATE = f"""#!/bin/bash
 # :warning: Node Preparation for OpenStack Sunbeam :warning:
 # All of these commands perform privileged operations
 # please review carefully before execution.
@@ -42,7 +44,7 @@ cat $HOME/.ssh/id_rsa.pub >> $HOME/.ssh/authorized_keys
 ssh-keyscan -H $(hostname --all-ip-addresses) >> $HOME/.ssh/known_hosts
 
 # Install the Juju snap
-sudo snap install --channel 3.2/beta juju
+sudo snap install --channel {JUJU_CHANNEL} juju
 
 # Workaround a bug between snapd and juju
 mkdir -p $HOME/.local/share
