@@ -99,10 +99,10 @@ def add(name: str) -> None:
 @click.option(
     "--role",
     multiple=True,
-    default=["converged"],
-    type=str,
+    default=["control", "compute", "storage"],
+    type=click.Choice(["control", "compute", "storage"], case_sensitive=False),
     help="Specify whether the node will be a control node, a "
-    "compute node, storage node, or a converged node (default)",
+    "compute node or a storage node. Defaults to all the roles.",
 )
 def join(token: str, role: str) -> None:
     """Join node to the cluster.

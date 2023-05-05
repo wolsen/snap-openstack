@@ -72,12 +72,10 @@ snap = Snap()
 @click.option(
     "--role",
     multiple=True,
-    default=["converged"],
-    type=click.Choice(
-        ["control", "compute", "converged", "storage"], case_sensitive=False
-    ),
+    default=["control", "compute", "storage"],
+    type=click.Choice(["control", "compute", "storage"], case_sensitive=False),
     help="Specify whether the node will be a control node, a "
-    "compute node, storage node, or a converged node (default)",
+    "compute node or a storage node. Defaults to all the roles.",
 )
 def bootstrap(
     role: str, preseed: Optional[Path] = None, accept_defaults: bool = False
@@ -91,10 +89,6 @@ def bootstrap(
     is_control_node = any([role_.is_control_node() for role_ in node_roles])
     is_compute_node = any([role_.is_compute_node() for role_ in node_roles])
     is_storage_node = any([role_.is_storage_node() for role_ in node_roles])
-
-    if not is_control_node:
-        console.print("Exiting as role control is missing.")
-        return
 
     fqdn = utils.get_fqdn()
 
@@ -128,29 +122,20 @@ def bootstrap(
 
     plan = []
     plan.append(ClusterInitStep(roles_str.upper()))
-
-    controller = CONTROLLER
-
-    if is_control_node:
-        plan.append(BootstrapJujuStep(cloud_name, cloud_type, controller))
-
+    plan.append(BootstrapJujuStep(cloud_name, cloud_type, CONTROLLER))
     run_plan(plan, console)
 
     plan2 = []
-    if is_control_node:
-        plan2.append(CreateJujuUserStep(fqdn))
-        plan2.append(ClusterUpdateJujuControllerStep(controller))
-
+    plan2.append(CreateJujuUserStep(fqdn))
+    plan2.append(ClusterUpdateJujuControllerStep(CONTROLLER))
     plan2_results = run_plan(plan2, console)
 
     token = get_step_message(plan2_results, CreateJujuUserStep)
 
     plan3 = []
-    if is_control_node:
-        plan3.append(ClusterAddJujuUserStep(fqdn, token))
-        plan3.append(BackupBootstrapUserStep(fqdn, data_location))
-        plan3.append(SaveJujuUserLocallyStep(fqdn, data_location))
-
+    plan3.append(ClusterAddJujuUserStep(fqdn, token))
+    plan3.append(BackupBootstrapUserStep(fqdn, data_location))
+    plan3.append(SaveJujuUserLocallyStep(fqdn, data_location))
     run_plan(plan3, console)
 
     tfhelper = TerraformHelper(
@@ -184,22 +169,20 @@ def bootstrap(
     jhelper = JujuHelper(data_location)
 
     plan4 = []
-    if is_control_node:
-        plan4.append(
-            RegisterJujuUserStep(fqdn, controller, data_location, replace=True)
+    plan4.append(RegisterJujuUserStep(fqdn, CONTROLLER, data_location, replace=True))
+    plan4.append(TerraformInitStep(tfhelper))
+    plan4.append(
+        DeployMicrok8sApplicationStep(
+            tfhelper, jhelper, accept_defaults=accept_defaults, preseed_file=preseed
         )
-        plan4.append(TerraformInitStep(tfhelper))
-        plan4.append(
-            DeployMicrok8sApplicationStep(
-                tfhelper, jhelper, accept_defaults=accept_defaults, preseed_file=preseed
-            )
-        )
-        plan4.append(AddMicrok8sUnitStep(fqdn, jhelper))
-        plan4.append(AddMicrok8sCloudStep(jhelper))
+    )
+    plan4.append(AddMicrok8sUnitStep(fqdn, jhelper))
+    plan4.append(AddMicrok8sCloudStep(jhelper))
+    # Deploy Microceph application during bootstrap irrespective of node role.
+    plan4.append(TerraformInitStep(tfhelper_microceph_deploy))
+    plan4.append(DeployMicrocephApplicationStep(tfhelper_microceph_deploy, jhelper))
 
     if is_storage_node:
-        plan4.append(TerraformInitStep(tfhelper_microceph_deploy))
-        plan4.append(DeployMicrocephApplicationStep(tfhelper_microceph_deploy, jhelper))
         plan4.append(AddMicrocephUnitStep(fqdn, jhelper))
         plan4.append(ConfigureMicrocephOSDStep(fqdn, jhelper))
 

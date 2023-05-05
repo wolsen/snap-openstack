@@ -37,7 +37,7 @@ class TestClusterdSteps:
 
     def test_init_step(self, mocker, snap):
         mocker.patch.object(service, "Snap", return_value=snap)
-        role = "converged"
+        role = "control"
         init_step = ClusterInitStep(role)
         init_step.client = MagicMock()
         result = init_step.run()
@@ -71,13 +71,13 @@ class TestClusterdSteps:
     def test_update_node_step(self, mocker, snap):
         mocker.patch.object(service, "Snap", return_value=snap)
         update_node_step = ClusterUpdateNodeStep(
-            name="node-2", role="converged", machine_id=1
+            name="node-2", role="control", machine_id=1
         )
         update_node_step.client = MagicMock()
         result = update_node_step.run()
         assert result.result_type == ResultType.COMPLETED
         update_node_step.client.cluster.update_node_info.assert_called_once_with(
-            "node-2", "converged", 1
+            "node-2", "control", 1
         )
 
     def test_remove_node_step(self, mocker, snap):
@@ -516,7 +516,7 @@ class TestClusterService:
         mocker.patch.object(service, "Snap", return_value=snap)
 
         cs = ClusterService(mock_session)
-        cs.add_node_info("node-1", "converged")
+        cs.add_node_info("node-1", "control")
 
     def test_remove_node_info(self, mocker, snap):
         json_data = {
@@ -551,7 +551,7 @@ class TestClusterService:
             "metadata": [
                 {
                     "name": "node-1",
-                    "role": "converged",
+                    "role": "control",
                     "machineid": 0,
                 }
             ],
@@ -590,4 +590,4 @@ class TestClusterService:
         mocker.patch.object(service, "Snap", return_value=snap)
 
         cs = ClusterService(mock_session)
-        cs.update_node_info("node-2", "converged", "2")
+        cs.update_node_info("node-2", "control", "2")
