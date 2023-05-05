@@ -241,7 +241,7 @@ class ConfigureMicrocephOSDStep(BaseStep):
         first_disk = None
         if len(disks) > 0:
             disks_str = ",".join(disks)
-            first_disk = disk[0]
+            first_disk = disks[0]
 
         return {
             "osd_devices": questions.PromptQuestion(

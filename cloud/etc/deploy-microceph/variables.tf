@@ -28,10 +28,3 @@ variable "machine_ids" {
   type        = list(string)
   default     = []
 }
-
-variable "microceph_osd_devices" {
-  description = "OSD devices to add as disks to microceph"
-  type        = string
-  default     = ""
-}
-

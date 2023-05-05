@@ -44,6 +44,12 @@ resource "juju_application" "microceph" {
 
   config = {
     snap-channel = var.microceph_channel
-    osd-devices  = var.microceph_osd_devices
   }
+}
+
+# juju_offer.microceph_offer will be created
+resource "juju_offer" "microceph_offer" {
+   application_name = "microceph"
+   endpoint         = "ceph"
+   model            = data.juju_model.controller.name
 }
