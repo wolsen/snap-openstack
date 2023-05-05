@@ -6,6 +6,7 @@ rich # MIT
 # Used for communication with snapd socket
 requests # Apache 2
 requests-unixsocket # Apache 2
+urllib3<2 # https://github.com/psf/requests/issues/6432
 
 # Used for getting local ip address
 netifaces
