@@ -59,6 +59,19 @@ class DeployHypervisorApplicationStep(BaseStep, JujuStepHelper):
         self.hypervisor_model = CONTROLLER_MODEL.split("/")[-1]
         self.openstack_model = OPENSTACK_MODEL
 
+    def is_skip(self, status: Optional[Status] = None) -> Result:
+        """Determines if the step should be skipped or not.
+
+        :return: ResultType.SKIPPED if the Step should be skipped,
+                ResultType.COMPLETED or ResultType.FAILED otherwise
+        """
+        try:
+            run_sync(self.jhelper.get_application(APPLICATION, MODEL))
+        except ApplicationNotFoundException:
+            return Result(ResultType.COMPLETED)
+
+        return Result(ResultType.SKIPPED)
+
     def run(self, status: Optional[Status] = None) -> Result:
         """Apply terraform configuration to deploy hypervisor"""
         machine_ids = []

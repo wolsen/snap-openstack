@@ -108,12 +108,12 @@ def bootstrap(
     data_location = snap.paths.user_data
 
     # NOTE: install to user writable location
-    for tfplan_dir in [
-        "deploy-microk8s",
-        "deploy-microceph",
-        "deploy-openstack",
-        "deploy-openstack-hypervisor",
-    ]:
+    tfplan_dirs = []
+    if is_control_node:
+        tfplan_dirs.extend(["deploy-microk8s", "deploy-microceph", "deploy-openstack"])
+    if is_compute_node:
+        tfplan_dirs.extend(["deploy-openstack-hypervisor"])
+    for tfplan_dir in tfplan_dirs:
         src = snap.paths.snap / "etc" / tfplan_dir
         dst = snap.paths.user_common / "etc" / tfplan_dir
         LOG.debug(f"Updating {dst} from {src}...")
