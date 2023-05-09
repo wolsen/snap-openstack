@@ -37,7 +37,11 @@ from sunbeam.commands.juju import (
     RemoveJujuMachineStep,
     SaveJujuUserLocallyStep,
 )
-from sunbeam.commands.microceph import AddMicrocephUnitStep, ConfigureMicrocephOSDStep
+from sunbeam.commands.microceph import (
+    AddMicrocephUnitStep,
+    ConfigureMicrocephOSDStep,
+    RemoveMicrocephUnitStep,
+)
 from sunbeam.commands.microk8s import AddMicrok8sUnitStep, RemoveMicrok8sUnitStep
 from sunbeam.jobs.checks import (
     DaemonGroupCheck,
@@ -99,7 +103,7 @@ def add(name: str) -> None:
 @click.option(
     "--role",
     multiple=True,
-    default=["control", "compute", "storage"],
+    default=["control", "compute"],
     type=click.Choice(["control", "compute", "storage"], case_sensitive=False),
     help="Specify whether the node will be a control node, a "
     "compute node or a storage node. Defaults to all the roles.",
@@ -207,7 +211,6 @@ def remove(name: str) -> None:
 
     plan = [
         RemoveMicrok8sUnitStep(name, jhelper),
-        # Adding microceph for testing purpose
         RemoveMicrocephUnitStep(name, jhelper),
         RemoveJujuMachineStep(name),
         # Cannot remove user as the same user name cannot be resued,

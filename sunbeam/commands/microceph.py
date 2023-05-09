@@ -43,6 +43,7 @@ MICROCEPH_APP_TIMEOUT = 180  # 3 minutes, managing the application should be fas
 MICROCEPH_UNIT_TIMEOUT = (
     1200  # 15 minutes, adding / removing units can take a long time
 )
+OSD_PATH_PREFIX = "/dev/disk/by-id/"
 
 
 class DeployMicrocephApplicationStep(BaseStep):
@@ -267,6 +268,10 @@ class ConfigureMicrocephOSDStep(BaseStep):
 
             disks = ast.literal_eval(action_result.get("unpartitioned-disks", "[]"))
             unpartitioned_disks = [disk.get("path") for disk in disks]
+            # Remove duplicates if any
+            unpartitioned_disks = list(set(unpartitioned_disks))
+            if OSD_PATH_PREFIX in unpartitioned_disks:
+                unpartitioned_disks.remove(OSD_PATH_PREFIX)
 
         except (UnitNotFoundException, ActionFailedException) as e:
             LOG.debug(str(e))
