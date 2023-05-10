@@ -20,12 +20,28 @@ from typing import Any, Callable, Optional
 
 import yaml
 from rich.console import Console
-from rich.prompt import Confirm, Prompt
+from rich.prompt import Confirm, Prompt, DefaultType, Text
 
 from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import ConfigItemNotFoundException
 
 LOG = logging.getLogger(__name__)
+PASSWORD_MASK = "*" * 8
+
+
+class PasswordPrompt(Prompt):
+    """Prompt that asks for a password."""
+
+    def render_default(self, default: DefaultType) -> Text:
+        """Turn the supplied default in to a Text instance.
+
+        Args:
+            default (DefaultType): Default value.
+
+        Returns:
+            Text: Text containing rendering of masked password value.
+        """
+        return Text(f"({default[:2]}{PASSWORD_MASK})", "prompt.default")
 
 
 class Question:
@@ -37,6 +53,7 @@ class Question:
         default_function: Optional[Callable] = None,
         default_value: Any = None,
         choices: Optional[list] = None,
+        password: bool = False,
     ):
         """Setup question.
 
@@ -46,6 +63,7 @@ class Question:
         :param default_value: A value to use as the default for the question
         :param choices: A list of choices for the user to choose from
         :param console: the console to prompt on
+        :param password: whether answer to question is a password
         """
         self.preseed = None
         self.console = None
@@ -56,6 +74,7 @@ class Question:
         self.default_value = default_value
         self.choices = choices
         self.accept_defaults = False
+        self.password = password
 
     @property
     def question_function(self):
@@ -79,7 +98,8 @@ class Question:
             default = new_default
         elif self.default_function:
             default = self.default_function()
-            LOG.debug("Value from default function {}".format(default))
+            if not self.password:
+                LOG.debug("Value from default function {}".format(default))
         elif self.default_value:
             default = self.default_value
         return default
@@ -107,6 +127,7 @@ class Question:
                     default=default,
                     console=self.console,
                     choices=self.choices,
+                    password=self.password,
                 )
         return self.answer
 
@@ -117,6 +138,14 @@ class PromptQuestion(Question):
     @property
     def question_function(self):
         return Prompt.ask
+
+
+class PasswordPromptQuestion(Question):
+    """Ask the user for a password."""
+
+    @property
+    def question_function(self):
+        return PasswordPrompt.ask
 
 
 class ConfirmQuestion(Question):

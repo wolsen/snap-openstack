@@ -57,9 +57,10 @@ def user_questions():
         "username": sunbeam.jobs.questions.PromptQuestion(
             "Username to use for access to OpenStack", default_value="demo"
         ),
-        "password": sunbeam.jobs.questions.PromptQuestion(
+        "password": sunbeam.jobs.questions.PasswordPromptQuestion(
             "Password to use for access to OpenStack",
             default_function=utils.generate_password,
+            password=True,
         ),
         "cidr": sunbeam.jobs.questions.PromptQuestion(
             "Network range to use for project network", default_value="192.168.122.0/24"
