@@ -60,11 +60,11 @@ from sunbeam.jobs.checks import (
 )
 from sunbeam.jobs.common import (
     Role,
+    click_option_topology,
     get_step_message,
     run_plan,
     run_preflight_checks,
     validate_roles,
-    click_option_topology,
 )
 from sunbeam.jobs.juju import CONTROLLER, JujuHelper
 

@@ -13,6 +13,7 @@ urllib3<2 # https://github.com/psf/requests/issues/6432
 
 # Used for getting local ip address
 netifaces
+pyroute2
 
 # Generation of user passwords
 pwgen

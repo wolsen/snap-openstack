@@ -20,10 +20,11 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional, TextIO
 
 import click
 from rich.console import Console
+from rich.prompt import InvalidResponse, PromptBase
 from snaphelpers import Snap
 
 import sunbeam.jobs.questions
@@ -46,6 +47,76 @@ from sunbeam.jobs.juju import (
 CLOUD_CONFIG_SECTION = "CloudConfig"
 LOG = logging.getLogger(__name__)
 console = Console()
+
+
+class NicPrompt(PromptBase[str]):
+    """A prompt that asks for a NIC on the local machine and validates it.
+
+    Unlike other questions this prompt validates the users choice and if it
+    fails validation the user has an oppertunity to fix any issue in another
+    session and continue without exiting from the prompt.
+    """
+
+    response_type = str
+    validate_error_message = "[prompt.invalid]Please valid nic"
+
+    def check_choice(self, value: str) -> bool:
+        """Validate the choice of nic."""
+        nics = utils.get_free_nics(include_configured=True)
+        try:
+            value = value.strip().lower()
+        except AttributeError:
+            # Likely an empty string has been returned.
+            raise InvalidResponse(f"\n'{value}' not a valid nic name")
+        if value not in nics:
+            raise InvalidResponse(f"\n'{value}' not found")
+        return True
+
+    def __call__(self, *, default: Any = ..., stream: Optional[TextIO] = None) -> Any:
+        """Run the prompt loop.
+
+        Args:
+            default (Any, optional): Optional default value.
+
+        Returns:
+            PromptType: Processed value.
+        """
+        while True:
+            # Limit options displayed to user to unconfigured nics.
+            self.choices = utils.get_free_nics(include_configured=False)
+            # Assume that if a default has been passed in and it is configured it is
+            # probably the right one. The user will be prompted to confirm later.
+            if not default or default not in utils.get_free_nics(
+                include_configured=True
+            ):
+                if len(self.choices) > 0:
+                    default = self.choices[0]
+            self.pre_prompt()
+            prompt = self.make_prompt(default)
+            value = self.get_input(self.console, prompt, password=False, stream=stream)
+            if value == "":
+                if default:
+                    # Unlike super.__call__ do not return here as we still need to
+                    # validate the choice.
+                    value = default
+                else:
+                    self.console.print("\nInvalid nic")
+                    continue
+            try:
+                return_value = self.process_response(value)
+            except InvalidResponse as error:
+                self.on_validate_error(value, error)
+                continue
+            else:
+                return return_value
+
+
+class NicQuestion(sunbeam.jobs.questions.Question):
+    """Ask the user a simple yes / no question."""
+
+    @property
+    def question_function(self):
+        return NicPrompt.ask
 
 
 def user_questions():
@@ -99,10 +170,8 @@ def ext_net_questions():
         "segmentation_id": sunbeam.jobs.questions.PromptQuestion(
             "VLAN ID to use for external network", default_value=0
         ),
-        "nic": sunbeam.jobs.questions.PromptQuestion(
-            "Free network interface microstack can use for external traffic",
-            choices=utils.get_free_nics(),
-            default_value=utils.get_free_nic(),
+        "nic": NicQuestion(
+            "Free network interface microstack can use for external traffic"
         ),
     }
 
@@ -354,7 +423,7 @@ class UserQuestions(BaseStep):
             if not self.variables.get(section):
                 self.variables[section] = {}
         if self.preseed_file:
-            preseed = sunbeam.jobs.questions.read_preseed(self.preseed_file)
+            preseed = sunbeam.jobs.questions.read_preseed(Path(self.preseed_file))
         else:
             preseed = {}
         user_bank = sunbeam.jobs.questions.QuestionBank(
@@ -508,10 +577,7 @@ class TerraformDemoInitStep(TerraformInitStep):
 
 class SetLocalHypervisorOptions(BaseStep):
     def __init__(
-        self,
-        name,
-        jhelper,
-        join_mode: bool = False,
+        self, name, jhelper, join_mode: bool = False, preseed_file: str = None
     ):
         super().__init__(
             "Apply local hypervisor settings", "Apply local hypervisor settings"
@@ -520,6 +586,7 @@ class SetLocalHypervisorOptions(BaseStep):
         self.jhelper = jhelper
         self.join_mode = join_mode
         self.client = Client()
+        self.preseed_file = preseed_file
 
     def has_prompts(self) -> bool:
         return True
@@ -534,26 +601,38 @@ class SetLocalHypervisorOptions(BaseStep):
         remote_access_location = self.variables.get("user", {}).get(
             "remote_access_location"
         )
+        if self.preseed_file:
+            preseed = sunbeam.jobs.questions.read_preseed(Path(self.preseed_file))
+        else:
+            preseed = {}
         # If adding new nodes to the cluster then local access makes no sense
         # so always prompt for the nic.
-        if self.join_mode:
+        if self.join_mode or remote_access_location == utils.REMOTE_ACCESS:
             ext_net_bank = sunbeam.jobs.questions.QuestionBank(
                 questions=ext_net_questions(),
                 console=console,
-                preseed={},
+                preseed=preseed,
                 previous_answers={},
                 accept_defaults=False,
             )
-            self.nic = ext_net_bank.nic.ask()
-        elif remote_access_location == utils.REMOTE_ACCESS:
-            ext_net_bank = sunbeam.jobs.questions.QuestionBank(
-                questions=ext_net_questions(),
-                console=console,
-                preseed={},
-                previous_answers={},
-                accept_defaults=False,
-            )
-            self.nic = ext_net_bank.nic.ask()
+            while True:
+                self.nic = ext_net_bank.nic.ask()
+                if utils.is_configured(self.nic):
+                    agree_nic_up = sunbeam.jobs.questions.ConfirmQuestion(
+                        f"WARNING: Interface {self.nic} is configured. Any "
+                        "configuration will be lost, are you sure you want to "
+                        "continue?"
+                    ).ask()
+                    if not agree_nic_up:
+                        continue
+                if utils.is_nic_up(self.nic) and not utils.is_nic_connected(self.nic):
+                    agree_nic_no_link = sunbeam.jobs.questions.ConfirmQuestion(
+                        f"WARNING: Interface {self.nic} is not connected. Are "
+                        "you sure you want to continue?"
+                    ).ask()
+                    if not agree_nic_no_link:
+                        continue
+                break
 
     def run(self, status: Optional[Status] = None) -> Result:
         if not self.nic:
@@ -642,6 +721,13 @@ def configure(
             openrc=openrc,
         ),
         SetHypervisorCharmConfigStep(jhelper, ext_network=answer_file),
-        SetLocalHypervisorOptions(name, jhelper),
+        SetLocalHypervisorOptions(
+            name,
+            jhelper,
+            # Accept preseed file but do not allow 'accept_defaults' as nic
+            # selection may vary from machine to machine and is potentially
+            # destructive if it takes over an unintended nic.
+            preseed_file=preseed,
+        ),
     ]
     run_plan(plan, console)

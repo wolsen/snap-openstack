@@ -20,7 +20,7 @@ from typing import Any, Callable, Optional
 
 import yaml
 from rich.console import Console
-from rich.prompt import Confirm, Prompt, DefaultType, Text
+from rich.prompt import Confirm, DefaultType, Prompt, Text
 
 from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import ConfigItemNotFoundException
