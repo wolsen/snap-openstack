@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import logging
+from typing import List
 
 import click
 from rich.console import Console
@@ -55,6 +56,7 @@ from sunbeam.jobs.common import (
     get_step_message,
     run_plan,
     run_preflight_checks,
+    validate_roles,
 )
 from sunbeam.jobs.juju import CONTROLLER, JujuHelper
 
@@ -105,25 +107,26 @@ def add(name: str) -> None:
     multiple=True,
     default=["control", "compute"],
     type=click.Choice(["control", "compute", "storage"], case_sensitive=False),
+    callback=validate_roles,
     help="Specify whether the node will be a control node, a "
     "compute node or a storage node. Defaults to all the roles.",
 )
-def join(token: str, role: str) -> None:
+def join(token: str, role: List[Role]) -> None:
     """Join node to the cluster.
 
     Join the node to the cluster.
     """
-    node_roles = [Role[role_.upper()] for role_ in role]
+    node_roles = role
 
-    is_control_node = any([role_.is_control_node() for role_ in node_roles])
-    is_compute_node = any([role_.is_compute_node() for role_ in node_roles])
-    is_storage_node = any([role_.is_storage_node() for role_ in node_roles])
+    is_control_node = any(role_.is_control_node() for role_ in node_roles)
+    is_compute_node = any(role_.is_compute_node() for role_ in node_roles)
+    is_storage_node = any(role_.is_storage_node() for role_ in node_roles)
 
     # Register juju user with same name as Node fqdn
     name = utils.get_fqdn()
     ip = utils.get_local_ip_by_default_route()
 
-    roles_str = ",".join(role)
+    roles_str = ",".join([role_.name for role_ in role])
     LOG.debug(f"Joining node: roles {roles_str}")
 
     preflight_checks = []

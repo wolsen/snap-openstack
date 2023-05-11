@@ -17,7 +17,7 @@
 import logging
 import shutil
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import click
 from rich.console import Console
@@ -58,7 +58,13 @@ from sunbeam.jobs.checks import (
     LocalShareCheck,
     SshKeysConnectedCheck,
 )
-from sunbeam.jobs.common import Role, get_step_message, run_plan, run_preflight_checks
+from sunbeam.jobs.common import (
+    Role,
+    get_step_message,
+    run_plan,
+    run_preflight_checks,
+    validate_roles,
+)
 from sunbeam.jobs.juju import CONTROLLER, JujuHelper
 
 LOG = logging.getLogger(__name__)
@@ -74,25 +80,26 @@ snap = Snap()
     multiple=True,
     default=["control", "compute"],
     type=click.Choice(["control", "compute", "storage"], case_sensitive=False),
+    callback=validate_roles,
     help="Specify whether the node will be a control node, a "
     "compute node or a storage node. Defaults to all the roles.",
 )
 def bootstrap(
-    role: str, preseed: Optional[Path] = None, accept_defaults: bool = False
+    role: List[Role], preseed: Optional[Path] = None, accept_defaults: bool = False
 ) -> None:
     """Bootstrap the local node.
 
     Initialize the sunbeam cluster.
     """
-    node_roles = [Role[role_.upper()] for role_ in role]
+    node_roles = role
 
-    is_control_node = any([role_.is_control_node() for role_ in node_roles])
-    is_compute_node = any([role_.is_compute_node() for role_ in node_roles])
-    is_storage_node = any([role_.is_storage_node() for role_ in node_roles])
+    is_control_node = any(role_.is_control_node() for role_ in node_roles)
+    is_compute_node = any(role_.is_compute_node() for role_ in node_roles)
+    is_storage_node = any(role_.is_storage_node() for role_ in node_roles)
 
     fqdn = utils.get_fqdn()
 
-    roles_str = ",".join(role)
+    roles_str = ",".join([role_.name for role_ in role])
     LOG.debug(f"Bootstrap node: roles {roles_str}")
 
     cloud_type = snap.config.get("juju.cloud.type")

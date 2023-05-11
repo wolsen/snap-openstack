@@ -15,7 +15,7 @@
 
 import enum
 import logging
-from typing import Optional, Type
+from typing import List, Optional, Type
 
 import click
 from rich.console import Console
@@ -249,3 +249,12 @@ def get_step_message(plan_results: dict, step: Type[BaseStep]) -> Optional[str]:
     if result:
         return result.message
     return None
+
+
+def validate_roles(
+    ctx: click.core.Context, param: click.core.Option, value: tuple
+) -> List[Role]:
+    try:
+        return [Role[role.upper()] for role in value]
+    except KeyError as e:
+        raise click.BadParameter(str(e))
