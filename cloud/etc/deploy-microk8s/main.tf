@@ -43,8 +43,8 @@ resource "juju_application" "microk8s" {
   }
 
   config = {
-    channel = var.microk8s_channel
-    addons  = join(" ", [for key, value in var.addons : "${key}:${value}"])
+    channel              = var.microk8s_channel
+    addons               = join(" ", [for key, value in var.addons : "${key}:${value}"])
     disable_cert_reissue = true
   }
 }
