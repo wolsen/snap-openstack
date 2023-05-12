@@ -61,7 +61,7 @@ snap = Snap()
 
 @click.command()
 @click.option("-a", "--accept-defaults", help="Accept all defaults.", is_flag=True)
-@click.option("-p", "--preseed", help="Preseed file.")
+@click.option("-p", "--preseed", help="Preseed file.", type=click.Path())
 @click.option(
     "--role",
     default="converged",
@@ -69,7 +69,9 @@ snap = Snap()
     help="Specify whether the node will be a control node, a "
     "compute node, or a converged node (default)",
 )
-def bootstrap(role: str, preseed: str = None, accept_defaults: bool = False) -> None:
+def bootstrap(
+    role: str, preseed: Optional[Path] = None, accept_defaults: bool = False
+) -> None:
     """Bootstrap the local node.
 
     Initialize the sunbeam cluster.
