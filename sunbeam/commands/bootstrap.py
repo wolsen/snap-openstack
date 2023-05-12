@@ -60,6 +60,8 @@ snap = Snap()
 
 
 @click.command()
+@click.option("-a", "--accept-defaults", help="Accept all defaults.", is_flag=True)
+@click.option("-p", "--preseed", help="Preseed file.")
 @click.option(
     "--role",
     default="converged",
@@ -67,7 +69,7 @@ snap = Snap()
     help="Specify whether the node will be a control node, a "
     "compute node, or a converged node (default)",
 )
-def bootstrap(role: str) -> None:
+def bootstrap(role: str, preseed: str = None, accept_defaults: bool = False) -> None:
     """Bootstrap the local node.
 
     Initialize the sunbeam cluster.
@@ -157,7 +159,11 @@ def bootstrap(role: str) -> None:
             RegisterJujuUserStep(fqdn, controller, data_location, replace=True)
         )
         plan4.append(TerraformInitStep(tfhelper))
-        plan4.append(DeployMicrok8sApplicationStep(tfhelper, jhelper))
+        plan4.append(
+            DeployMicrok8sApplicationStep(
+                tfhelper, jhelper, accept_defaults=accept_defaults, preseed_file=preseed
+            )
+        )
         plan4.append(AddMicrok8sUnitStep(fqdn, jhelper))
         plan4.append(AddMicrok8sCloudStep(jhelper))
         plan4.append(TerraformInitStep(tfhelper_openstack_deploy))
