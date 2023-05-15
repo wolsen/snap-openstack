@@ -214,6 +214,15 @@ class JujuHelper:
             raise e
 
     @controller
+    async def get_application_names(self, model: str) -> List[str]:
+        """Get Application names in the model.
+
+        :model: Name of the model
+        """
+        model_impl = await self.get_model(model)
+        return list(model_impl.applications.keys())
+
+    @controller
     async def get_application(self, name: str, model: str) -> Application:
         """Fetch application in model.
 
@@ -510,6 +519,7 @@ class JujuHelper:
     async def wait_until_active(
         self,
         model: str,
+        apps: Optional[list] = None,
         timeout: Optional[int] = None,
     ) -> None:
         """Wait for all agents in model to reach idle status
@@ -521,7 +531,7 @@ class JujuHelper:
 
         try:
             # Wait for all the unit workload status to active and Agent status to idle
-            await model_impl.wait_for_idle(status="active", timeout=timeout)
+            await model_impl.wait_for_idle(apps=apps, status="active", timeout=timeout)
         except (JujuMachineError, JujuAgentError, JujuUnitError, JujuAppError) as e:
             raise JujuWaitException(
                 f"Error while waiting for model {model!r} to be ready: {str(e)}"

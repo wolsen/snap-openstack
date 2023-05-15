@@ -15,7 +15,7 @@
 import asyncio
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -47,10 +47,15 @@ def mock_run_sync(mocker):
 class TestDeployControlPlaneStep(unittest.TestCase):
     def __init__(self, methodName: str = "runTest") -> None:
         super().__init__(methodName)
+        self.client = patch("sunbeam.commands.openstack.Client")
 
     def setUp(self):
+        self.client.start()
         self.jhelper = AsyncMock()
         self.tfhelper = Mock(path=Path())
+
+    def tearDown(self):
+        self.client.stop()
 
     def test_run_pristine_installation(self):
         self.jhelper.get_application.side_effect = ApplicationNotFoundException(

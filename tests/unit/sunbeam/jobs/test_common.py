@@ -22,17 +22,17 @@ class TestRoles(unittest.TestCase):
     def test_is_control(self):
         self.assertTrue(Role.CONTROL.is_control_node())
         self.assertFalse(Role.COMPUTE.is_control_node())
-        self.assertTrue(Role.CONVERGED.is_control_node())
+        self.assertFalse(Role.STORAGE.is_control_node())
 
     def test_is_compute(self):
         self.assertFalse(Role.CONTROL.is_compute_node())
         self.assertTrue(Role.COMPUTE.is_compute_node())
-        self.assertTrue(Role.CONVERGED.is_compute_node())
+        self.assertFalse(Role.STORAGE.is_control_node())
 
-    def test_is_converged(self):
-        self.assertFalse(Role.CONTROL.is_converged_node())
-        self.assertFalse(Role.COMPUTE.is_converged_node())
-        self.assertTrue(Role.CONVERGED.is_converged_node())
+    def test_is_storage(self):
+        self.assertFalse(Role.CONTROL.is_storage_node())
+        self.assertFalse(Role.COMPUTE.is_storage_node())
+        self.assertTrue(Role.STORAGE.is_storage_node())
 
 
 if __name__ == "__main__":

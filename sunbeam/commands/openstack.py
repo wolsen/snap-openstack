@@ -18,7 +18,9 @@ from typing import Optional
 
 from rich.status import Status
 
+from sunbeam.clusterd.client import Client
 from sunbeam.commands.juju import JujuStepHelper
+from sunbeam.commands.microceph import APPLICATION as MICROCEPH_APPLICATION
 from sunbeam.commands.microk8s import (
     CREDENTIAL_SUFFIX,
     MICROK8S_CLOUD,
@@ -26,7 +28,13 @@ from sunbeam.commands.microk8s import (
 )
 from sunbeam.commands.terraform import TerraformException, TerraformHelper
 from sunbeam.jobs.common import BaseStep, Result, ResultType
-from sunbeam.jobs.juju import JujuHelper, JujuWaitException, TimeoutException, run_sync
+from sunbeam.jobs.juju import (
+    CONTROLLER_MODEL,
+    JujuHelper,
+    JujuWaitException,
+    TimeoutException,
+    run_sync,
+)
 
 LOG = logging.getLogger(__name__)
 OPENSTACK_MODEL = "openstack"
@@ -49,6 +57,19 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         self.jhelper = jhelper
         self.model = OPENSTACK_MODEL
         self.cloud = MICROK8S_CLOUD
+        self.client = Client()
+
+    def get_storage_tfvars(self) -> dict:
+        """Create terraform variables related to storage."""
+        tfvars = {}
+        storage_nodes = self.client.cluster.list_nodes_by_role("storage")
+        if storage_nodes:
+            tfvars["enable_ceph"] = True
+            tfvars["ceph_offer_url"] = f"{CONTROLLER_MODEL}.{MICROCEPH_APPLICATION}"
+        else:
+            tfvars["enable_ceph"] = False
+
+        return tfvars
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Execute configuration using terraform."""
@@ -57,17 +78,18 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         # - Enabling HA
         # - Enabling/disabling specific services
         # - Switch channels for the charmed operators
-        self.tfhelper.write_tfvars(
-            {
-                "model": self.model,
-                # Make these channel options configurable by the user
-                "openstack_channel": "yoga/edge",
-                "ovn_channel": "22.03/edge",
-                "cloud": self.cloud,
-                "credential": f"{self.cloud}{CREDENTIAL_SUFFIX}",
-                "config": {"workload-storage": MICROK8S_DEFAULT_STORAGECLASS},
-            }
-        )
+        tfvars = {
+            "model": self.model,
+            # Make these channel options configurable by the user
+            "openstack_channel": "yoga/edge",
+            "ovn_channel": "22.03/edge",
+            "cloud": self.cloud,
+            "credential": f"{self.cloud}{CREDENTIAL_SUFFIX}",
+            "config": {"workload-storage": MICROK8S_DEFAULT_STORAGECLASS},
+        }
+        tfvars.update(self.get_storage_tfvars())
+
+        self.tfhelper.write_tfvars(tfvars)
         try:
             self.tfhelper.apply()
         except TerraformException as e:
@@ -75,9 +97,15 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
             return Result(ResultType.FAILED, str(e))
 
         try:
+            # Remove cinder-ceph from apps to wait on if ceph is not enabled
+            apps = run_sync(self.jhelper.get_application_names(self.model))
+            if not tfvars.get("enable_ceph") and "cinder-ceph" in apps:
+                apps.remove("cinder-ceph")
+
             run_sync(
                 self.jhelper.wait_until_active(
                     self.model,
+                    apps,
                     timeout=OPENSTACK_DEPLOY_TIMEOUT,
                 )
             )

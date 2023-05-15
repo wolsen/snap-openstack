@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import logging
+from typing import List
 
 import click
 from rich.console import Console
@@ -37,6 +38,11 @@ from sunbeam.commands.juju import (
     RemoveJujuMachineStep,
     SaveJujuUserLocallyStep,
 )
+from sunbeam.commands.microceph import (
+    AddMicrocephUnitStep,
+    ConfigureMicrocephOSDStep,
+    RemoveMicrocephUnitStep,
+)
 from sunbeam.commands.microk8s import AddMicrok8sUnitStep, RemoveMicrok8sUnitStep
 from sunbeam.jobs.checks import (
     DaemonGroupCheck,
@@ -50,6 +56,7 @@ from sunbeam.jobs.common import (
     get_step_message,
     run_plan,
     run_preflight_checks,
+    validate_roles,
 )
 from sunbeam.jobs.juju import CONTROLLER, JujuHelper
 
@@ -95,15 +102,32 @@ def add(name: str) -> None:
 
 @click.command()
 @click.option("--token", type=str, help="Join token")
-@click.option("--role", default="converged", type=str, help="Role of the node")
-def join(token: str, role: str) -> None:
+@click.option(
+    "--role",
+    multiple=True,
+    default=["control", "compute"],
+    type=click.Choice(["control", "compute", "storage"], case_sensitive=False),
+    callback=validate_roles,
+    help="Specify whether the node will be a control node, a "
+    "compute node or a storage node. Defaults to all the roles.",
+)
+def join(token: str, role: List[Role]) -> None:
     """Join node to the cluster.
 
     Join the node to the cluster.
     """
+    node_roles = role
+
+    is_control_node = any(role_.is_control_node() for role_ in node_roles)
+    is_compute_node = any(role_.is_compute_node() for role_ in node_roles)
+    is_storage_node = any(role_.is_storage_node() for role_ in node_roles)
+
     # Register juju user with same name as Node fqdn
     name = utils.get_fqdn()
     ip = utils.get_local_ip_by_default_route()
+
+    roles_str = ",".join([role_.name for role_ in role])
+    LOG.debug(f"Joining node: roles {roles_str}")
 
     preflight_checks = []
     preflight_checks.append(JujuSnapCheck())
@@ -119,7 +143,7 @@ def join(token: str, role: str) -> None:
     jhelper = JujuHelper(data_location)
 
     plan1 = [
-        ClusterJoinNodeStep(token, role.upper()),
+        ClusterJoinNodeStep(token, roles_str.upper()),
         SaveJujuUserLocallyStep(name, data_location),
         RegisterJujuUserStep(name, controller, data_location),
         AddJujuMachineStep(ip),
@@ -135,10 +159,14 @@ def join(token: str, role: str) -> None:
     plan2 = []
     plan2.append(ClusterUpdateNodeStep(name, role="", machine_id=machine_id))
 
-    if Role[role.upper()].is_control_node():
+    if is_control_node:
         plan2.append(AddMicrok8sUnitStep(name, jhelper))
 
-    if Role[role.upper()].is_compute_node():
+    if is_storage_node:
+        plan2.append(AddMicrocephUnitStep(name, jhelper))
+        plan2.append(ConfigureMicrocephOSDStep(name, jhelper))
+
+    if is_compute_node:
         plan2.extend(
             [
                 AddHypervisorUnitStep(name, jhelper),
@@ -148,7 +176,7 @@ def join(token: str, role: str) -> None:
 
     run_plan(plan2, console)
 
-    click.echo(f"Node has joined cluster as a {role} node")
+    click.echo(f"Node has joined cluster as a {roles_str} node")
 
 
 @click.command()
@@ -186,6 +214,7 @@ def remove(name: str) -> None:
 
     plan = [
         RemoveMicrok8sUnitStep(name, jhelper),
+        RemoveMicrocephUnitStep(name, jhelper),
         RemoveJujuMachineStep(name),
         # Cannot remove user as the same user name cannot be resued,
         # so commenting the RemoveJujuUserStep

@@ -15,7 +15,7 @@
 
 import enum
 import logging
-from typing import Optional, Type
+from typing import List, Optional, Type
 
 import click
 from rich.console import Console
@@ -28,13 +28,13 @@ class Role(enum.Enum):
     """The role that the current node will play
 
     This determines if the role will be a control plane node, a Compute node,
-    or a Converged node. The role will help determine which particular services
+    or a storage node. The role will help determine which particular services
     need to be configured and installed on the system.
     """
 
     CONTROL = 1
     COMPUTE = 2
-    CONVERGED = 3
+    STORAGE = 3
 
     def is_control_node(self) -> bool:
         """Returns True if the node requires control services.
@@ -46,7 +46,7 @@ class Role(enum.Enum):
         :return: True if the node should have control-plane services,
                  False otherwise
         """
-        return self != Role.COMPUTE
+        return self == Role.CONTROL
 
     def is_compute_node(self) -> bool:
         """Returns True if the node requires compute services.
@@ -58,19 +58,19 @@ class Role(enum.Enum):
         :return: True if the node should run Compute services,
                  False otherwise
         """
-        return self != Role.CONTROL
+        return self == Role.COMPUTE
 
-    def is_converged_node(self) -> bool:
-        """Returns True if the node requires control and compute services.
+    def is_storage_node(self) -> bool:
+        """Returns True if the node requires storage services.
 
-        Control and Compute services are installed on nodes which are
-        designated as converged nodes. This helps determine the services
-        which are necessary to install.
+        Storage services are installed on nodes which are designated
+        for storage nodes only. This helps determine the role that the local
+        node will play.
 
-        :return: True if the node should run Control and Compute services,
+        :return: True if the node should have storage services,
                  False otherwise
         """
-        return self == Role.CONVERGED
+        return self == Role.STORAGE
 
 
 class ResultType(enum.Enum):
@@ -249,3 +249,12 @@ def get_step_message(plan_results: dict, step: Type[BaseStep]) -> Optional[str]:
     if result:
         return result.message
     return None
+
+
+def validate_roles(
+    ctx: click.core.Context, param: click.core.Option, value: tuple
+) -> List[Role]:
+    try:
+        return [Role[role.upper()] for role in value]
+    except KeyError as e:
+        raise click.BadParameter(str(e))

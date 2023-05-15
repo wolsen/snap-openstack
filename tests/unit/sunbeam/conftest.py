@@ -40,7 +40,6 @@ def snap_env():
 
 @pytest.fixture
 def snap(snap_env):
-    print("in snap")
     snap = Snap(environ=snap_env)
     snap.config = MagicMock(SnapConfig)
     snap.services = MagicMock(SnapServices)

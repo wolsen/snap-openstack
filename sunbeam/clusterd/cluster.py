@@ -166,6 +166,12 @@ class ExtendedAPIService(service.BaseService):
         """Remove configuration from database."""
         self._delete(f"/1.0/config/{key}")
 
+    def list_nodes_by_role(self, role: str) -> list:
+        """List nodes by role."""
+        nodes = self.list_nodes()
+        nodes_by_role = [node for node in nodes if role.upper() in node.get("role")]
+        return nodes_by_role
+
 
 class ClusterService(MicroClusterService, ExtendedAPIService):
     """Lists and manages cluster."""
