@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import logging
+import shutil
 from typing import List
 
 import click
@@ -30,7 +31,10 @@ from sunbeam.commands.clusterd import (
     ClusterUpdateNodeStep,
 )
 from sunbeam.commands.configure import SetLocalHypervisorOptions
-from sunbeam.commands.hypervisor import AddHypervisorUnitStep
+from sunbeam.commands.hypervisor import (
+    AddHypervisorUnitStep,
+    DeployHypervisorApplicationStep,
+)
 from sunbeam.commands.juju import AddJujuMachineStep  # RemoveJujuUserStep,
 from sunbeam.commands.juju import (
     CreateJujuUserStep,
@@ -44,6 +48,7 @@ from sunbeam.commands.microceph import (
     RemoveMicrocephUnitStep,
 )
 from sunbeam.commands.microk8s import AddMicrok8sUnitStep, RemoveMicrok8sUnitStep
+from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
 from sunbeam.jobs.checks import (
     DaemonGroupCheck,
     JujuSnapCheck,
@@ -140,6 +145,25 @@ def join(token: str, role: List[Role]) -> None:
     controller = CONTROLLER
     data_location = snap.paths.user_data
 
+    # NOTE: install to user writable location
+    tfplan_dirs = []
+    if is_control_node:
+        tfplan_dirs.extend(["deploy-microk8s", "deploy-microceph", "deploy-openstack"])
+    if is_compute_node:
+        tfplan_dirs.extend(["deploy-openstack-hypervisor"])
+    for tfplan_dir in tfplan_dirs:
+        src = snap.paths.snap / "etc" / tfplan_dir
+        dst = snap.paths.user_common / "etc" / tfplan_dir
+        LOG.debug(f"Updating {dst} from {src}...")
+        shutil.copytree(src, dst, dirs_exist_ok=True)
+
+    tfhelper_hypervisor_deploy = TerraformHelper(
+        path=snap.paths.user_common / "etc" / "deploy-openstack-hypervisor",
+        plan="hypervisor-plan",
+        parallelism=1,
+        backend="http",
+        data_location=data_location,
+    )
     jhelper = JujuHelper(data_location)
 
     plan1 = [
@@ -169,6 +193,8 @@ def join(token: str, role: List[Role]) -> None:
     if is_compute_node:
         plan2.extend(
             [
+                TerraformInitStep(tfhelper_hypervisor_deploy),
+                DeployHypervisorApplicationStep(tfhelper_hypervisor_deploy, jhelper),
                 AddHypervisorUnitStep(name, jhelper),
                 SetLocalHypervisorOptions(name, jhelper, join_mode=True),
             ]

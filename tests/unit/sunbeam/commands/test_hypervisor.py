@@ -58,6 +58,24 @@ class TestDeployHypervisorStep(unittest.TestCase):
     def tearDown(self):
         self.client.stop()
 
+    def test_is_skip(self):
+        self.jhelper.get_application.side_effect = ApplicationNotFoundException(
+            "not found"
+        )
+
+        step = DeployHypervisorApplicationStep(self.tfhelper, self.jhelper)
+        result = step.is_skip()
+
+        self.jhelper.get_application.assert_called_once()
+        assert result.result_type == ResultType.COMPLETED
+
+    def test_is_skip_app_already_deployed(self):
+        step = DeployHypervisorApplicationStep(self.tfhelper, self.jhelper)
+        result = step.is_skip()
+
+        self.jhelper.get_application.assert_called_once()
+        assert result.result_type == ResultType.SKIPPED
+
     def test_run_pristine_installation(self):
         self.jhelper.get_application.side_effect = ApplicationNotFoundException(
             "not found"
