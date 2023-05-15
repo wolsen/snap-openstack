@@ -19,8 +19,8 @@ import click
 from rich.console import Console
 from snaphelpers import Snap
 
-from sunbeam.jobs import juju
 from sunbeam.commands.openstack import OPENSTACK_MODEL
+from sunbeam.jobs import juju
 
 LOG = logging.getLogger(__name__)
 console = Console()
