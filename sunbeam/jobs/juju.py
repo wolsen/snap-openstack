@@ -531,7 +531,9 @@ class JujuHelper:
 
         try:
             # Wait for all the unit workload status to active and Agent status to idle
-            await model_impl.wait_for_idle(apps=apps, status="active", timeout=timeout)
+            await model_impl.wait_for_idle(
+                apps=apps, status="active", timeout=timeout, raise_on_error=False
+            )
         except (JujuMachineError, JujuAgentError, JujuUnitError, JujuAppError) as e:
             raise JujuWaitException(
                 f"Error while waiting for model {model!r} to be ready: {str(e)}"

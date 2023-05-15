@@ -23,6 +23,7 @@ from sunbeam.commands import configure as configure_cmds
 from sunbeam.commands import node as node_cmds
 from sunbeam.commands import openrc as openrc_cmds
 from sunbeam.commands import prepare_node as prepare_node_cmds
+from sunbeam.commands import resize as resize_cmds
 
 LOG = logging.getLogger()
 
@@ -60,6 +61,7 @@ def main():
     cluster.add_command(node_cmds.join)
     cluster.add_command(node_cmds.list)
     cluster.add_command(node_cmds.remove)
+    cluster.add_command(resize_cmds.resize)
     cli.add_command(openrc_cmds.openrc)
     cli()
 

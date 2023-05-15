@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import logging
 from typing import Optional
 
@@ -27,11 +28,17 @@ from sunbeam.commands.microk8s import (
     MICROK8S_DEFAULT_STORAGECLASS,
 )
 from sunbeam.commands.terraform import TerraformException, TerraformHelper
-from sunbeam.jobs.common import BaseStep, Result, ResultType
+from sunbeam.jobs.common import (
+    BaseStep,
+    Result,
+    ResultType,
+    get_host_total_ram,
+)
 from sunbeam.jobs.juju import (
     CONTROLLER_MODEL,
     JujuHelper,
     JujuWaitException,
+    ModelNotFoundException,
     TimeoutException,
     run_sync,
 )
@@ -40,14 +47,90 @@ LOG = logging.getLogger(__name__)
 OPENSTACK_MODEL = "openstack"
 OPENSTACK_DEPLOY_TIMEOUT = 2400  # 30 minutes
 
+CONFIG_KEY = "TerraformVarsOpenstack"
+TOPOLOGY_KEY = "Topology"
+
+RAM_20_GB_IN_KB = 20 * 1024 * 1024
+
+
+def update_config(client: Client, key: str, config: dict):
+    client.cluster.update_config(key, json.dumps(config))
+
+
+def read_config(client: Client, key: str) -> dict:
+    config = client.cluster.get_config(key)
+    return json.loads(config)
+
+
+def determine_target_topology_at_bootstrap() -> str:
+    """Determines the target topology at bootstrap time.
+
+    Under a threshold of 20GiB RAM on the bootstrapping node,
+    target is considered to be 'single'
+    Otherwise, target is considered to be 'multi'
+    """
+    host_total_ram = get_host_total_ram()
+    if host_total_ram < RAM_20_GB_IN_KB:
+        return "single"
+    return "multi"
+
+
+def determine_target_topology(client: Client) -> str:
+    """Determines the target topology.
+
+    Use information from clusterdb to infer deployment
+    topology.
+    """
+    control_nodes = client.cluster.list_nodes_by_role("control")
+    compute_nodes = client.cluster.list_nodes_by_role("compute")
+    combined = [
+        dict(node)
+        for node in set(tuple(item.items()) for item in control_nodes + compute_nodes)
+    ]
+    host_total_ram = get_host_total_ram()
+    if len(combined) == 1 and host_total_ram < RAM_20_GB_IN_KB:
+        topology = "single"
+    elif len(combined) < 10:
+        topology = "multi"
+    else:
+        topology = "large"
+    LOG.debug(f"Auto-detected topology: {topology}")
+    return topology
+
+
+def compute_ha_scale(topology: str) -> int:
+    if topology == "single":
+        return 1
+    return 3
+
+
+def compute_os_api_scale(topology: str, control_nodes: int) -> int:
+    if topology == "single":
+        return 1
+    if topology == "multi":
+        return min(control_nodes, 3)
+    if topology == "large":
+        return min(control_nodes + 2, 7)
+    raise ValueError(f"Unknown topology {topology}")
+
+
+def compute_ingress_scale(topology: str, control_nodes: int) -> int:
+    if topology == "single":
+        return 1
+    return control_nodes
+
 
 class DeployControlPlaneStep(BaseStep, JujuStepHelper):
     """Deploy OpenStack using Terraform cloud"""
+
+    _CONFIG = CONFIG_KEY
 
     def __init__(
         self,
         tfhelper: TerraformHelper,
         jhelper: JujuHelper,
+        topology: str,
+        database: str,
     ):
         super().__init__(
             "Deploying OpenStack Control Plane",
@@ -55,6 +138,8 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         )
         self.tfhelper = tfhelper
         self.jhelper = jhelper
+        self.topology = topology
+        self.database = database
         self.model = OPENSTACK_MODEL
         self.cloud = MICROK8S_CLOUD
         self.client = Client()
@@ -71,6 +156,19 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
 
         return tfvars
 
+    def is_skip(self, status: Optional[Status] = None) -> Result:
+        """Determines if the step should be skipped or not.
+
+        :return: ResultType.SKIPPED if the Step should be skipped,
+                ResultType.COMPLETED or ResultType.FAILED otherwise
+        """
+        try:
+            run_sync(self.jhelper.get_model(OPENSTACK_MODEL))
+        except ModelNotFoundException:
+            return Result(ResultType.COMPLETED)
+
+        return Result(ResultType.SKIPPED)
+
     def run(self, status: Optional[Status] = None) -> Result:
         """Execute configuration using terraform."""
         # TODO(jamespage):
@@ -78,6 +176,20 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         # - Enabling HA
         # - Enabling/disabling specific services
         # - Switch channels for the charmed operators
+        determined_topology = determine_target_topology_at_bootstrap()
+
+        if self.topology == "auto":
+            self.topology = determined_topology
+        LOG.debug(f"Bootstrap: topology {self.topology}")
+
+        if self.database == "auto":
+            self.database = determined_topology
+        LOG.debug(f"Bootstrap: database topology {self.database}")
+        update_config(
+            self.client,
+            TOPOLOGY_KEY,
+            {"topology": self.topology, "database": self.database},
+        )
         tfvars = {
             "model": self.model,
             # Make these channel options configurable by the user
@@ -86,9 +198,10 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
             "cloud": self.cloud,
             "credential": f"{self.cloud}{CREDENTIAL_SUFFIX}",
             "config": {"workload-storage": MICROK8S_DEFAULT_STORAGECLASS},
+            "many-mysql": self.database == "multi",
         }
         tfvars.update(self.get_storage_tfvars())
-
+        update_config(self.client, self._CONFIG, tfvars)
         self.tfhelper.write_tfvars(tfvars)
         try:
             self.tfhelper.apply()
@@ -109,10 +222,101 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
                     timeout=OPENSTACK_DEPLOY_TIMEOUT,
                 )
             )
-        except JujuWaitException as e:
+        except (JujuWaitException, TimeoutException) as e:
             LOG.warning(str(e))
             return Result(ResultType.FAILED, str(e))
-        except TimeoutException as e:
+
+        return Result(ResultType.COMPLETED)
+
+
+class ResizeControlPlaneStep(BaseStep, JujuStepHelper):
+    """Resize OpenStack using Terraform cloud."""
+
+    _CONFIG = CONFIG_KEY
+
+    def __init__(
+        self,
+        tfhelper: TerraformHelper,
+        jhelper: JujuHelper,
+        topology: str,
+        force: bool,
+    ):
+        super().__init__(
+            "Resizing OpenStack Control Plane",
+            "Resizing OpenStack Control Plane to match appropriate topology",
+        )
+        self.tfhelper = tfhelper
+        self.jhelper = jhelper
+        self.topology = topology
+        self.force = force
+        self.model = OPENSTACK_MODEL
+
+    def is_skip(self, status: Optional[Status] = None) -> Result:
+        """Determines if the step should be skipped or not.
+
+        :return: ResultType.SKIPPED if the Step should be skipped,
+                ResultType.COMPLETED or ResultType.FAILED otherwise
+        """
+        try:
+            run_sync(self.jhelper.get_model(OPENSTACK_MODEL))
+        except ModelNotFoundException:
+            return Result(
+                ResultType.FAILED,
+                "OpenStack control plane is not deployed, cannot resize",
+            )
+
+        return Result(ResultType.COMPLETED)
+
+    def run(self, status: Optional[Status] = None) -> Result:
+        """Execute configuration using terraform."""
+        client = Client()
+        topology_dict = read_config(client, TOPOLOGY_KEY)
+        if self.topology == "auto":
+            topology = determine_target_topology(client)
+        else:
+            topology = self.topology
+        topology_dict["topology"] = topology
+        is_not_compatible = (
+            topology_dict["database"] == "single" and topology == "large"
+        )
+        if not self.force and is_not_compatible:
+            return Result(
+                ResultType.FAILED,
+                (
+                    "Cannot resize control plane to large with single database,"
+                    " use -f/--force to override"
+                ),
+            )
+        update_config(
+            client,
+            TOPOLOGY_KEY,
+            topology_dict,
+        )
+        tf_vars = read_config(client, self._CONFIG)
+        control_nodes = client.cluster.list_nodes_by_role("control")
+        tf_vars.update(
+            {
+                "ha-scale": compute_ha_scale(topology),
+                "os-api-scale": compute_os_api_scale(topology, len(control_nodes)),
+                "ingress-scale": compute_ingress_scale(topology, len(control_nodes)),
+            }
+        )
+        update_config(client, self._CONFIG, tf_vars)
+        self.tfhelper.write_tfvars(tf_vars)
+        try:
+            self.tfhelper.apply()
+        except TerraformException as e:
+            LOG.exception("Error resizing control plane")
+            return Result(ResultType.FAILED, str(e))
+
+        try:
+            run_sync(
+                self.jhelper.wait_until_active(
+                    self.model,
+                    timeout=OPENSTACK_DEPLOY_TIMEOUT,
+                )
+            )
+        except (JujuWaitException, TimeoutException) as e:
             LOG.warning(str(e))
             return Result(ResultType.FAILED, str(e))
 
