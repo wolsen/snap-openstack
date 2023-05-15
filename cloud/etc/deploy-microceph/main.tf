@@ -49,7 +49,7 @@ resource "juju_application" "microceph" {
 
 # juju_offer.microceph_offer will be created
 resource "juju_offer" "microceph_offer" {
-   application_name = "microceph"
-   endpoint         = "ceph"
-   model            = data.juju_model.controller.name
+  application_name = juju_application.microceph.name
+  endpoint         = "ceph"
+  model            = data.juju_model.controller.name
 }
