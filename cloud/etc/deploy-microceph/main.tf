@@ -18,7 +18,7 @@ terraform {
   required_providers {
     juju = {
       source  = "juju/juju"
-      version = ">= 0.6.0"
+      version = ">= 0.7.0"
     }
   }
 
@@ -48,10 +48,8 @@ resource "juju_application" "microceph" {
 }
 
 # juju_offer.microceph_offer will be created
-/*
 resource "juju_offer" "microceph_offer" {
    application_name = "microceph"
    endpoint         = "ceph"
    model            = data.juju_model.controller.name
 }
-*/
