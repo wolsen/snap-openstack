@@ -185,11 +185,21 @@ class ClusterListNodeStep(BaseStep):
         self.client = clusterClient()
 
     def run(self, status: Optional[Status] = None) -> Result:
-        """Join node to sunbeam cluster"""
+        """List nodes in the sunbeam cluster"""
         try:
             members = self.client.cluster.get_cluster_members()
-            LOG.info(members)
-            return Result(result_type=ResultType.COMPLETED, message=members)
+            LOG.debug(f"Members: {members}")
+            nodes = self.client.cluster.list_nodes()
+            LOG.debug(f"Nodes: {nodes}")
+
+            nodes_dict = {
+                member.get("name"): {"status": member.get("status")}
+                for member in members
+            }
+            for node in nodes:
+                nodes_dict[node.get("name")].update({"role": node.get("role")})
+
+            return Result(result_type=ResultType.COMPLETED, message=nodes_dict)
         except ClusterServiceUnavailableException as e:
             LOG.warning(e)
             return Result(ResultType.FAILED, str(e))
