@@ -254,7 +254,10 @@ class RemoveMicrok8sUnitStep(BaseStep, JujuStepHelper):
             run_sync(self.jhelper.remove_unit(APPLICATION, str(self.unit), MODEL))
             run_sync(
                 self.jhelper.wait_application_ready(
-                    APPLICATION, MODEL, timeout=MICROK8S_UNIT_TIMEOUT
+                    APPLICATION,
+                    MODEL,
+                    accepted_status=["active", "unknown"],
+                    timeout=MICROK8S_UNIT_TIMEOUT,
                 )
             )
         except (ApplicationNotFoundException, TimeoutException) as e:
