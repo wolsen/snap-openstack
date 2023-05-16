@@ -18,6 +18,7 @@ import shutil
 from typing import List
 
 import click
+from prettytable import PrettyTable
 from rich.console import Console
 from snaphelpers import Snap
 
@@ -218,9 +219,26 @@ def list() -> None:
     results = run_plan(plan, console)
 
     list_node_step_result = results.get("ClusterListNodeStep")
+    nodes = list_node_step_result.message
+
+    table = PrettyTable()
+    table.field_names = ["Node", "Status", "Control", "Compute", "Storage"]
+    table_data = []
+    for name, node in nodes.items():
+        table_data.append(
+            [
+                name,
+                "Up" if node.get("status") == "ONLINE" else "Down",
+                "X" if "CONTROL" in node.get("role", "") else "",
+                "X" if "COMPUTE" in node.get("role", "") else "",
+                "X" if "STORAGE" in node.get("role", "") else "",
+            ]
+        )
+    if table_data:
+        table.add_rows(table_data)
 
     click.echo("Sunbeam Cluster Node List:")
-    click.echo(f"{list_node_step_result.message}")
+    click.echo(table)
 
 
 @click.command()
