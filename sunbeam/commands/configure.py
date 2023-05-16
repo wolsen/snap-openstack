@@ -65,7 +65,7 @@ def user_questions():
             "Network range to use for project network", default_value="192.168.122.0/24"
         ),
         "security_group_rules": sunbeam.jobs.questions.ConfirmQuestion(
-            "Setup security group rules for SSH and ICMP ingress", default_value=True
+            "Enable ping and SSH access to instances?", default_value=True
         ),
         "remote_access_location": sunbeam.jobs.questions.PromptQuestion(
             "Local or remote access to VMs",
