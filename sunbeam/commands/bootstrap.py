@@ -74,7 +74,12 @@ snap = Snap()
 
 @click.command()
 @click.option("-a", "--accept-defaults", help="Accept all defaults.", is_flag=True)
-@click.option("-p", "--preseed", help="Preseed file.", type=click.Path())
+@click.option(
+    "-p",
+    "--preseed",
+    help="Preseed file.",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
 @click.option(
     "--role",
     multiple=True,
