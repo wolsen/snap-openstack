@@ -18,8 +18,10 @@ import logging
 from typing import List, Optional, Type
 
 import click
+from click import decorators
 from rich.console import Console
 from rich.status import Status
+
 
 LOG = logging.getLogger(__name__)
 
@@ -258,3 +260,35 @@ def validate_roles(
         return [Role[role.upper()] for role in value]
     except KeyError as e:
         raise click.BadParameter(str(e))
+
+
+def get_host_total_ram() -> int:
+    """Reads meminfo to get total ram in KB."""
+    with open("/proc/meminfo") as f:
+        for line in f:
+            if line.startswith("MemTotal"):
+                return int(line.split()[1])
+    raise Exception("Could not determine total RAM")
+
+
+def click_option_topology(func: decorators.FC) -> decorators.FC:
+    return click.option(
+        "--topology",
+        default="auto",
+        type=click.Choice(
+            [
+                "auto",
+                "single",
+                "multi",
+                "large",
+            ],
+            case_sensitive=False,
+        ),
+        help=(
+            "Allows definition of the intended cluster configuration: "
+            "'auto' for automatic determination, "
+            "'single' for a single-node cluster, "
+            "'multi' for a multi-node cluster, "
+            "'large' for a large scale cluster"
+        ),
+    )(func)

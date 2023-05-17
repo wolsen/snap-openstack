@@ -64,6 +64,7 @@ from sunbeam.jobs.common import (
     run_plan,
     run_preflight_checks,
     validate_roles,
+    click_option_topology,
 )
 from sunbeam.jobs.juju import CONTROLLER, JujuHelper
 
@@ -89,8 +90,31 @@ snap = Snap()
     help="Specify whether the node will be a control node, a "
     "compute node or a storage node. Defaults to all the roles.",
 )
+@click_option_topology
+@click.option(
+    "--database",
+    default="auto",
+    type=click.Choice(
+        [
+            "auto",
+            "single",
+            "multi",
+        ],
+        case_sensitive=False,
+    ),
+    help=(
+        "Allows definition of the intended cluster configuration: "
+        "'auto' for automatic determination, "
+        "'single' for a single database, "
+        "'multi' for a database per service, "
+    ),
+)
 def bootstrap(
-    role: List[Role], preseed: Optional[Path] = None, accept_defaults: bool = False
+    role: List[Role],
+    topology: str,
+    database: str,
+    preseed: Optional[Path] = None,
+    accept_defaults: bool = False,
 ) -> None:
     """Bootstrap the local node.
 
@@ -200,7 +224,11 @@ def bootstrap(
 
     if is_control_node:
         plan4.append(TerraformInitStep(tfhelper_openstack_deploy))
-        plan4.append(DeployControlPlaneStep(tfhelper_openstack_deploy, jhelper))
+        plan4.append(
+            DeployControlPlaneStep(
+                tfhelper_openstack_deploy, jhelper, topology, database
+            )
+        )
 
     run_plan(plan4, console)
 
