@@ -582,7 +582,12 @@ class SetLocalHypervisorOptions(BaseStep):
 
 @click.command()
 @click.option("-a", "--accept-defaults", help="Accept all defaults.", is_flag=True)
-@click.option("-p", "--preseed", help="Preseed file.")
+@click.option(
+    "-p",
+    "--preseed",
+    help="Preseed file.",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
 @click.option("-o", "--openrc", help="Output file for cloud access details.")
 def configure(
     openrc: str = None, preseed: str = None, accept_defaults: bool = False
