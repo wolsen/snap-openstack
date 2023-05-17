@@ -55,6 +55,7 @@ from sunbeam.jobs.checks import (
     JujuSnapCheck,
     LocalShareCheck,
     SshKeysConnectedCheck,
+    VerifyFQDNCheck,
 )
 from sunbeam.jobs.common import (
     ResultType,
@@ -71,15 +72,28 @@ console = Console()
 snap = Snap()
 
 
+def remove_trailing_dot(value: str) -> str:
+    """Remove trailing dot from the value."""
+    return value.rstrip(".")
+
+
 @click.command()
-@click.option("--name", type=str, prompt=True, help="Fully qualified node name")
+@click.option(
+    "--name",
+    type=str,
+    prompt=True,
+    callback=remove_trailing_dot,
+    help="Fully qualified node name",
+)
 def add(name: str) -> None:
     """Generates a token for a new server.
 
     Register new node to the cluster.
     """
-    preflight_checks = [DaemonGroupCheck()]
+    preflight_checks = [DaemonGroupCheck(), VerifyFQDNCheck(name)]
     run_preflight_checks(preflight_checks, console)
+
+    name = remove_trailing_dot(name)
 
     plan1 = [
         ClusterAddNodeStep(name),
