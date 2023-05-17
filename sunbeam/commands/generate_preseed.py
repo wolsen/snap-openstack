@@ -17,16 +17,17 @@ import logging
 
 import click
 from rich.console import Console
+
 import sunbeam.jobs.questions
+from sunbeam.clusterd.client import Client
+from sunbeam.clusterd.service import ClusterServiceUnavailableException
 from sunbeam.commands.configure import (
+    CLOUD_CONFIG_SECTION,
     ext_net_questions,
     ext_net_questions_local_only,
     user_questions,
-    CLOUD_CONFIG_SECTION,
 )
 from sunbeam.commands.microk8s import microk8s_addons_questions
-from sunbeam.clusterd.client import Client
-from sunbeam.clusterd.service import ClusterServiceUnavailableException
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -62,17 +63,21 @@ def generate_preseed() -> None:
     """Generate preseed file."""
     client = Client()
     try:
-        variables = sunbeam.jobs.questions.load_answers(
-            client, CLOUD_CONFIG_SECTION
-        )
+        variables = sunbeam.jobs.questions.load_answers(client, CLOUD_CONFIG_SECTION)
     except ClusterServiceUnavailableException:
         variables = {}
+    microk8s_addons_bank = sunbeam.jobs.questions.QuestionBank(
+        questions=microk8s_addons_questions(),
+        console=console,
+        previous_answers=variables.get("addons", {}),
+    )
+    show_questions(microk8s_addons_bank, section="addons")
     user_bank = sunbeam.jobs.questions.QuestionBank(
         questions=user_questions(),
         console=console,
         previous_answers=variables.get("user"),
     )
-    show_questions(user_bank, section="user", section_description="")
+    show_questions(user_bank, section="user")
     ext_net_bank_local = sunbeam.jobs.questions.QuestionBank(
         questions=ext_net_questions_local_only(),
         console=console,
