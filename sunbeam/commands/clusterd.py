@@ -16,6 +16,8 @@
 import logging
 from typing import Optional
 
+from rich.console import Console
+
 from sunbeam import utils
 from sunbeam.clusterd.client import Client as clusterClient
 from sunbeam.clusterd.service import (
@@ -68,7 +70,9 @@ class ClusterInitStep(BaseStep):
 
         return Result(ResultType.COMPLETED)
 
-    def run(self, status: Optional[Status] = None) -> Result:
+    def run(
+        self, status: Optional[Status] = None, console: Optional[Console] = None
+    ) -> Result:
         """Bootstrap sunbeam cluster"""
         try:
             self.client.cluster.bootstrap(
@@ -119,7 +123,9 @@ class ClusterAddNodeStep(BaseStep):
 
         return Result(ResultType.COMPLETED)
 
-    def run(self, status: Optional[Status] = None) -> Result:
+    def run(
+        self, status: Optional[Status] = None, console: Optional[Console] = None
+    ) -> Result:
         """Add node to sunbeam cluster"""
         try:
             token = self.client.cluster.add_node(name=self.node_name)
@@ -161,7 +167,9 @@ class ClusterJoinNodeStep(BaseStep):
 
         return Result(ResultType.COMPLETED)
 
-    def run(self, status: Optional[Status] = None) -> Result:
+    def run(
+        self, status: Optional[Status] = None, console: Optional[Console] = None
+    ) -> Result:
         """Join node to sunbeam cluster"""
         try:
             self.client.cluster.join_node(
@@ -184,8 +192,10 @@ class ClusterListNodeStep(BaseStep):
         super().__init__("List nodes of Cluster", "Listing nodes in Sunbeam cluster")
         self.client = clusterClient()
 
-    def run(self, status: Optional[Status] = None) -> Result:
-        """List nodes in the sunbeam cluster"""
+    def run(
+        self, status: Optional[Status] = None, console: Optional[Console] = None
+    ) -> Result:
+        """Join node to sunbeam cluster"""
         try:
             members = self.client.cluster.get_cluster_members()
             LOG.debug(f"Members: {members}")
@@ -215,7 +225,9 @@ class ClusterUpdateNodeStep(BaseStep):
         self.role = role
         self.machine_id = machine_id
 
-    def run(self, status: Optional[Status] = None) -> Result:
+    def run(
+        self, status: Optional[Status] = None, console: Optional[Console] = None
+    ) -> Result:
         """Update Node info"""
         try:
             self.client.cluster.update_node_info(self.name, self.role, self.machine_id)
@@ -235,7 +247,9 @@ class ClusterRemoveNodeStep(BaseStep):
         self.node_name = name
         self.client = clusterClient()
 
-    def run(self, status: Optional[Status] = None) -> Result:
+    def run(
+        self, status: Optional[Status] = None, console: Optional[Console] = None
+    ) -> Result:
         """Remove node from sunbeam cluster"""
         try:
             self.client.cluster.remove_node(self.node_name)
@@ -265,7 +279,9 @@ class ClusterAddJujuUserStep(BaseStep):
         self.token = token
         self.client = clusterClient()
 
-    def is_skip(self, status: Optional[Status] = None) -> Result:
+    def is_skip(
+        self, status: Optional[Status] = None, console: Optional[Console] = None
+    ) -> Result:
         """Determines if the step should be skipped or not.
 
         :return: ResultType.SKIPPED if the Step should be skipped,
@@ -282,7 +298,9 @@ class ClusterAddJujuUserStep(BaseStep):
 
         return Result(ResultType.SKIPPED)
 
-    def run(self, status: Optional[Status] = None) -> Result:
+    def run(
+        self, status: Optional[Status] = None, console: Optional[Console] = None
+    ) -> Result:
         """Add node to sunbeam cluster"""
         try:
             self.client.cluster.add_juju_user(self.username, self.token)
@@ -326,7 +344,9 @@ class ClusterUpdateJujuControllerStep(BaseStep, JujuStepHelper):
 
         return Result(ResultType.COMPLETED)
 
-    def run(self, status: Optional[Status] = None) -> Result:
+    def run(
+        self, status: Optional[Status] = None, console: Optional[Console] = None
+    ) -> Result:
         """Save controller in sunbeam cluster."""
         controller = self.get_controller(self.controller)["details"]
 

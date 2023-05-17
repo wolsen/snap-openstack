@@ -123,7 +123,9 @@ class DeployMicrok8sApplicationStep(BaseStep, JujuStepHelper):
         """
         return Result(ResultType.COMPLETED)
 
-    def run(self, status: Optional[Status] = None) -> Result:
+    def run(
+        self, status: Optional[Status] = None, console: Optional[Console] = None
+    ) -> Result:
         """Apply terraform configuration to deploy microk8s"""
         machine_ids = []
         try:
@@ -194,7 +196,9 @@ class AddMicrok8sUnitStep(BaseStep, JujuStepHelper):
 
         return Result(ResultType.COMPLETED)
 
-    def run(self, status: Optional[Status] = None) -> Result:
+    def run(
+        self, status: Optional[Status] = None, console: Optional[Console] = None
+    ) -> Result:
         """Add unit to microk8s application on Juju model."""
         try:
             unit = run_sync(
@@ -248,7 +252,9 @@ class RemoveMicrok8sUnitStep(BaseStep, JujuStepHelper):
 
         return Result(ResultType.SKIPPED)
 
-    def run(self, status: Optional[Status] = None) -> Result:
+    def run(
+        self, status: Optional[Status] = None, console: Optional[Console] = None
+    ) -> Result:
         """Remove unit from microk8s application on Juju model."""
         try:
             run_sync(self.jhelper.remove_unit(APPLICATION, str(self.unit), MODEL))
@@ -291,7 +297,9 @@ class AddMicrok8sCloudStep(BaseStep, JujuStepHelper):
 
         return Result(ResultType.COMPLETED)
 
-    def run(self, status: Optional[Status] = None) -> Result:
+    def run(
+        self, status: Optional[Status] = None, console: Optional[Console] = None
+    ) -> Result:
         """Add microk8s clouds to Juju controller."""
         try:
             unit = run_sync(self.jhelper.get_leader_unit(APPLICATION, MODEL))

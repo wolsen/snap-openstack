@@ -16,6 +16,7 @@
 import logging
 from typing import Optional
 
+from rich.console import Console
 from rich.status import Status
 
 from sunbeam.clusterd.client import Client
@@ -71,7 +72,9 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
 
         return tfvars
 
-    def run(self, status: Optional[Status] = None) -> Result:
+    def run(
+        self, status: Optional[Status] = None, console: Optional[Console] = None
+    ) -> Result:
         """Execute configuration using terraform."""
         # TODO(jamespage):
         # This needs to evolve to add support for things like:

@@ -16,6 +16,7 @@
 import logging
 from typing import Optional
 
+from rich.console import Console
 from rich.status import Status
 
 from sunbeam.clusterd.client import Client
@@ -72,7 +73,9 @@ class DeployHypervisorApplicationStep(BaseStep, JujuStepHelper):
 
         return Result(ResultType.SKIPPED)
 
-    def run(self, status: Optional[Status] = None) -> Result:
+    def run(
+        self, status: Optional[Status] = None, console: Optional[Console] = None
+    ) -> Result:
         """Apply terraform configuration to deploy hypervisor"""
         machine_ids = []
         try:
@@ -152,7 +155,9 @@ class AddHypervisorUnitStep(BaseStep, JujuStepHelper):
 
         return Result(ResultType.COMPLETED)
 
-    def run(self, status: Optional[Status] = None) -> Result:
+    def run(
+        self, status: Optional[Status] = None, console: Optional[Console] = None
+    ) -> Result:
         """Add unit to openstack-hypervisor application on Juju model."""
         try:
             unit = run_sync(
@@ -211,7 +216,9 @@ class RemoveHypervisorUnitStep(BaseStep, JujuStepHelper):
 
         return Result(ResultType.SKIPPED)
 
-    def run(self, status: Optional[Status] = None) -> Result:
+    def run(
+        self, status: Optional[Status] = None, console: Optional[Console] = None
+    ) -> Result:
         """Remove unit from openstack-hypervisor application on Juju model."""
         try:
             run_sync(self.jhelper.remove_unit(APPLICATION, str(self.unit), MODEL))

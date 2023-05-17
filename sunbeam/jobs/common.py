@@ -168,7 +168,7 @@ class BaseStep:
         """
         return Result(ResultType.COMPLETED)
 
-    def run(self, status: Optional[Status]) -> Result:
+    def run(self, status: Optional[Status], console: Optional[Console]) -> Result:
         """Run the step to completion.
 
         Invoked when the step is run and returns a ResultType to indicate
@@ -226,7 +226,7 @@ def run_plan(plan: list, console: Console) -> dict:
                 continue
 
             LOG.debug(f"Running step {step.name}")
-            result = step.run()
+            result = step.run(status=status, console=console)
             results[step.__class__.__name__] = result
             LOG.debug(
                 f"Finished running step {step.name}. " f"Result: {result.result_type}"

@@ -22,6 +22,7 @@ from pathlib import Path
 from string import Template
 from typing import Optional
 
+from rich.console import Console
 from rich.status import Status
 from snaphelpers import Snap
 
@@ -200,7 +201,9 @@ class TerraformInitStep(BaseStep):
         """
         return Result(ResultType.COMPLETED)
 
-    def run(self, status: Optional[Status] = None) -> Result:
+    def run(
+        self, status: Optional[Status] = None, console: Optional[Console] = None
+    ) -> Result:
         """Initialise Terraform configuration from provider mirror,"""
         try:
             self.tfhelper.init()

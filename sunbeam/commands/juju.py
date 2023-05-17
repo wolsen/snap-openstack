@@ -28,6 +28,9 @@ from typing import Optional
 import pexpect
 import pwgen
 import yaml
+from rich.console import Console
+from rich.prompt import Prompt
+from rich.status import Status
 from snaphelpers import Snap
 
 from sunbeam import utils
@@ -200,7 +203,9 @@ class BootstrapJujuStep(BaseStep, JujuStepHelper):
             LOG.warning(e.stderr)
             return Result(ResultType.FAILED, str(e))
 
-    def run(self, status: Optional["Status"] = None) -> Result:
+    def run(
+        self, status: Optional["Status"] = None, console: Optional["Console"] = None
+    ) -> Result:
         """Run the step to completion.
 
         Invoked when the step is run and returns a ResultType to indicate
@@ -213,23 +218,66 @@ class BootstrapJujuStep(BaseStep, JujuStepHelper):
                 if not result:
                     return Result(ResultType.FAILED, "Not able to create cloud")
 
-            cmd = [
-                self._get_juju_binary(),
-                "bootstrap",
-                self.cloud,
-                self.controller,
+            log_dir = Snap().paths.user_common
+            log_file = log_dir / f"bootstrap_{self.cloud}_{self.controller}.log"
+            expect_list = [
+                r"^.*password for \S+\w*:",  # Match [sudo] password for $username:
+                r"^to create a new model to deploy workloads.*",
+                pexpect.EOF,
             ]
-            LOG.debug(f'Running command {" ".join(cmd)}')
-            process = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            LOG.debug(
-                f"Command finished. stdout={process.stdout}, stderr={process.stderr}"
+
+            child = pexpect.spawn(
+                self._get_juju_binary(),
+                ["bootstrap", self.cloud, self.controller],
+                timeout=2 * PEXPECT_TIMEOUT,
             )
 
+            with open(log_file, "wb+") as f:
+                # Record the command output, but only the contents streaming from the
+                # process, don't record anything sent to the process as it may contain
+                # sensitive information.
+                child.logfile_read = f
+                while True:
+                    index = child.expect(expect_list)
+                    if index == 0:
+                        prompt = child.match.group()
+                        if not console:
+                            LOG.warning(
+                                f"Unable to prompt for user input for: {prompt}"
+                            )
+                            continue
+
+                        if status:
+                            status.stop()
+
+                        # Attempt to prompt the user with the prompt that was asked in
+                        # the process. This looks a bit like "password for foo:". Make
+                        # sure to strip the colon as the Prompt.ask will add it back
+                        # in.
+                        password = Prompt.ask(
+                            str(prompt, "UTF-8").rstrip(":"), password=True
+                        )
+                        child.sendline(password)
+
+                        if status:
+                            status.start()
+
+                    elif index == 1 or index == 2:
+                        LOG.debug("Command finished.")
+
             return Result(ResultType.COMPLETED)
+
         except subprocess.CalledProcessError as e:
             LOG.exception("Error bootstrapping Juju")
             LOG.warning(e.stderr)
             return Result(ResultType.FAILED, str(e))
+
+        except pexpect.TIMEOUT as e2:
+            LOG.exception(
+                f"Error bootstrapping controller {self.controller} to {self.cloud}"
+            )
+            LOG.warning(e2)
+            return Result(ResultType.FAILED, "TIMED OUT to bootstrap controller")
 
 
 class CreateJujuUserStep(BaseStep, JujuStepHelper):
@@ -261,7 +309,9 @@ class CreateJujuUserStep(BaseStep, JujuStepHelper):
 
         return Result(ResultType.COMPLETED)
 
-    def run(self, status: Optional["Status"] = None) -> Result:
+    def run(
+        self, status: Optional["Status"] = None, console: Optional["Console"] = None
+    ) -> Result:
         """Run the step to completion.
 
         Invoked when the step is run and returns a ResultType to indicate
@@ -341,7 +391,9 @@ class RemoveJujuUserStep(BaseStep, JujuStepHelper):
 
         return Result(ResultType.COMPLETED)
 
-    def run(self, status: Optional["Status"] = None) -> Result:
+    def run(
+        self, status: Optional[Status] = None, console: Optional[Console] = None
+    ) -> Result:
         """Run the step to completion.
 
         Invoked when the step is run and returns a ResultType to indicate
@@ -380,7 +432,9 @@ class RegisterJujuUserStep(BaseStep, JujuStepHelper):
         home = os.environ.get("SNAP_REAL_HOME")
         os.environ["JUJU_DATA"] = f"{home}/.local/share/juju"
 
-    def is_skip(self, status: Optional["Status"] = None) -> Result:
+    def is_skip(
+        self, status: Optional[Status] = None, console: Optional[Console] = None
+    ) -> Result:
         """Determines if the step should be skipped or not.
 
         :return: ResultType.SKIPPED if the Step should be skipped,
@@ -411,7 +465,9 @@ class RegisterJujuUserStep(BaseStep, JujuStepHelper):
         self.registration_token = user.get("token")
         return Result(ResultType.COMPLETED)
 
-    def run(self, status: Optional["Status"] = None) -> Result:
+    def run(
+        self, status: Optional[Status] = None, console: Optional[Console] = None
+    ) -> Result:
         """Run the step to completion.
 
         Invoked when the step is run and returns a ResultType to indicate
@@ -423,6 +479,10 @@ class RegisterJujuUserStep(BaseStep, JujuStepHelper):
                 ResultType.FAILED, "No registration token found in Cluster database"
             )
 
+        log_file = (
+            Snap().paths.user_common / f"register_juju_user_{self.username}_"
+            f"{self.controller}.log"
+        )
         new_password_re = r"Enter a new password"
         confirm_password_re = r"Confirm password"
         controller_name_re = r"Enter a name for this controller"
@@ -433,7 +493,7 @@ class RegisterJujuUserStep(BaseStep, JujuStepHelper):
             pexpect.EOF,
         ]
 
-        # TOCHK: password is saved as a macroon with 24hours shelf life and juju
+        # TOCHK: password is saved as a macaroon with 24hours shelf life and juju
         # client need to login/logout?
         # Does saving the password in $HOME/.local/share/juju/accounts.yaml
         # avoids login/logout?
@@ -447,24 +507,29 @@ class RegisterJujuUserStep(BaseStep, JujuStepHelper):
                 register_args,
                 PEXPECT_TIMEOUT,
             )
-            while True:
-                index = child.expect(expect_list, PEXPECT_TIMEOUT)
-                LOG.debug(
-                    "Juju registraton: expect got regex related to "
-                    f"{expect_list[index]}"
-                )
-                if index == 0 or index == 1:
-                    child.sendline(self.juju_account.password)
-                elif index == 2:
-                    child.sendline(self.controller)
-                elif index == 3:
-                    result = child.before.decode()
-                    if "ERROR" in result:
-                        str_index = result.find("ERROR")
-                        return Result(ResultType.FAILED, result[str_index:])
+            with open(log_file, "wb+") as f:
+                # Record the command output, but only the contents streaming from the
+                # process, don't record anything sent to the process as it may contain
+                # sensitive information.
+                child.logfile_read = f
+                while True:
+                    index = child.expect(expect_list, PEXPECT_TIMEOUT)
+                    LOG.debug(
+                        "Juju registration: expect got regex related to "
+                        f"{expect_list[index]}"
+                    )
+                    if index == 0 or index == 1:
+                        child.sendline(self.juju_account.password)
+                    elif index == 2:
+                        child.sendline(self.controller)
+                    elif index == 3:
+                        result = child.before.decode()
+                        if "ERROR" in result:
+                            str_index = result.find("ERROR")
+                            return Result(ResultType.FAILED, result[str_index:])
 
-                    LOG.debug("User registration completed")
-                    break
+                        LOG.debug("User registration completed")
+                        break
         except pexpect.TIMEOUT as e:
             LOG.exception(f"Error registering user {self.username} in Juju")
             LOG.warning(e)
@@ -507,13 +572,16 @@ class AddJujuMachineStep(BaseStep, JujuStepHelper):
 
         return Result(ResultType.COMPLETED)
 
-    def run(self, status: Optional["Status"] = None) -> Result:
+    def run(
+        self, status: Optional["Status"] = None, console: Optional["Console"] = None
+    ) -> Result:
         """Run the step to completion.
 
         Invoked when the step is run and returns a ResultType to indicate
 
         :return:
         """
+        log_file = Snap().paths.user_common / f"add_juju_machine_{self.machine_ip}.log"
         auth_message_re = "Are you sure you want to continue connecting"
         expect_list = [auth_message_re, pexpect.EOF]
         try:
@@ -522,35 +590,40 @@ class AddJujuMachineStep(BaseStep, JujuStepHelper):
                 ["add-machine", "-m", CONTROLLER_MODEL, f"ssh:{self.machine_ip}"],
                 PEXPECT_TIMEOUT * 3,  # 3 minutes
             )
-            while True:
-                index = child.expect(expect_list, PEXPECT_TIMEOUT)
-                LOG.debug(
-                    "Juju add-machine: expect got regex related to "
-                    f"{expect_list[index]}"
-                )
-                if index == 0:
-                    child.sendline("yes")
-                elif index == 1:
-                    result = child.before.decode()
-                    if "ERROR" in result:
-                        str_index = result.find("ERROR")
-                        return Result(ResultType.FAILED, result[str_index:])
+            with open(log_file, "wb+") as f:
+                # Record the command output, but only the contents streaming from the
+                # process, don't record anything sent to the process as it may contain
+                # sensitive information.
+                child.logfile_read = f
+                while True:
+                    index = child.expect(expect_list, PEXPECT_TIMEOUT)
+                    LOG.debug(
+                        "Juju add-machine: expect got regex related to "
+                        f"{expect_list[index]}"
+                    )
+                    if index == 0:
+                        child.sendline("yes")
+                    elif index == 1:
+                        result = child.before.decode()
+                        if "ERROR" in result:
+                            str_index = result.find("ERROR")
+                            return Result(ResultType.FAILED, result[str_index:])
 
-                    LOG.debug("Add machine successful")
-                    break
+                        LOG.debug("Add machine successful")
+                        break
 
-            # TODO(hemanth): Need to wait until machine comes to started state
-            # from planned state?
+                # TODO(hemanth): Need to wait until machine comes to started state
+                # from planned state?
 
-            machines = self._juju_cmd("machines", "-m", CONTROLLER_MODEL)
-            LOG.debug(f"Found machines: {machines}")
-            machines = machines.get("machines", {})
-            for machine, details in machines.items():
-                if self.machine_ip in details.get("ip-addresses"):
-                    return Result(ResultType.COMPLETED, machine)
+                machines = self._juju_cmd("machines", "-m", CONTROLLER_MODEL)
+                LOG.debug(f"Found machines: {machines}")
+                machines = machines.get("machines", {})
+                for machine, details in machines.items():
+                    if self.machine_ip in details.get("ip-addresses"):
+                        return Result(ResultType.COMPLETED, machine)
 
-            # respond with machine id as -1 if machine is not reflected in juju
-            return Result(ResultType.COMPLETED, "-1")
+                # respond with machine id as -1 if machine is not reflected in juju
+                return Result(ResultType.COMPLETED, "-1")
         except pexpect.TIMEOUT as e:
             LOG.exception("Error adding machine {self.machine_ip} to Juju")
             LOG.warning(e)
@@ -597,7 +670,9 @@ class RemoveJujuMachineStep(BaseStep, JujuStepHelper):
 
         return Result(ResultType.COMPLETED)
 
-    def run(self, status: Optional["Status"] = None) -> Result:
+    def run(
+        self, status: Optional["Status"] = None, console: Optional["Console"] = None
+    ) -> Result:
         """Run the step to completion.
 
         Invoked when the step is run and returns a ResultType to indicate
@@ -662,7 +737,9 @@ class BackupBootstrapUserStep(BaseStep, JujuStepHelper):
 
         return Result(ResultType.SKIPPED)
 
-    def run(self, status: Optional["Status"] = None) -> Result:
+    def run(
+        self, status: Optional["Status"] = None, console: Optional["Console"] = None
+    ) -> Result:
         """Run the step to completion.
 
         Invoked when the step is run and returns a ResultType to indicate
@@ -703,7 +780,9 @@ class SaveJujuUserLocallyStep(BaseStep):
 
         return Result(ResultType.COMPLETED)
 
-    def run(self, status: Optional["Status"] = None) -> Result:
+    def run(
+        self, status: Optional["Status"] = None, console: Optional["Console"] = None
+    ) -> Result:
         """Run the step to completion.
 
         Invoked when the step is run and returns a ResultType to indicate

@@ -203,7 +203,9 @@ class SetHypervisorCharmConfigStep(BaseStep):
     def has_prompts(self) -> bool:
         return False
 
-    def run(self, status: Optional["Status"] = None) -> Result:
+    def run(
+        self, status: Optional["Status"] = None, console: Optional[Console] = None
+    ) -> Result:
         """Run the step to completion.
 
         Invoked when the step is run and returns a ResultType to indicate
@@ -275,7 +277,9 @@ class UserOpenRCStep(BaseStep):
         else:
             return Result(ResultType.SKIPPED)
 
-    def run(self, status: Optional["Status"] = None) -> Result:
+    def run(
+        self, status: Optional["Status"] = None, console: Optional[Console] = None
+    ) -> Result:
         try:
             snap = Snap()
             terraform = str(snap.paths.snap / "bin" / "terraform")
@@ -436,7 +440,9 @@ class UserQuestions(BaseStep):
             self.client, CLOUD_CONFIG_SECTION, self.variables
         )
 
-    def run(self, status: Optional[Status] = None) -> Result:
+    def run(
+        self, status: Optional[Status] = None, console: Optional[Console] = None
+    ) -> Result:
         return Result(ResultType.COMPLETED)
 
 
@@ -467,7 +473,9 @@ class DemoSetup(BaseStep):
         else:
             return Result(ResultType.SKIPPED)
 
-    def run(self, status: Optional[Status] = None) -> Result:
+    def run(
+        self, status: Optional[Status] = None, console: Optional[Console] = None
+    ) -> Result:
         """Execute configuration using terraform."""
         self.variables = sunbeam.jobs.questions.load_answers(
             self.client, CLOUD_CONFIG_SECTION
@@ -554,7 +562,9 @@ class SetLocalHypervisorOptions(BaseStep):
             )
             self.nic = ext_net_bank.nic.ask()
 
-    def run(self, status: Optional[Status] = None) -> Result:
+    def run(
+        self, status: Optional[Status] = None, console: Optional[Console] = None
+    ) -> Result:
         if not self.nic:
             return Result(ResultType.COMPLETED)
         node = self.client.cluster.get_node_info(self.name)
