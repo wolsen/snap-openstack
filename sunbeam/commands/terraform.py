@@ -132,7 +132,7 @@ class TerraformHelper:
             os_env.update(self.update_juju_provider_credentials())
 
         try:
-            cmd = [self.terraform, "init", "-no-color"]
+            cmd = [self.terraform, "init", "-upgrade", "-no-color"]
             LOG.debug(f'Running command {" ".join(cmd)}')
             process = subprocess.run(
                 cmd,
