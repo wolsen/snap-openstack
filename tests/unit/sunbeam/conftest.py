@@ -53,6 +53,12 @@ def run():
 
 
 @pytest.fixture
+def check_call():
+    with patch("subprocess.check_call") as p:
+        yield p
+
+
+@pytest.fixture
 def environ():
     with patch("os.environ") as p:
         yield p

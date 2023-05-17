@@ -214,6 +214,13 @@ class JujuHelper:
             raise e
 
     @controller
+    async def get_model_status_full(self, model: str) -> Dict:
+        """Get juju status for the model"""
+        model = await self.get_model(model)
+        status = await model.get_status()
+        return status
+
+    @controller
     async def get_application_names(self, model: str) -> List[str]:
         """Get Application names in the model.
 

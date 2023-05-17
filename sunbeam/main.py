@@ -20,6 +20,7 @@ import click
 from sunbeam import log
 from sunbeam.commands import bootstrap as bootstrap_cmds
 from sunbeam.commands import configure as configure_cmds
+from sunbeam.commands import inspect as inspect_cmds
 from sunbeam.commands import node as node_cmds
 from sunbeam.commands import openrc as openrc_cmds
 from sunbeam.commands import prepare_node as prepare_node_cmds
@@ -56,13 +57,14 @@ def main():
     cli.add_command(prepare_node_cmds.prepare_node_script)
     cli.add_command(cluster)
     cli.add_command(configure_cmds.configure)
+    cli.add_command(inspect_cmds.inspect)
+    cli.add_command(openrc_cmds.openrc)
     cluster.add_command(bootstrap_cmds.bootstrap)
     cluster.add_command(node_cmds.add)
     cluster.add_command(node_cmds.join)
     cluster.add_command(node_cmds.list)
     cluster.add_command(node_cmds.remove)
     cluster.add_command(resize_cmds.resize)
-    cli.add_command(openrc_cmds.openrc)
     cli()
 
 

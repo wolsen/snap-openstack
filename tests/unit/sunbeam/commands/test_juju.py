@@ -1,0 +1,105 @@
+# Copyright 2023 Canonical Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import asyncio
+import tempfile
+from pathlib import Path
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
+
+import sunbeam.commands.juju as juju
+from sunbeam.jobs.common import ResultType
+from sunbeam.jobs.juju import ModelNotFoundException
+
+
+@pytest.fixture(autouse=True)
+def mock_run_sync(mocker):
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+
+    def run_sync(coro):
+        return loop.run_until_complete(coro)
+
+    mocker.patch("sunbeam.commands.juju.run_sync", run_sync)
+    yield
+    loop.close()
+
+
+@pytest.fixture()
+def jhelper():
+    yield AsyncMock()
+
+
+@pytest.fixture()
+def mock_open():
+    with patch.object(Path, "open") as p:
+        yield p
+
+
+class TestWriteJujuStatusStep:
+    def test_is_skip(self, jhelper):
+        with tempfile.NamedTemporaryFile() as tmpfile:
+            step = juju.WriteJujuStatusStep(jhelper, "openstack", tmpfile)
+            result = step.is_skip()
+
+        assert result.result_type == ResultType.COMPLETED
+
+    def test_is_skip_when_model_not_present(self, jhelper):
+        jhelper.get_model.side_effect = ModelNotFoundException("not found")
+        with tempfile.NamedTemporaryFile() as tmpfile:
+            step = juju.WriteJujuStatusStep(jhelper, "openstack", tmpfile)
+            result = step.is_skip()
+
+        assert result.result_type == ResultType.SKIPPED
+
+    def test_run(self, jhelper):
+        status_mock = Mock()
+        status_mock.to_json.return_value = (
+            '{"applications": {"controller": {"status": "active"}}}'
+        )
+        jhelper.get_model_status_full.return_value = status_mock
+        with tempfile.NamedTemporaryFile() as tmpfile:
+            step = juju.WriteJujuStatusStep(jhelper, "openstack", Path(tmpfile.name))
+            result = step.run()
+
+        jhelper.get_model_status_full.assert_called_once()
+        assert result.result_type == ResultType.COMPLETED
+
+
+class TestWriteCharmLogStep:
+    def test_is_skip(self, jhelper):
+        with tempfile.NamedTemporaryFile() as tmpfile:
+            step = juju.WriteCharmLogStep(jhelper, "openstack", tmpfile)
+            result = step.is_skip()
+
+        assert result.result_type == ResultType.COMPLETED
+
+    def test_is_skip_when_model_not_present(self, jhelper):
+        jhelper.get_model.side_effect = ModelNotFoundException("not found")
+        with tempfile.NamedTemporaryFile() as tmpfile:
+            step = juju.WriteCharmLogStep(jhelper, "openstack", tmpfile)
+            result = step.is_skip()
+
+        assert result.result_type == ResultType.SKIPPED
+
+    def test_run(self, mocker, snap, check_call, mock_open):
+        mocker.patch.object(juju, "Snap", return_value=snap)
+        with tempfile.NamedTemporaryFile() as tmpfile:
+            step = juju.WriteCharmLogStep(jhelper, "openstack", Path(tmpfile.name))
+            result = step.run()
+
+        assert result.result_type == ResultType.COMPLETED
