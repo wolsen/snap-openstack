@@ -15,6 +15,7 @@
 
 import logging
 import os
+import re
 from pathlib import Path
 
 from snaphelpers import Snap, SnapCtl
@@ -155,5 +156,62 @@ class LocalShareCheck(Check):
                 "\n"
             )
             return False
+
+        return True
+
+
+class VerifyFQDNCheck(Check):
+    """Check if FQDN is correct."""
+
+    def __init__(self, fqdn: str):
+        super().__init__(
+            "Check for FQDN",
+            "Checking for FQDN",
+        )
+        self.fqdn = fqdn
+
+    def run(self) -> bool:
+        if not self.fqdn:
+            self.message = "FQDN cannot be an empty string"
+            return False
+
+        if len(self.fqdn) > 255:
+            self.message = (
+                "A FQDN cannot be longer than 255 characters (trailing dot included)"
+            )
+            return False
+
+        labels = self.fqdn.split(".")
+
+        if len(labels) == 1:
+            self.message = (
+                "A FQDN must have at least one label and a trailing dot,"
+                " or two labels separated by a dot"
+            )
+            return False
+
+        if self.fqdn.endswith("."):
+            # strip trailing dot
+            del labels[-1]
+
+        label_regex = re.compile(r"^[a-z0-9-]*$", re.IGNORECASE)
+
+        for label in labels:
+            if not 1 < len(label) < 63:
+                self.message = (
+                    "A label in a FQDN cannot be empty or longer than 63 characters"
+                )
+                return False
+
+            if label.startswith("-") or label.endswith("-"):
+                self.message = "A label in a FQDN cannot start or end with a hyphen (-)"
+                return False
+
+            if label_regex.match(label) is None:
+                self.message = (
+                    "A label in a FQDN can only contain alphanumeric characters"
+                    " and hyphens (-)"
+                )
+                return False
 
         return True

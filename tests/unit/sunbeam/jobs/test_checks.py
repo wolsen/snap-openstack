@@ -91,3 +91,61 @@ class TestLocalShareCheck:
         assert result is False
         assert "directory not detected" in check.message
         os.path.exists.assert_called_with(PosixPath("/home/ubuntu/.local/share"))
+
+
+class TestVerifyFQDNCheck:
+    def test_run(self):
+        name = "myhost.mydomain.net"
+        check = checks.VerifyFQDNCheck(name)
+
+        result = check.run()
+
+        assert result is True
+
+    def test_run_hostname_fqdn(self):
+        name = "myhost."
+        check = checks.VerifyFQDNCheck(name)
+
+        result = check.run()
+
+        assert result is True
+
+    def test_run_hostname_pqdn(self):
+        name = "myhost"
+        check = checks.VerifyFQDNCheck(name)
+
+        result = check.run()
+
+        assert result is False
+
+    def test_run_fqdn_invalid_character(self):
+        name = "myhost.mydomain.net!"
+        check = checks.VerifyFQDNCheck(name)
+
+        result = check.run()
+
+        assert result is False
+
+    def test_run_fqdn_starts_with_hyphen(self):
+        name = "-myhost.mydomain.net"
+        check = checks.VerifyFQDNCheck(name)
+
+        result = check.run()
+
+        assert result is False
+
+    def test_run_fqdn_starts_with_dot(self):
+        name = ".myhost.mydomain.net"
+        check = checks.VerifyFQDNCheck(name)
+
+        result = check.run()
+
+        assert result is False
+
+    def test_run_fqdn_too_long(self):
+        name = "myhost.mydomain.net" * 50
+        check = checks.VerifyFQDNCheck(name)
+
+        result = check.run()
+
+        assert result is False
