@@ -21,6 +21,7 @@ from sunbeam import log
 from sunbeam.commands import bootstrap as bootstrap_cmds
 from sunbeam.commands import configure as configure_cmds
 from sunbeam.commands import inspect as inspect_cmds
+from sunbeam.commands import generate_preseed as generate_preseed_cmds
 from sunbeam.commands import node as node_cmds
 from sunbeam.commands import openrc as openrc_cmds
 from sunbeam.commands import prepare_node as prepare_node_cmds
@@ -65,6 +66,8 @@ def main():
     cluster.add_command(node_cmds.list)
     cluster.add_command(node_cmds.remove)
     cluster.add_command(resize_cmds.resize)
+    cli.add_command(openrc_cmds.openrc)
+    cli.add_command(generate_preseed_cmds.generate_preseed)
     cli()
 
 
