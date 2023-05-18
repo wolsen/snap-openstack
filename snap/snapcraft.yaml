@@ -20,6 +20,15 @@ layout:
     symlink: $SNAP_DATA/terraform-plugins
 
 apps:
+  openstack:
+    command: bin/openstack
+    completer: usr/share/bash-completion/completions/openstack
+    plugs:
+      - network
+      - home
+      - dot-config-openstack
+      - etc-openstack
+      - ssh-public-keys
   clusterd:
     command: commands/clusterd.start
     restart-condition: on-failure
@@ -48,17 +57,6 @@ apps:
       PATH: $PATH:$SNAP/juju/bin
 
 parts:
-  sunbeam:
-    plugin: python
-    source: .
-    build-packages:
-      - git
-    python-requirements:
-      - requirements.txt
-    override-build: |
-      craftctl default
-      snap-helpers write-hooks
-
   dqlite:
     build-attributes: [core22-step-dependencies]
     after:
@@ -173,6 +171,66 @@ parts:
     plugin: dump
     source: snap-wrappers/
 
+  sunbeam-and-openstackclients:
+    plugin: python
+    source: .
+    python-packages:
+      - aodhclient
+      - osc-placement
+      - python-barbicanclient
+      - python-cloudkittyclient
+      - python-congressclient
+      - python-designateclient
+      - python-freezerclient
+      - python-glanceclient
+      - python-heatclient
+      - python-ironicclient
+      - python-keystoneclient
+      - python-magnumclient
+      - python-manilaclient
+      - python-masakariclient
+      - python-mistralclient
+      - python-monascaclient
+      - python-muranoclient
+      - python-saharaclient
+      - python-senlinclient
+      - python-swiftclient
+      - python-tackerclient
+      - python-troveclient
+      - python-vitrageclient
+      - python-watcherclient
+      - python-zaqarclient
+      - python-neutronclient
+      - python-openstackclient
+      - gnocchiclient
+      - python-octaviaclient
+      - setuptools_scm
+      - toml
+      - setuptools-rust
+      - Cython
+    python-constraints:
+      - upper-constraints.txt
+    build-packages:
+      - libffi-dev
+      - libssl-dev
+      - libxml2-dev
+      - libxslt1-dev
+      - pkg-config
+      - gcc
+      - cython3
+      - rustc
+      - cargo
+    override-prime: |
+      craftctl default
+      # Write out snap hooks
+      snap-helpers write-hooks
+      # This is the last step, let's now compile all our pyc files.
+      ./bin/python3 -m compileall .
+      # Generate completer script snippets
+      mkdir -p usr/share/bash-completion/completions
+      ./bin/openstack complete > usr/share/bash-completion/completions/openstack
+      echo "complete -F _openstack openstack.openstack" >> usr/share/bash-completion/completions/openstack
+
 plugs:
   juju-bin:
     interface: content
@@ -183,3 +241,13 @@ plugs:
     interface: personal-files
     write:
       - $HOME/.local/share/juju
+
+  dot-config-openstack:
+    interface: personal-files
+    write:
+    - $HOME/.config/openstack
+
+  etc-openstack:
+    interface: system-files
+    read:
+    - /etc/openstack
