@@ -103,3 +103,26 @@ class TestWriteCharmLogStep:
             result = step.run()
 
         assert result.result_type == ResultType.COMPLETED
+
+
+class TestJujuGrantModelAccessStep:
+    def test_run(self, mocker, snap, jhelper, run):
+        mocker.patch.object(juju, "Snap", return_value=snap)
+        jhelper.get_model_name_with_owner.return_value = "admin/control-plane"
+        step = juju.JujuGrantModelAccessStep(jhelper, "fakeuser", "control-plane")
+        result = step.run()
+
+        jhelper.get_model_name_with_owner.assert_called_once()
+        assert result.result_type == ResultType.COMPLETED
+
+    def test_run_model_not_exist(self, mocker, snap, jhelper, run):
+        mocker.patch.object(juju, "Snap", return_value=snap)
+        jhelper.get_model_name_with_owner.side_effect = ModelNotFoundException(
+            "Model 'missing' not found"
+        )
+        step = juju.JujuGrantModelAccessStep(jhelper, "fakeuser", "missing")
+        result = step.run()
+
+        jhelper.get_model_name_with_owner.assert_called_once()
+        run.assert_not_called()
+        assert result.result_type == ResultType.FAILED

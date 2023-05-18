@@ -301,7 +301,7 @@ class CreateJujuUserStep(BaseStep, JujuStepHelper):
                 self._get_juju_binary(),
                 "grant",
                 self.username,
-                "write",
+                "admin",
                 CONTROLLER_MODEL,
             ]
             LOG.debug(f'Running command {" ".join(cmd)}')
@@ -314,6 +314,65 @@ class CreateJujuUserStep(BaseStep, JujuStepHelper):
         except subprocess.CalledProcessError as e:
             LOG.exception(f"Error creating user {self.username} in Juju")
             LOG.warning(e.stderr)
+            return Result(ResultType.FAILED, str(e))
+
+
+class JujuGrantModelAccessStep(BaseStep, JujuStepHelper):
+    """Grant model access to user in juju."""
+
+    def __init__(self, jhelper: JujuHelper, name: str, model: str):
+        super().__init__(
+            "Grant access on model", f"Grant user {name} admin access to model {model}"
+        )
+
+        self.jhelper = jhelper
+        self.username = name
+        self.model = model
+
+        home = os.environ.get("SNAP_REAL_HOME")
+        os.environ["JUJU_DATA"] = f"{home}/.local/share/juju"
+
+    def run(self, status: Optional["Status"] = None) -> Result:
+        """Run the step to completion.
+
+        Invoked when the step is run and returns a ResultType to indicate
+
+        :return:
+        """
+        try:
+            model_with_owner = run_sync(
+                self.jhelper.get_model_name_with_owner(self.model)
+            )
+            print("hemanth")
+            print(model_with_owner)
+            # Grant write access to the model
+            # Without this step, the user is not able to view the model created
+            # by other users.
+            cmd = [
+                self._get_juju_binary(),
+                "grant",
+                self.username,
+                "admin",
+                model_with_owner,
+            ]
+            LOG.debug(f'Running command {" ".join(cmd)}')
+            process = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            LOG.debug(
+                f"Command finished. stdout={process.stdout}, stderr={process.stderr}"
+            )
+
+            return Result(ResultType.COMPLETED)
+        except ModelNotFoundException as e:
+            return Result(ResultType.FAILED, str(e))
+        except subprocess.CalledProcessError as e:
+            LOG.debug(e.stderr)
+            if 'user already has "admin" access or greater' in e.stderr:
+                return Result(ResultType.COMPLETED)
+
+            LOG.exception(
+                f"Error granting user {self.username} admin access on model "
+                f"{self.model}"
+            )
             return Result(ResultType.FAILED, str(e))
 
 

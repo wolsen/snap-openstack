@@ -50,7 +50,7 @@ def inspect() -> None:
 
     plan = []
     with tempfile.TemporaryDirectory() as tmpdirname:
-        for model in [OPENSTACK_MODEL, CONTROLLER_MODEL.split("/")[-1]]:
+        for model in [CONTROLLER_MODEL.split("/")[-1], OPENSTACK_MODEL]:
             status_file = Path(tmpdirname) / f"juju_stauts_{model}.out"
             debug_file = Path(tmpdirname) / f"debug_log_{model}.out"
             plan.extend(

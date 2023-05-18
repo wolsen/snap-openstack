@@ -201,6 +201,21 @@ async def test_jhelper_get_model_status_full_model_missing(
 
 
 @pytest.mark.asyncio
+async def test_jhelper_get_model_name_with_owner(jhelper: juju.JujuHelper, model):
+    await jhelper.get_model_name_with_owner("control-plane")
+    jhelper.controller.get_model.assert_called_with("control-plane")
+
+
+@pytest.mark.asyncio
+async def test_jhelper_get_model_name_with_owner_model_missing(
+    jhelper_404: juju.JujuHelper, model
+):
+    with pytest.raises(juju.ModelNotFoundException, match="Model 'missing' not found"):
+        await jhelper_404.get_model_name_with_owner("missing")
+        jhelper_404.controller.get_model.assert_called_with("missing")
+
+
+@pytest.mark.asyncio
 async def test_jhelper_get_unit(jhelper: juju.JujuHelper, units):
     await jhelper.get_unit("microk8s/0", "control-plane")
     units.get.assert_called_with("microk8s/0")
