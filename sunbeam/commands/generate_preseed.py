@@ -48,12 +48,6 @@ def show_questions(
         ident = "  "
     for key, question in question_bank.questions.items():
         default = question.calculate_default() or ""
-        try:
-            # If the question implements a render_default function then
-            # use it. It may be needed to mask passwords etc
-            default = question.render_default(default)
-        except AttributeError:
-            pass
         console.print(f"{comment}{ident}# {question.question}")
         console.print(f"{comment}{ident}{key}: {default}")
 
