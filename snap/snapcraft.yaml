@@ -44,6 +44,8 @@ apps:
       - network
       - network-bind
       - ssh-keys
+      - dot-config-openstack
+      - etc-openstack
     environment:
       PATH: $PATH:$SNAP/juju/bin
   terraform:
