@@ -84,7 +84,6 @@ def remove_trailing_dot(value: str) -> str:
     "--name",
     type=str,
     prompt=True,
-    callback=remove_trailing_dot,
     help="Fully qualified node name",
 )
 def add(name: str) -> None:
