@@ -19,6 +19,7 @@ import click
 from rich.console import Console
 
 import sunbeam.jobs.questions
+from sunbeam import utils
 from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import ClusterServiceUnavailableException
 from sunbeam.commands.configure import (
@@ -27,6 +28,7 @@ from sunbeam.commands.configure import (
     ext_net_questions_local_only,
     user_questions,
 )
+from sunbeam.commands.microceph import microceph_questions
 from sunbeam.commands.microk8s import microk8s_addons_questions
 
 LOG = logging.getLogger(__name__)
@@ -34,7 +36,11 @@ console = Console()
 
 
 def show_questions(
-    question_bank, section=None, section_description=None, comment_out=False
+    question_bank,
+    section=None,
+    subsection=None,
+    section_description=None,
+    comment_out=False,
 ):
     ident = ""
     if comment_out:
@@ -46,6 +52,9 @@ def show_questions(
             console.print(f"{comment}{ident}# {section_description}")
         console.print(f"{comment}{ident}{section}:")
         ident = "  "
+    if subsection:
+        console.print(f"{comment}{ident}{subsection}:")
+        ident = "    "
     for key, question in question_bank.questions.items():
         default = question.calculate_default() or ""
         console.print(f"{comment}{ident}# {question.question}")
@@ -55,6 +64,7 @@ def show_questions(
 @click.command()
 def generate_preseed() -> None:
     """Generate preseed file."""
+    name = utils.get_fqdn()
     client = Client()
     try:
         variables = sunbeam.jobs.questions.load_answers(client, CLOUD_CONFIG_SECTION)
@@ -92,4 +102,15 @@ def generate_preseed() -> None:
         section="external_network",
         section_description="Remote Access",
         comment_out=True,
+    )
+    microceph_config_bank = sunbeam.jobs.questions.QuestionBank(
+        questions=microceph_questions(),
+        console=console,
+        previous_answers=variables.get("microceph_config", {}).get(name),
+    )
+    show_questions(
+        microceph_config_bank,
+        section="microceph_config",
+        subsection=name,
+        section_description="MicroCeph config",
     )
