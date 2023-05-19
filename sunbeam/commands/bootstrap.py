@@ -88,7 +88,8 @@ snap = Snap()
     type=click.Choice(["control", "compute", "storage"], case_sensitive=False),
     callback=validate_roles,
     help="Specify whether the node will be a control node, a "
-    "compute node or a storage node. Defaults to all the roles.",
+    "compute node or a storage node. Defaults to control and "
+    "compute roles.",
 )
 @click_option_topology
 @click.option(
