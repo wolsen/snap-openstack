@@ -171,7 +171,7 @@ def ext_net_questions():
             "VLAN ID to use for external network", default_value=0
         ),
         "nic": NicQuestion(
-            "Free network interface microstack can use for external traffic"
+            "Free network interface that will be configured for external traffic"
         ),
     }
 
@@ -577,7 +577,7 @@ class TerraformDemoInitStep(TerraformInitStep):
 
 class SetLocalHypervisorOptions(BaseStep):
     def __init__(
-        self, name, jhelper, join_mode: bool = False, preseed_file: str = None
+        self, name, jhelper, join_mode: bool = False, preseed_file: Path = None
     ):
         super().__init__(
             "Apply local hypervisor settings", "Apply local hypervisor settings"
@@ -602,7 +602,7 @@ class SetLocalHypervisorOptions(BaseStep):
             "remote_access_location"
         )
         if self.preseed_file:
-            preseed = sunbeam.jobs.questions.read_preseed(Path(self.preseed_file))
+            preseed = sunbeam.jobs.questions.read_preseed(self.preseed_file)
         else:
             preseed = {}
         # If adding new nodes to the cluster then local access makes no sense
