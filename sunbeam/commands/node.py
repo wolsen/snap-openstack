@@ -39,6 +39,7 @@ from sunbeam.commands.hypervisor import (
 from sunbeam.commands.juju import AddJujuMachineStep  # RemoveJujuUserStep,
 from sunbeam.commands.juju import (
     CreateJujuUserStep,
+    JujuGrantModelAccessStep,
     RegisterJujuUserStep,
     RemoveJujuMachineStep,
     SaveJujuUserLocallyStep,
@@ -49,6 +50,7 @@ from sunbeam.commands.microceph import (
     RemoveMicrocephUnitStep,
 )
 from sunbeam.commands.microk8s import AddMicrok8sUnitStep, RemoveMicrok8sUnitStep
+from sunbeam.commands.openstack import OPENSTACK_MODEL
 from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
 from sunbeam.jobs.checks import (
     DaemonGroupCheck,
@@ -91,10 +93,13 @@ def add(name: str) -> None:
     run_preflight_checks(preflight_checks, console)
 
     name = remove_trailing_dot(name)
+    data_location = snap.paths.user_data
+    jhelper = JujuHelper(data_location)
 
     plan1 = [
         ClusterAddNodeStep(name),
         CreateJujuUserStep(name),
+        JujuGrantModelAccessStep(jhelper, name, OPENSTACK_MODEL),
     ]
 
     plan1_results = run_plan(plan1, console)

@@ -45,6 +45,7 @@ MODEL = CONTROLLER_MODEL.split("/")[1]
 CONTROLLER = "sunbeam-controller"
 JUJU_CONTROLLER_KEY = "JujuController"
 ACCOUNT_FILE = "account.yaml"
+OWNER_TAG_PREFIX = "user-"
 
 
 T = TypeVar("T")
@@ -212,6 +213,20 @@ class JujuHelper:
             if "HTTP 400" in str(e):
                 raise ModelNotFoundException(f"Model {model!r} not found")
             raise e
+
+    @controller
+    async def get_model_name_with_owner(self, model: str) -> str:
+        """Get juju model full name along with owner"""
+        model_impl = await self.get_model(model)
+        owner = model_impl.info.owner_tag.removeprefix(OWNER_TAG_PREFIX)
+        return f"{owner}/{model_impl.info.name}"
+
+    @controller
+    async def get_model_status_full(self, model: str) -> Dict:
+        """Get juju status for the model"""
+        model_impl = await self.get_model(model)
+        status = await model_impl.get_status()
+        return status
 
     @controller
     async def get_application_names(self, model: str) -> List[str]:

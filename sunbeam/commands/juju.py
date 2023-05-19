@@ -14,7 +14,6 @@
 # limitations under the License.
 
 
-import asyncio
 import json
 import logging
 import os
@@ -39,6 +38,9 @@ from sunbeam.jobs.juju import (
     ControllerNotFoundException,
     JujuAccount,
     JujuAccountNotFound,
+    JujuHelper,
+    ModelNotFoundException,
+    run_sync,
 )
 
 LOG = logging.getLogger(__name__)
@@ -82,15 +84,17 @@ class JujuStepHelper:
 
         return json.loads(process.stdout.strip())
 
-    def check_model_present(self, model_name):
+    def check_model_present(self, model_name) -> bool:
         """Determines if the step should be skipped or not.
 
         :return: True if the Step should be skipped, False otherwise
         """
-        LOG.debug("Retrieving model information from Juju")
-        models = asyncio.get_event_loop().run_until_complete(self.jhelper.get_models())
-        LOG.debug(f"Juju models: {models}")
-        return model_name in models
+        try:
+            run_sync(self.jhelper.get_model(model_name))
+            return True
+        except ModelNotFoundException:
+            LOG.debug(f"Model {model_name} not found")
+            return False
 
     def get_clouds(self, cloud_type: str) -> list:
         """Get clouds based on cloud type"""
@@ -297,7 +301,7 @@ class CreateJujuUserStep(BaseStep, JujuStepHelper):
                 self._get_juju_binary(),
                 "grant",
                 self.username,
-                "write",
+                "admin",
                 CONTROLLER_MODEL,
             ]
             LOG.debug(f'Running command {" ".join(cmd)}')
@@ -310,6 +314,65 @@ class CreateJujuUserStep(BaseStep, JujuStepHelper):
         except subprocess.CalledProcessError as e:
             LOG.exception(f"Error creating user {self.username} in Juju")
             LOG.warning(e.stderr)
+            return Result(ResultType.FAILED, str(e))
+
+
+class JujuGrantModelAccessStep(BaseStep, JujuStepHelper):
+    """Grant model access to user in juju."""
+
+    def __init__(self, jhelper: JujuHelper, name: str, model: str):
+        super().__init__(
+            "Grant access on model", f"Grant user {name} admin access to model {model}"
+        )
+
+        self.jhelper = jhelper
+        self.username = name
+        self.model = model
+
+        home = os.environ.get("SNAP_REAL_HOME")
+        os.environ["JUJU_DATA"] = f"{home}/.local/share/juju"
+
+    def run(self, status: Optional["Status"] = None) -> Result:
+        """Run the step to completion.
+
+        Invoked when the step is run and returns a ResultType to indicate
+
+        :return:
+        """
+        try:
+            model_with_owner = run_sync(
+                self.jhelper.get_model_name_with_owner(self.model)
+            )
+            print("hemanth")
+            print(model_with_owner)
+            # Grant write access to the model
+            # Without this step, the user is not able to view the model created
+            # by other users.
+            cmd = [
+                self._get_juju_binary(),
+                "grant",
+                self.username,
+                "admin",
+                model_with_owner,
+            ]
+            LOG.debug(f'Running command {" ".join(cmd)}')
+            process = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            LOG.debug(
+                f"Command finished. stdout={process.stdout}, stderr={process.stderr}"
+            )
+
+            return Result(ResultType.COMPLETED)
+        except ModelNotFoundException as e:
+            return Result(ResultType.FAILED, str(e))
+        except subprocess.CalledProcessError as e:
+            LOG.debug(e.stderr)
+            if 'user already has "admin" access or greater' in e.stderr:
+                return Result(ResultType.COMPLETED)
+
+            LOG.exception(
+                f"Error granting user {self.username} admin access on model "
+                f"{self.model}"
+            )
             return Result(ResultType.FAILED, str(e))
 
 
@@ -720,3 +783,120 @@ class SaveJujuUserLocallyStep(BaseStep):
         juju_account.write(self.data_location)
 
         return Result(ResultType.COMPLETED)
+
+
+class WriteJujuStatusStep(BaseStep, JujuStepHelper):
+    """Get the status of the specified model."""
+
+    def __init__(
+        self,
+        jhelper: JujuHelper,
+        model: str,
+        file_path: Path,
+    ):
+        super().__init__("Write Model status", f"Record status of model {model}")
+
+        self.jhelper = jhelper
+        self.model = model
+        self.file_path = file_path
+
+    def is_skip(self, status: Optional["Status"] = None) -> Result:
+        """Determines if the step should be skipped or not.
+
+        :return: ResultType.SKIPPED if the Step should be skipped,
+                 ResultType.COMPLETED or ResultType.FAILED otherwise
+        """
+        try:
+            run_sync(self.jhelper.get_model(self.model))
+            return Result(ResultType.COMPLETED)
+        except ModelNotFoundException:
+            LOG.debug(f"Model {self.model} not found")
+            return Result(ResultType.SKIPPED)
+
+    def run(self, status: Optional["Status"] = None) -> Result:
+        """Run the step to completion.
+
+        Invoked when the step is run and returns a ResultType to indicate
+
+        :return:
+        """
+        try:
+            LOG.debug(f"Getting juju status for model {self.model}")
+            _status = run_sync(self.jhelper.get_model_status_full(self.model))
+            # Running json.dump directly on the json returned by to_json
+            # results in a single line. There is probably a better way of
+            # doing this.
+            LOG.debug(_status)
+            status = json.loads(_status.to_json())
+
+            if not self.file_path.exists():
+                self.file_path.touch()
+            self.file_path.chmod(0o660)
+            with self.file_path.open("w") as file:
+                json.dump(status, file, ensure_ascii=False, indent=4)
+            return Result(ResultType.COMPLETED, "Inspecting Model Status")
+        except Exception as e:  # noqa
+            return Result(ResultType.FAILED, str(e))
+
+
+class WriteCharmLogStep(BaseStep, JujuStepHelper):
+    """Get logs for the specified model."""
+
+    def __init__(
+        self,
+        jhelper: JujuHelper,
+        model: str,
+        file_path: Path,
+    ):
+        super().__init__(
+            "Get charm logs model", f"Getting charm logs for {model} model"
+        )
+        self.jhelper = jhelper
+        self.model = model
+        self.file_path = file_path
+        self.model_uuid = None
+
+    def is_skip(self, status: Optional["Status"] = None) -> Result:
+        """Determines if the step should be skipped or not.
+
+        :return: ResultType.SKIPPED if the Step should be skipped,
+                 ResultType.COMPLETED or ResultType.FAILED otherwise
+        """
+        try:
+            model = run_sync(self.jhelper.get_model(self.model))
+            self.model_uuid = model.info.uuid
+            return Result(ResultType.COMPLETED)
+        except ModelNotFoundException:
+            LOG.debug(f"Model {self.model} not found")
+            return Result(ResultType.SKIPPED)
+
+    def run(self, status: Optional["Status"] = None) -> Result:
+        """Run the step to completion.
+
+        Invoked when the step is run and returns a ResultType to indicate
+
+        :return:
+        """
+        LOG.debug(f"Getting debug logs for model {self.model}")
+        try:
+            # libjuju model.debug_log is broken.
+            cmd = [
+                self._get_juju_binary(),
+                "debug-log",
+                "--model",
+                self.model_uuid,
+                "--replay",
+                "--no-tail",
+            ]
+            # Stream output directly to the file to avoid holding the entire
+            # blob of data in RAM.
+
+            if not self.file_path.exists():
+                self.file_path.touch()
+            self.file_path.chmod(0o660)
+            with self.file_path.open("wb") as file:
+                subprocess.check_call(cmd, stdout=file)
+        except subprocess.CalledProcessError as e:
+            return Result(ResultType.FAILED, str(e))
+
+        return Result(ResultType.COMPLETED, "Inspecting Charm Log")
