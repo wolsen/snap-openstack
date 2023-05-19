@@ -28,12 +28,7 @@ from sunbeam.commands.microk8s import (
     MICROK8S_DEFAULT_STORAGECLASS,
 )
 from sunbeam.commands.terraform import TerraformException, TerraformHelper
-from sunbeam.jobs.common import (
-    BaseStep,
-    Result,
-    ResultType,
-    get_host_total_ram,
-)
+from sunbeam.jobs.common import BaseStep, Result, ResultType, get_host_total_ram
 from sunbeam.jobs.juju import (
     CONTROLLER_MODEL,
     JujuHelper,

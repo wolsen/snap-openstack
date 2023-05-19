@@ -21,10 +21,7 @@ from snaphelpers import Snap
 
 from sunbeam.commands.openstack import ResizeControlPlaneStep
 from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
-from sunbeam.jobs.common import (
-    run_plan,
-    click_option_topology,
-)
+from sunbeam.jobs.common import click_option_topology, run_plan
 from sunbeam.jobs.juju import JujuHelper
 
 LOG = logging.getLogger(__name__)
