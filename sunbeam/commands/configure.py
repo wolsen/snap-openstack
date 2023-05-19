@@ -256,7 +256,9 @@ class UserOpenRCStep(BaseStep):
     """Generate openrc for created cloud user."""
 
     def __init__(self, auth_url: str, auth_version: str, openrc: str):
-        super().__init__("Generate user openrc", "Generating openrc for cloud usage")
+        super().__init__(
+            "Generate admin openrc", "Generating openrc for cloud admin usage"
+        )
         self.auth_url = auth_url
         self.auth_version = auth_version
         self.openrc = openrc
@@ -330,7 +332,9 @@ class UserQuestions(BaseStep):
         preseed_file: str = None,
         accept_defaults: bool = False,
     ):
-        super().__init__("Ask configure questions", "Ask configure questions")
+        super().__init__(
+            "Collect cloud configuration", "Collecting cloud configuration"
+        )
         self.accept_defaults = accept_defaults
         self.preseed_file = preseed_file
         self.client = Client()
@@ -449,7 +453,10 @@ class DemoSetup(BaseStep):
         tfhelper: TerraformHelper,
         answer_file: str,
     ):
-        super().__init__("Setup demo artifacts", "Setup demo artifacts")
+        super().__init__(
+            "Create demonstration configuration",
+            "Creating demonstration user, project and networking",
+        )
         self.answer_file = answer_file
         self.tfhelper = tfhelper
         self.client = Client()
@@ -514,7 +521,7 @@ class SetLocalHypervisorOptions(BaseStep):
         join_mode: bool = False,
     ):
         super().__init__(
-            "Apply local hypervisor settings", "Apply local hypervisor settings"
+            "Apply local hypervisor settings", "Appyling local hypervisor settings"
         )
         self.name = name
         self.jhelper = jhelper
@@ -576,7 +583,7 @@ class SetLocalHypervisorOptions(BaseStep):
         )
 
         if action_result.get("return-code", 0) > 1:
-            _message = "Unable to set local hypervisor config"
+            _message = "Unable to set local hypervisor configuration"
             return Result(ResultType.FAILED, _message)
         return Result(ResultType.COMPLETED)
 
@@ -593,7 +600,7 @@ class SetLocalHypervisorOptions(BaseStep):
 def configure(
     openrc: str = None, preseed: str = None, accept_defaults: bool = False
 ) -> None:
-    """Configure cloud with some sane defaults."""
+    """Configure cloud with some sensible defaults."""
     name = utils.get_fqdn()
     snap = Snap()
     src = snap.paths.snap / "etc" / "demo-setup/"

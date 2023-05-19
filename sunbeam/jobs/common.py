@@ -22,7 +22,6 @@ from click import decorators
 from rich.console import Console
 from rich.status import Status
 
-
 LOG = logging.getLogger(__name__)
 
 

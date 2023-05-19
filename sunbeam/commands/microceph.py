@@ -105,7 +105,7 @@ class DeployMicrocephApplicationStep(BaseStep):
 
 class AddMicrocephUnitStep(BaseStep):
     def __init__(self, name: str, jhelper: JujuHelper):
-        super().__init__("Add Microceph unit", "Adding Microceph unit to machine")
+        super().__init__("Add MicroCeph unit", "Adding MicroCeph unit to machine")
 
         self.name = name
         self.jhelper = jhelper
@@ -228,7 +228,7 @@ class ConfigureMicrocephOSDStep(BaseStep):
         preseed_file: Optional[Path] = None,
         accept_defaults: bool = False,
     ):
-        super().__init__("Configure OSD", "Configure MicroCeph OSD")
+        super().__init__("Configure MicroCeph storage", "Configuring MicroCeph storage")
         self.name = name
         self.jhelper = jhelper
         self.preseed_file = preseed_file

@@ -82,13 +82,11 @@ def remove_trailing_dot(value: str) -> str:
     "--name",
     type=str,
     prompt=True,
+    callback=remove_trailing_dot,
     help="Fully qualified node name",
 )
 def add(name: str) -> None:
-    """Generates a token for a new server.
-
-    Register new node to the cluster.
-    """
+    """Generate a token for a new node to join the cluster."""
     preflight_checks = [DaemonGroupCheck(), VerifyFQDNCheck(name)]
     run_preflight_checks(preflight_checks, console)
 
@@ -127,15 +125,10 @@ def add(name: str) -> None:
     default=["control", "compute"],
     type=click.Choice(["control", "compute", "storage"], case_sensitive=False),
     callback=validate_roles,
-    help="Specify whether the node will be a control node, a "
-    "compute node or a storage node. Defaults to control and "
-    "compute roles.",
+    help="Specify which roles the node will be assigned in the cluster.",
 )
 def join(token: str, role: List[Role]) -> None:
-    """Join node to the cluster.
-
-    Join the node to the cluster.
-    """
+    """Join a new node to the cluster."""
     node_roles = role
 
     is_control_node = any(role_.is_control_node() for role_ in node_roles)
@@ -147,7 +140,8 @@ def join(token: str, role: List[Role]) -> None:
     ip = utils.get_local_ip_by_default_route()
 
     roles_str = ",".join([role_.name for role_ in role])
-    LOG.debug(f"Joining node: roles {roles_str}")
+    pretty_roles = ", ".join([role_.name.lower() for role_ in role])
+    LOG.debug(f"Node joining the cluster with roles: {pretty_roles}")
 
     preflight_checks = []
     preflight_checks.append(JujuSnapCheck())
@@ -217,15 +211,12 @@ def join(token: str, role: List[Role]) -> None:
 
     run_plan(plan2, console)
 
-    click.echo(f"Node has joined cluster as a {roles_str} node")
+    click.echo(f"Node joined cluster with roles: {pretty_roles}")
 
 
 @click.command()
 def list() -> None:
-    """List nodes in the cluster.
-
-    List all nodes in the cluster.
-    """
+    """List nodes in the cluster."""
     preflight_checks = [DaemonGroupCheck()]
     run_preflight_checks(preflight_checks, console)
 
@@ -242,28 +233,22 @@ def list() -> None:
         table_data.append(
             [
                 name,
-                "Up" if node.get("status") == "ONLINE" else "Down",
-                "X" if "CONTROL" in node.get("role", "") else "",
-                "X" if "COMPUTE" in node.get("role", "") else "",
-                "X" if "STORAGE" in node.get("role", "") else "",
+                "up" if node.get("status") == "ONLINE" else "down",
+                "x" if "CONTROL" in node.get("role", "") else "",
+                "x" if "COMPUTE" in node.get("role", "") else "",
+                "x" if "STORAGE" in node.get("role", "") else "",
             ]
         )
     if table_data:
         table.add_rows(table_data)
 
-    click.echo("Sunbeam Cluster Node List:")
     click.echo(table)
 
 
 @click.command()
 @click.option("--name", type=str, prompt=True, help="Fully qualified node name")
 def remove(name: str) -> None:
-    """Remove node from the cluster.
-
-    Remove a node from the cluster.
-    If the node does not exist, it removes the node
-    from the token records.
-    """
+    """Remove a node from the cluster."""
     data_location = snap.paths.user_data
     jhelper = JujuHelper(data_location)
 
