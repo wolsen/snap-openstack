@@ -521,7 +521,7 @@ class SetLocalHypervisorOptions(BaseStep):
         join_mode: bool = False,
     ):
         super().__init__(
-            "Apply local hypervisor settings", "Appyling local hypervisor settings"
+            "Apply local hypervisor settings", "Applying local hypervisor settings"
         )
         self.name = name
         self.jhelper = jhelper
