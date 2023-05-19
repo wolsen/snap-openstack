@@ -593,6 +593,7 @@ class SetLocalHypervisorOptions(BaseStep):
         self.name = name
         self.jhelper = jhelper
         self.join_mode = join_mode
+        self.preseed_file = preseed_file
         self.client = Client()
         self.preseed_file = preseed_file
 
