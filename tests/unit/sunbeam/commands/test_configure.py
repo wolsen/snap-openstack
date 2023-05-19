@@ -13,11 +13,13 @@
 # limitations under the License.
 
 import asyncio
+import io
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from rich.console import Console
 
 import sunbeam.commands.configure as configure
 import sunbeam.jobs.questions
@@ -78,6 +80,34 @@ def thelper():
 def get_nic_macs():
     with patch.object(sunbeam.utils, "get_nic_macs") as p:
         p.return_value = ["00:16:3e:01:6e:75"]
+        yield p
+
+
+@pytest.fixture()
+def get_free_nics():
+    with patch.object(sunbeam.utils, "get_free_nics") as p:
+        p.return_value = ["eth1", "eth2"]
+        yield p
+
+
+@pytest.fixture()
+def is_nic_up():
+    with patch.object(sunbeam.utils, "is_nic_up") as p:
+        p.side_effect = lambda x: {"eth1": True, "eth2": True}[x]
+        yield p
+
+
+@pytest.fixture()
+def is_configured():
+    with patch.object(sunbeam.utils, "is_configured") as p:
+        p.side_effect = lambda x: {"eth1": False, "eth2": False}[x]
+        yield p
+
+
+@pytest.fixture()
+def is_nic_connected():
+    with patch.object(sunbeam.utils, "is_nic_connected") as p:
+        p.side_effect = lambda x: {"eth1": True, "eth2": True}[x]
         yield p
 
 
@@ -320,28 +350,47 @@ class TestSetLocalHypervisorOptions:
         assert step.has_prompts()
 
     def test_prompt_remote(
-        self, cclient, jhelper, load_answers, question_bank, get_nic_macs
+        self,
+        cclient,
+        jhelper,
+        load_answers,
+        question_bank,
+        get_nic_macs,
+        get_free_nics,
+        is_configured,
+        is_nic_up,
+        is_nic_connected,
     ):
+        get_free_nics.return_value = ["eth2"]
         load_answers.return_value = {"user": {"remote_access_location": "remote"}}
         ext_net_bank_mock = Mock()
         question_bank.return_value = ext_net_bank_mock
-        ext_net_bank_mock.nic.ask.return_value = "eth12"
+        ext_net_bank_mock.nic.ask.return_value = "eth2"
         step = configure.SetLocalHypervisorOptions("maas0.local", jhelper)
         step.prompt()
-        assert step.nic == "eth12"
+        assert step.nic == "eth2"
 
     def test_prompt_remote_join(
-        self, cclient, jhelper, load_answers, question_bank, get_nic_macs
+        self,
+        cclient,
+        jhelper,
+        load_answers,
+        question_bank,
+        get_nic_macs,
+        get_free_nics,
+        is_configured,
+        is_nic_up,
+        is_nic_connected,
     ):
         load_answers.return_value = {"user": {"remote_access_location": "remote"}}
         ext_net_bank_mock = Mock()
         question_bank.return_value = ext_net_bank_mock
-        ext_net_bank_mock.nic.ask.return_value = "eth12"
+        ext_net_bank_mock.nic.ask.return_value = "eth2"
         step = configure.SetLocalHypervisorOptions(
             "maas0.local", jhelper, join_mode=True
         )
         step.prompt()
-        assert step.nic == "eth12"
+        assert step.nic == "eth2"
 
     def test_prompt_local(self, cclient, jhelper, load_answers, question_bank):
         load_answers.return_value = {"user": {"remote_access_location": "local"}}
@@ -353,17 +402,26 @@ class TestSetLocalHypervisorOptions:
         assert step.nic is None
 
     def test_prompt_local_join(
-        self, cclient, jhelper, load_answers, question_bank, get_nic_macs
+        self,
+        cclient,
+        jhelper,
+        load_answers,
+        question_bank,
+        get_nic_macs,
+        get_free_nics,
+        is_configured,
+        is_nic_up,
+        is_nic_connected,
     ):
         load_answers.return_value = {"user": {"remote_access_location": "local"}}
         ext_net_bank_mock = Mock()
         question_bank.return_value = ext_net_bank_mock
-        ext_net_bank_mock.nic.ask.return_value = "eth12"
+        ext_net_bank_mock.nic.ask.return_value = "eth2"
         step = configure.SetLocalHypervisorOptions(
             "maas0.local", jhelper, join_mode=True
         )
         step.prompt()
-        assert step.nic == "eth12"
+        assert step.nic == "eth2"
 
     def test_run(self, cclient, jhelper):
         jhelper.run_action.return_value = {"return-code": 0}
@@ -394,3 +452,56 @@ class TestSetLocalHypervisorOptions:
         step.nic = None
         step.run()
         assert not jhelper.run_action.called
+
+
+class TestNicPrompt:
+    short_question = "Short Question [eth1/eth2] (eth1): "
+
+    def test_good_choice(
+        self, get_free_nics, is_nic_up, is_configured, is_nic_connected
+    ):
+        console = Console(file=io.StringIO())
+        INPUT = "eth1\n"
+        name = configure.NicPrompt.ask(
+            "Short Question",
+            console=console,
+            stream=io.StringIO(INPUT),
+        )
+        assert name == "eth1"
+        output = console.file.getvalue()
+        print(repr(output))
+        assert output == self.short_question
+
+    def test_good_choice_default(
+        self, get_free_nics, is_nic_up, is_configured, is_nic_connected
+    ):
+        console = Console(file=io.StringIO())
+        INPUT = ""
+        name = configure.NicPrompt.ask(
+            "Short Question",
+            default="eth2",
+            console=console,
+            stream=io.StringIO(INPUT),
+        )
+        assert name == "eth2"
+        output = console.file.getvalue()
+        print(repr(output))
+        expected = "Short Question [eth1/eth2] (eth2): "
+        assert output == expected
+
+    def test_default_missing_from_machine(
+        self, get_free_nics, is_nic_up, is_configured, is_nic_connected
+    ):
+        console = Console(file=io.StringIO())
+        INPUT = ""
+        name = configure.NicPrompt.ask(
+            "Short Question",
+            default="eth3",
+            console=console,
+            stream=io.StringIO(INPUT),
+        )
+        # The default eth3 does not exist so it was discarded.
+        assert name == "eth1"
+        output = console.file.getvalue()
+        print(repr(output))
+        assert output == self.short_question

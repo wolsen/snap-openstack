@@ -20,10 +20,27 @@ from pathlib import Path
 
 import netifaces
 import pwgen
+from pyroute2 import IPDB, NDB
 
 LOG = logging.getLogger(__name__)
 LOCAL_ACCESS = "local"
 REMOTE_ACCESS = "remote"
+
+
+def is_nic_connected(iface_name: str) -> bool:
+    """Check if nic is physically connected."""
+    with IPDB() as ipdb:
+        state = ipdb.interfaces[iface_name].operstate
+        # pyroute2 does not seem to expose the states as
+        # consumable constants
+        return state == "UP"
+
+
+def is_nic_up(iface_name: str) -> bool:
+    """Check if nic is up."""
+    with NDB() as ndb:
+        state = ndb.interfaces[iface_name]["state"]
+        return state.upper() == "UP"
 
 
 def get_fqdn() -> str:
@@ -59,7 +76,7 @@ def is_configured(nic: str) -> bool:
     return bool(addrs.get(netifaces.AF_INET) or addrs.get(netifaces.AF_INET6))
 
 
-def get_free_nics() -> list:
+def get_free_nics(include_configured=False) -> list:
     """Return a list of nics which doe not have a v4 or v6 address."""
     virtual_nic_dir = "/sys/devices/virtual/net/*"
     virtual_nics = [Path(p).name for p in glob.glob(virtual_nic_dir)]
@@ -81,7 +98,7 @@ def get_free_nics() -> list:
         if nic in virtual_nics:
             LOG.debug(f"Skipping {nic} it is virtual")
             continue
-        if is_configured(nic):
+        if is_configured(nic) and not include_configured:
             LOG.debug(f"Skipping {nic} it is configured")
         else:
             LOG.debug(f"Found nic {nic}")
@@ -90,6 +107,7 @@ def get_free_nics() -> list:
 
 
 def get_free_nic() -> str:
+    """Return a single candidate nic."""
     nics = get_free_nics()
     nic = ""
     if len(nics) > 0:
