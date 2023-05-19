@@ -58,6 +58,7 @@ def main():
     cli.add_command(prepare_node_cmds.prepare_node_script)
     cli.add_command(cluster)
     cli.add_command(configure_cmds.configure)
+    cli.add_command(generate_preseed_cmds.generate_preseed)
     cli.add_command(inspect_cmds.inspect)
     cli.add_command(openrc_cmds.openrc)
     cluster.add_command(bootstrap_cmds.bootstrap)
@@ -66,8 +67,6 @@ def main():
     cluster.add_command(node_cmds.list)
     cluster.add_command(node_cmds.remove)
     cluster.add_command(resize_cmds.resize)
-    cli.add_command(openrc_cmds.openrc)
-    cli.add_command(generate_preseed_cmds.generate_preseed)
     cli()
 
 
