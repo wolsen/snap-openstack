@@ -46,7 +46,7 @@ def dashboard_url() -> None:
         action_result = juju.run_sync(jhelper.run_action(unit, model, action_cmd))
 
         if action_result.get("return-code", 0) > 1:
-            _message = "Unable to retrieve openrc from Keystone service"
+            _message = "Unable to retrieve URL from Horizon service"
             raise click.ClickException(_message)
         else:
             console.print(action_result.get("url"))
