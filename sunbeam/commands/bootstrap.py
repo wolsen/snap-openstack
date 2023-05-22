@@ -221,7 +221,11 @@ def bootstrap(
 
     if is_storage_node:
         plan4.append(AddMicrocephUnitStep(fqdn, jhelper))
-        plan4.append(ConfigureMicrocephOSDStep(fqdn, jhelper))
+        plan4.append(
+            ConfigureMicrocephOSDStep(
+                fqdn, jhelper, accept_defaults=accept_defaults, preseed_file=preseed
+            )
+        )
 
     if is_control_node:
         plan4.append(TerraformInitStep(tfhelper_openstack_deploy))
