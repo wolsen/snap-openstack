@@ -486,6 +486,9 @@ class RegisterJujuUserStep(BaseStep, JujuStepHelper):
                 ResultType.FAILED, "No registration token found in Cluster database"
             )
 
+        snap = Snap()
+        log_file = Path(f"register_juju_user_{self.username}_{self.controller}.log")
+        log_file = snap.paths.user_common / log_file
         new_password_re = r"Enter a new password"
         confirm_password_re = r"Confirm password"
         controller_name_re = r"Enter a name for this controller"
@@ -510,24 +513,29 @@ class RegisterJujuUserStep(BaseStep, JujuStepHelper):
                 register_args,
                 PEXPECT_TIMEOUT,
             )
-            while True:
-                index = child.expect(expect_list, PEXPECT_TIMEOUT)
-                LOG.debug(
-                    "Juju registraton: expect got regex related to "
-                    f"{expect_list[index]}"
-                )
-                if index == 0 or index == 1:
-                    child.sendline(self.juju_account.password)
-                elif index == 2:
-                    child.sendline(self.controller)
-                elif index == 3:
-                    result = child.before.decode()
-                    if "ERROR" in result:
-                        str_index = result.find("ERROR")
-                        return Result(ResultType.FAILED, result[str_index:])
+            with open(log_file, "wb+") as f:
+                # Record the command output, but only the contents streaming from the
+                # process, don't record anything sent to the process as it may contain
+                # sensitive information.
+                child.logfile_read = f
+                while True:
+                    index = child.expect(expect_list, PEXPECT_TIMEOUT)
+                    LOG.debug(
+                        "Juju registraton: expect got regex related to "
+                        f"{expect_list[index]}"
+                    )
+                    if index == 0 or index == 1:
+                        child.sendline(self.juju_account.password)
+                    elif index == 2:
+                        child.sendline(self.controller)
+                    elif index == 3:
+                        result = child.before.decode()
+                        if "ERROR" in result:
+                            str_index = result.find("ERROR")
+                            return Result(ResultType.FAILED, result[str_index:])
 
-                    LOG.debug("User registration completed")
-                    break
+                        LOG.debug("User registration completed")
+                        break
         except pexpect.TIMEOUT as e:
             LOG.exception(f"Error registering user {self.username} in Juju")
             LOG.warning(e)
@@ -577,6 +585,8 @@ class AddJujuMachineStep(BaseStep, JujuStepHelper):
 
         :return:
         """
+        snap = Snap()
+        log_file = snap.paths.user_common / f"add_juju_machine_{self.machine_ip}.log"
         auth_message_re = "Are you sure you want to continue connecting"
         expect_list = [auth_message_re, pexpect.EOF]
         try:
@@ -585,22 +595,27 @@ class AddJujuMachineStep(BaseStep, JujuStepHelper):
                 ["add-machine", "-m", CONTROLLER_MODEL, f"ssh:{self.machine_ip}"],
                 PEXPECT_TIMEOUT * 3,  # 3 minutes
             )
-            while True:
-                index = child.expect(expect_list, PEXPECT_TIMEOUT)
-                LOG.debug(
-                    "Juju add-machine: expect got regex related to "
-                    f"{expect_list[index]}"
-                )
-                if index == 0:
-                    child.sendline("yes")
-                elif index == 1:
-                    result = child.before.decode()
-                    if "ERROR" in result:
-                        str_index = result.find("ERROR")
-                        return Result(ResultType.FAILED, result[str_index:])
+            with open(log_file, "wb+") as f:
+                # Record the command output, but only the contents streaming from the
+                # process, don't record anything sent to the process as it may contain
+                # sensitive information.
+                child.logfile_read = f
+                while True:
+                    index = child.expect(expect_list, PEXPECT_TIMEOUT)
+                    LOG.debug(
+                        "Juju add-machine: expect got regex related to "
+                        f"{expect_list[index]}"
+                    )
+                    if index == 0:
+                        child.sendline("yes")
+                    elif index == 1:
+                        result = child.before.decode()
+                        if "ERROR" in result:
+                            str_index = result.find("ERROR")
+                            return Result(ResultType.FAILED, result[str_index:])
 
-                    LOG.debug("Add machine successful")
-                    break
+                        LOG.debug("Add machine successful")
+                        break
 
             # TODO(hemanth): Need to wait until machine comes to started state
             # from planned state?
