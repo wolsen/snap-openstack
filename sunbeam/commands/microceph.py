@@ -49,7 +49,7 @@ OSD_PATH_PREFIX = "/dev/disk/by-id/"
 def microceph_questions():
     return {
         "osd_devices": questions.PromptQuestion(
-            "Disks to attach to microceph, available",
+            "Disks to attach to microceph",
         ),
     }
 
@@ -249,17 +249,12 @@ class ConfigureMicrocephOSDStep(BaseStep):
     def microceph_config_questions(self):
         disks = self.get_unpartitioned_disks()
         disks_str = None
-        first_disk = None
         if len(disks) > 0:
             disks_str = ",".join(disks)
-            first_disk = disks[0]
 
         questions = microceph_questions()
         # Specialise question with local disk information.
-        questions["osd_devices"].default_value = first_disk
-        questions["osd_devices"].question = (
-            questions["osd_devices"].question + f" - {disks_str}"
-        )
+        questions["osd_devices"].default_value = disks_str
         return questions
 
     def get_unpartitioned_disks(self) -> list:
