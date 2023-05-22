@@ -43,12 +43,16 @@ resource "openstack_compute_flavor_v2" "m1_large" {
   is_public = true
 }
 
-resource "openstack_images_image_v2" "ubuntu_jammy" {
-  name             = "ubuntu-jammy"
+resource "openstack_images_image_v2" "ubuntu" {
+  name             = "ubuntu"
   image_source_url = "http://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
   container_format = "bare"
   disk_format      = "qcow2"
   visibility       = "public"
+  properties {
+    architecture    = "x86_64"
+    hypervisor_type = "qemu"
+  }
 }
 
 # External networking
