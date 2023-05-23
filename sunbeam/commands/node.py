@@ -160,7 +160,7 @@ def add(name: str, format: str) -> None:
     callback=validate_roles,
     help="Specify which roles the node will be assigned in the cluster.",
 )
-def join(token: str, role: List[Role], preseed: Path = None) -> None:
+def join(token: str, role: List[Role], preseed: Optional[Path] = None) -> None:
     """Join node to the cluster.
 
     Join the node to the cluster.
