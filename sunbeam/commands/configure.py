@@ -220,7 +220,7 @@ VARIABLE_DEFAULTS = {
 }
 
 
-def _retrieve_admin_credentials(jhelper: JujuHelper, model: str) -> dict:
+def retrieve_admin_credentials(jhelper: JujuHelper, model: str) -> dict:
     """Retrieve cloud admin credentials.
 
     Retrieve cloud admin credentials from keystone and
@@ -342,6 +342,9 @@ class UserOpenRCStep(BaseStep):
         self.variables = sunbeam.jobs.questions.load_answers(
             self.client, CLOUD_CONFIG_SECTION
         )
+        if "user" not in self.variables:
+            LOG.debug("Demo setup not yet done")
+            return Result(ResultType.SKIPPED)
         if self.variables["user"]["run_demo_setup"]:
             return Result(ResultType.COMPLETED)
         else:
@@ -360,9 +363,7 @@ class UserOpenRCStep(BaseStep):
                 check=True,
                 cwd=snap.paths.user_common / "etc" / "demo-setup",
             )
-            LOG.debug(
-                f"Command finished. stdout={process.stdout}, stderr={process.stderr}"
-            )
+            # Mask any passwords before printing process.stdout
             tf_output = json.loads(process.stdout)
             self._print_openrc(tf_output)
             return Result(ResultType.COMPLETED)
@@ -703,10 +704,8 @@ def configure(
         run_sync(jhelper.get_model(OPENSTACK_MODEL))
     except ModelNotFoundException:
         LOG.error(f"Expected model {OPENSTACK_MODEL} missing")
-        raise click.ClickException(
-            "Please run `openstack.sunbeam cluster bootstrap` first"
-        )
-    admin_credentials = _retrieve_admin_credentials(jhelper, OPENSTACK_MODEL)
+        raise click.ClickException("Please run `sunbeam cluster bootstrap` first")
+    admin_credentials = retrieve_admin_credentials(jhelper, OPENSTACK_MODEL)
     tfhelper = TerraformHelper(
         path=snap.paths.user_common / "etc" / "demo-setup",
         env=admin_credentials,
