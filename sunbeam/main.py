@@ -26,6 +26,7 @@ from sunbeam.commands import node as node_cmds
 from sunbeam.commands import openrc as openrc_cmds
 from sunbeam.commands import prepare_node as prepare_node_cmds
 from sunbeam.commands import resize as resize_cmds
+from sunbeam.commands import dashboard_url as dasboard_url_cmds
 
 LOG = logging.getLogger()
 
@@ -61,6 +62,7 @@ def main():
     cli.add_command(generate_preseed_cmds.generate_preseed)
     cli.add_command(inspect_cmds.inspect)
     cli.add_command(openrc_cmds.openrc)
+    cli.add_command(dasboard_url_cmds.dashboard_url)
     cluster.add_command(bootstrap_cmds.bootstrap)
     cluster.add_command(node_cmds.add)
     cluster.add_command(node_cmds.join)
