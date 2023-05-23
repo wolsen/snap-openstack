@@ -18,8 +18,9 @@ import shutil
 from typing import List
 
 import click
-from prettytable import PrettyTable
+import yaml
 from rich.console import Console
+from rich.table import Table
 from snaphelpers import Snap
 
 from sunbeam import utils
@@ -73,6 +74,11 @@ LOG = logging.getLogger(__name__)
 console = Console()
 snap = Snap()
 
+FORMAT_TABLE = "table"
+FORMAT_YAML = "yaml"
+FORMAT_DEFAULT = "default"
+FORMAT_VALUE = "value"
+
 
 def remove_trailing_dot(value: str) -> str:
     """Remove trailing dot from the value."""
@@ -86,7 +92,14 @@ def remove_trailing_dot(value: str) -> str:
     prompt=True,
     help="Fully qualified node name",
 )
-def add(name: str) -> None:
+@click.option(
+    "-f",
+    "--format",
+    type=click.Choice([FORMAT_DEFAULT, FORMAT_VALUE, FORMAT_YAML]),
+    default=FORMAT_DEFAULT,
+    help="Output format.",
+)
+def add(name: str, format: str) -> None:
     """Generate a token for a new node to join the cluster."""
     preflight_checks = [DaemonGroupCheck(), VerifyFQDNCheck(name)]
     run_preflight_checks(preflight_checks, console)
@@ -110,15 +123,24 @@ def add(name: str) -> None:
 
     add_node_step_result = plan1_results.get("ClusterAddNodeStep")
     if add_node_step_result.result_type == ResultType.COMPLETED:
-        click.echo(f"Token for the Node {name}: {add_node_step_result.message}")
+        token = add_node_step_result.message
+        if format == FORMAT_DEFAULT:
+            console.print(f"Token for the Node {name}: {token}")
+        elif format == FORMAT_YAML:
+            console.print(yaml.dump({"token": token}))
+        elif format == FORMAT_VALUE:
+            console.print(token)
     elif add_node_step_result.result_type == ResultType.SKIPPED:
         if add_node_step_result.message:
-            click.echo(
-                f"Token already generated for Node {name}: "
-                f"{add_node_step_result.message}"
-            )
+            token = add_node_step_result.message
+            if format == FORMAT_DEFAULT:
+                console.print(f"Token already generated for Node {name}: {token}")
+            elif format == FORMAT_YAML:
+                console.print(yaml.dump({"token": token}))
+            elif format == FORMAT_VALUE:
+                console.print(token)
         else:
-            click.echo("Node already a member of the Sunbeam cluster")
+            console.print("Node already a member of the Sunbeam cluster")
 
 
 @click.command()
@@ -219,7 +241,14 @@ def join(token: str, role: List[Role]) -> None:
 
 
 @click.command()
-def list() -> None:
+@click.option(
+    "-f",
+    "--format",
+    type=click.Choice([FORMAT_TABLE, FORMAT_YAML]),
+    default=FORMAT_TABLE,
+    help="Output format.",
+)
+def list(format: str) -> None:
     """List nodes in the cluster."""
     preflight_checks = [DaemonGroupCheck()]
     run_preflight_checks(preflight_checks, console)
@@ -230,23 +259,26 @@ def list() -> None:
     list_node_step_result = results.get("ClusterListNodeStep")
     nodes = list_node_step_result.message
 
-    table = PrettyTable()
-    table.field_names = ["Node", "Status", "Control", "Compute", "Storage"]
-    table_data = []
-    for name, node in nodes.items():
-        table_data.append(
-            [
+    if format == FORMAT_TABLE:
+        table = Table()
+        table.add_column("Node", justify="left")
+        table.add_column("Status", justify="center")
+        table.add_column("Control", justify="center")
+        table.add_column("Compute", justify="center")
+        table.add_column("Storage", justify="center")
+        for name, node in nodes.items():
+            table.add_row(
                 name,
-                "up" if node.get("status") == "ONLINE" else "down",
+                "[green]up[/green]"
+                if node.get("status") == "ONLINE"
+                else "[red]down[/red]",
                 "x" if "CONTROL" in node.get("role", "") else "",
                 "x" if "COMPUTE" in node.get("role", "") else "",
                 "x" if "STORAGE" in node.get("role", "") else "",
-            ]
-        )
-    if table_data:
-        table.add_rows(table_data)
-
-    click.echo(table)
+            )
+        console.print(table)
+    elif format == FORMAT_YAML:
+        console.print(yaml.dump(nodes, sort_keys=True))
 
 
 @click.command()
