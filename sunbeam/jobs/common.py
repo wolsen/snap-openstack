@@ -191,11 +191,7 @@ def run_preflight_checks(checks: list, console: Console):
         LOG.debug(f"Starting pre-flight check {check.name}")
         message = f"{check.description} ... "
         with console.status(message):
-            if check.run():
-                console.print(f"{message}[green]done[/green]")
-            else:
-                console.print(f"{message}[red]failed[/red]")
-                console.print()
+            if not check.run():
                 raise click.ClickException(check.message)
 
 
@@ -213,7 +209,7 @@ def run_plan(plan: list, console: Console) -> dict:
     for step in plan:
         LOG.debug(f"Starting step {step.name}")
         message = f"{step.description} ... "
-        with console.status(f"{step.description} ... ") as status:
+        with console.status(message) as status:
             if step.has_prompts():
                 status.stop()
                 step.prompt(console)
@@ -223,7 +219,6 @@ def run_plan(plan: list, console: Console) -> dict:
             if skip_result.result_type == ResultType.SKIPPED:
                 results[step.__class__.__name__] = skip_result
                 LOG.debug(f"Skipping step {step.name}")
-                console.print(f"{message}[green]done[/green]")
                 continue
 
             LOG.debug(f"Running step {step.name}")
@@ -234,10 +229,7 @@ def run_plan(plan: list, console: Console) -> dict:
             )
 
         if result.result_type == ResultType.FAILED:
-            console.print(f"{message}[red]failed[/red]")
             raise click.ClickException(result.message)
-
-        console.print(f"{message}[green]done[/green]")
 
     # Returns results object only when all steps have results of type
     # COMPLETED or SKIPPED.
