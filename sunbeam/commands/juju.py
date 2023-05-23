@@ -490,10 +490,16 @@ class RegisterJujuUserStep(BaseStep, JujuStepHelper):
         new_password_re = r"Enter a new password"
         confirm_password_re = r"Confirm password"
         controller_name_re = r"Enter a name for this controller"
+        # NOTE(jamespage)
+        # Sometimes the register command fails to actually log the user in and the
+        # user is prompted to enter the password they literally just set.
+        # https://bugs.launchpad.net/juju/+bug/2020360
+        please_enter_password_re = r"please enter password"
         expect_list = [
             new_password_re,
             confirm_password_re,
             controller_name_re,
+            please_enter_password_re,
             pexpect.EOF,
         ]
 
@@ -522,11 +528,11 @@ class RegisterJujuUserStep(BaseStep, JujuStepHelper):
                         "Juju registraton: expect got regex related to "
                         f"{expect_list[index]}"
                     )
-                    if index == 0 or index == 1:
+                    if index in (0, 1, 3):
                         child.sendline(self.juju_account.password)
                     elif index == 2:
                         child.sendline(self.controller)
-                    elif index == 3:
+                    elif index == 4:
                         result = child.before.decode()
                         if "ERROR" in result:
                             str_index = result.find("ERROR")
