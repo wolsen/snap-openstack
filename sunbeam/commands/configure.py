@@ -324,7 +324,7 @@ class SetHypervisorCharmConfigStep(BaseStep):
 class UserOpenRCStep(BaseStep):
     """Generate openrc for created cloud user."""
 
-    def __init__(self, auth_url: str, auth_version: str, openrc: str):
+    def __init__(self, auth_url: str, auth_version: str, openrc: Path):
         super().__init__(
             "Generate admin openrc", "Generating openrc for cloud admin usage"
         )
@@ -384,7 +384,7 @@ export OS_IDENTITY_API_VERSION={self.auth_version}"""
         if self.openrc:
             message = f"Writing openrc to {self.openrc} ... "
             console.status(message)
-            with open(self.openrc, "w") as f_openrc:
+            with self.openrc.open("w") as f_openrc:
                 os.fchmod(f_openrc.fileno(), mode=0o640)
                 f_openrc.write(_openrc)
             console.print(f"{message}[green]done[/green]")
@@ -675,9 +675,14 @@ class SetLocalHypervisorOptions(BaseStep):
     help="Preseed file.",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
-@click.option("-o", "--openrc", help="Output file for cloud access details.")
+@click.option(
+    "-o",
+    "--openrc",
+    help="Output file for cloud access details.",
+    type=click.Path(dir_okay=False, path_type=Path),
+)
 def configure(
-    openrc: str = None, preseed: str = None, accept_defaults: bool = False
+    openrc: Optional[Path] = None, preseed: str = None, accept_defaults: bool = False
 ) -> None:
     """Configure cloud with some sensible defaults."""
     name = utils.get_fqdn()
