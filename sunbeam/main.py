@@ -20,13 +20,13 @@ import click
 from sunbeam import log
 from sunbeam.commands import bootstrap as bootstrap_cmds
 from sunbeam.commands import configure as configure_cmds
-from sunbeam.commands import inspect as inspect_cmds
+from sunbeam.commands import dashboard_url as dasboard_url_cmds
 from sunbeam.commands import generate_preseed as generate_preseed_cmds
+from sunbeam.commands import inspect as inspect_cmds
 from sunbeam.commands import node as node_cmds
 from sunbeam.commands import openrc as openrc_cmds
 from sunbeam.commands import prepare_node as prepare_node_cmds
 from sunbeam.commands import resize as resize_cmds
-from sunbeam.commands import dashboard_url as dasboard_url_cmds
 
 LOG = logging.getLogger()
 
