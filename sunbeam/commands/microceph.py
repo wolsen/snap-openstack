@@ -49,7 +49,7 @@ OSD_PATH_PREFIX = "/dev/disk/by-id/"
 def microceph_questions():
     return {
         "osd_devices": questions.PromptQuestion(
-            "Disks to attach to microceph",
+            "Disks to attach to MicroCeph",
         ),
     }
 

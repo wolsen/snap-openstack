@@ -343,8 +343,6 @@ class JujuGrantModelAccessStep(BaseStep, JujuStepHelper):
             model_with_owner = run_sync(
                 self.jhelper.get_model_name_with_owner(self.model)
             )
-            print("hemanth")
-            print(model_with_owner)
             # Grant write access to the model
             # Without this step, the user is not able to view the model created
             # by other users.
