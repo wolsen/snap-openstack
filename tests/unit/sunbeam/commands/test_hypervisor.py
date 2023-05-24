@@ -40,7 +40,7 @@ def mock_run_sync(mocker):
     def run_sync(coro):
         return loop.run_until_complete(coro)
 
-    mocker.patch("sunbeam.commands.openstack.run_sync", run_sync)
+    mocker.patch("sunbeam.commands.hypervisor.run_sync", run_sync)
     yield
     loop.close()
 
