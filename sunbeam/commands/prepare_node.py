@@ -20,8 +20,13 @@ console = Console()
 
 
 JUJU_CHANNEL = "3.2/beta"
+SUPPORTED_RELEASE = "jammy"
 
 PREPARE_NODE_TEMPLATE = f"""#!/bin/bash
+
+[ $(lsb_release -sc) != '{SUPPORTED_RELEASE}' ] && \
+{{ echo 'ERROR Sunbeam deploy only supported on {SUPPORTED_RELEASE}'; exit 1; }}
+
 # :warning: Node Preparation for OpenStack Sunbeam :warning:
 # All of these commands perform privileged operations
 # please review carefully before execution.
