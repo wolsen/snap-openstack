@@ -25,7 +25,7 @@ SUPPORTED_RELEASE = "jammy"
 PREPARE_NODE_TEMPLATE = f"""#!/bin/bash
 
 [ $(lsb_release -sc) != '{SUPPORTED_RELEASE}' ] && \
-{{ echo 'ERROR Sunbeam deploy only supported on {SUPPORTED_RELEASE}'; exit 1; }}
+{{ echo 'ERROR: Sunbeam deploy only supported on {SUPPORTED_RELEASE}'; exit 1; }}
 
 # :warning: Node Preparation for OpenStack Sunbeam :warning:
 # All of these commands perform privileged operations
@@ -34,7 +34,7 @@ USER=$(whoami)
 
 # Check if user has passwordless sudo permissions
 SUDO_ASKPASS=/bin/false sudo -A whoami &> /dev/null && \
-sudo grep -r $USER /etc/{sudoers,sudoers.d} | grep NOPASSWD:ALL &> /dev/null || \
+sudo grep -r $USER /etc/{{sudoers,sudoers.d}} | grep NOPASSWD:ALL &> /dev/null || \
 {{ echo "ERROR: password-less sudo access to root for user $USER required"; exit 1; }}
 
 # Connect snap to the ssh-keys interface to allow
