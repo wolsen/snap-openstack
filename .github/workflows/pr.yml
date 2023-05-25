@@ -1,8 +1,8 @@
-name: PR
+name: PR Global
 
 on:
   pull_request:
 
 jobs:
   build:
-    uses: ./.github/workflows/build-and-test.yml
+    uses: ./.github/workflows/build-snap.yml

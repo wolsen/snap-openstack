@@ -1,0 +1,14 @@
+name: PR Sunbeam
+
+on:
+  pull_request:
+    paths:
+      - 'sunbeam/*'
+      - 'tests/*'
+      - '*requirements.txt'
+      - 'setup*'
+      - 'tox.ini'
+
+jobs:
+  test:
+    uses: ./.github/workflows/test-python.yml

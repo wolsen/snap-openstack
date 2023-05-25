@@ -1,0 +1,12 @@
+name: PR Microcluster
+
+on:
+  pull_request:
+    paths:
+      - 'sunbeam-microcluster/*'
+
+jobs:
+  test:
+    uses: ./.github/workflows/test-golang.yml
+  build:
+    uses: ./.github/workflows/build-golang.yml
