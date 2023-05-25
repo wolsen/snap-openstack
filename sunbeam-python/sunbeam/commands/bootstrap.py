@@ -130,6 +130,7 @@ def bootstrap(
     fqdn = utils.get_fqdn()
 
     roles_str = ",".join([role_.name for role_ in role])
+    pretty_roles = ", ".join([role_.name.lower() for role_ in role])
     LOG.debug(f"Bootstrap node: roles {roles_str}")
 
     cloud_type = snap.config.get("juju.cloud.type")
@@ -247,7 +248,7 @@ def bootstrap(
 
     run_plan(plan5, console)
 
-    click.echo(f"Node has been bootstrapped as a {roles_str} node")
+    click.echo(f"Node has been bootstrapped with roles: {pretty_roles}")
 
 
 if __name__ == "__main__":
