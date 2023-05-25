@@ -45,7 +45,7 @@ OPENSTACK_DEPLOY_TIMEOUT = 2400  # 30 minutes
 CONFIG_KEY = "TerraformVarsOpenstack"
 TOPOLOGY_KEY = "Topology"
 
-RAM_20_GB_IN_KB = 20 * 1024 * 1024
+RAM_32_GB_IN_KB = 32 * 1024 * 1024
 
 
 def update_config(client: Client, key: str, config: dict):
@@ -65,7 +65,7 @@ def determine_target_topology_at_bootstrap() -> str:
     Otherwise, target is considered to be 'multi'
     """
     host_total_ram = get_host_total_ram()
-    if host_total_ram < RAM_20_GB_IN_KB:
+    if host_total_ram < RAM_32_GB_IN_KB:
         return "single"
     return "multi"
 
@@ -83,7 +83,7 @@ def determine_target_topology(client: Client) -> str:
         for node in set(tuple(item.items()) for item in control_nodes + compute_nodes)
     ]
     host_total_ram = get_host_total_ram()
-    if len(combined) == 1 and host_total_ram < RAM_20_GB_IN_KB:
+    if len(combined) == 1 and host_total_ram < RAM_32_GB_IN_KB:
         topology = "single"
     elif len(combined) < 10:
         topology = "multi"
