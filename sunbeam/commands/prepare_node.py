@@ -32,6 +32,11 @@ PREPARE_NODE_TEMPLATE = f"""#!/bin/bash
 # please review carefully before execution.
 USER=$(whoami)
 
+# Check if user has passwordless sudo permissions
+SUDO_ASKPASS=/bin/false sudo -A whoami &> /dev/null && \
+sudo grep -r $USER /etc/{sudoers,sudoers.d} | grep NOPASSWD:ALL &> /dev/null || \
+{{ echo "ERROR: password-less sudo access to root for user $USER required"; exit 1; }}
+
 # Connect snap to the ssh-keys interface to allow
 # read access to private keys - this supports bootstrap
 # of the Juju controller to the local machine via SSH.
