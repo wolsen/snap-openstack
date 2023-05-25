@@ -121,24 +121,21 @@ def add(name: str, format: str) -> None:
     plan2 = [ClusterAddJujuUserStep(name, user_token)]
     run_plan(plan2, console)
 
-    add_node_step_result = plan1_results.get("ClusterAddNodeStep")
-    if add_node_step_result.result_type == ResultType.COMPLETED:
-        token = add_node_step_result.message
+    def _print_output(token):
+        """Helper for printing formatted output."""
         if format == FORMAT_DEFAULT:
             console.print(f"Token for the Node {name}: {token}")
         elif format == FORMAT_YAML:
-            console.print(yaml.dump({"token": token}))
+            click.echo(yaml.dump({"token": token}))
         elif format == FORMAT_VALUE:
-            console.print(token)
+            click.echo(token)
+
+    add_node_step_result = plan1_results.get("ClusterAddNodeStep")
+    if add_node_step_result.result_type == ResultType.COMPLETED:
+        _print_output(add_node_step_result.message)
     elif add_node_step_result.result_type == ResultType.SKIPPED:
         if add_node_step_result.message:
-            token = add_node_step_result.message
-            if format == FORMAT_DEFAULT:
-                console.print(f"Token already generated for Node {name}: {token}")
-            elif format == FORMAT_YAML:
-                console.print(yaml.dump({"token": token}))
-            elif format == FORMAT_VALUE:
-                console.print(token)
+            _print_output(add_node_step_result.message)
         else:
             console.print("Node already a member of the Sunbeam cluster")
 
@@ -278,7 +275,7 @@ def list(format: str) -> None:
             )
         console.print(table)
     elif format == FORMAT_YAML:
-        console.print(yaml.dump(nodes, sort_keys=True))
+        click.echo(yaml.dump(nodes, sort_keys=True))
 
 
 @click.command()
