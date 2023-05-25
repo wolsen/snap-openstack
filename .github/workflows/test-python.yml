@@ -13,6 +13,7 @@ jobs:
       - name: Install dependencies
         run: python3 -m pip install tox
       - name: Run linters
+        working-directory: ./sunbeam-python
         run: tox -e pep8
 
   unit-test:
@@ -24,4 +25,5 @@ jobs:
       - name: Install dependencies
         run: python -m pip install tox
       - name: Run tests
+        working-directory: ./sunbeam-python
         run: tox -e py3

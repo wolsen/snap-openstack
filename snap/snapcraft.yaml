@@ -175,6 +175,7 @@ parts:
   sunbeam-and-openstackclients:
     plugin: python
     source: .
+    source-subdir: sunbeam-python/
     python-packages:
       - aodhclient
       - osc-placement

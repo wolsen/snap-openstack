@@ -3,11 +3,7 @@ name: PR Sunbeam
 on:
   pull_request:
     paths:
-      - 'sunbeam/*'
-      - 'tests/*'
-      - '*requirements.txt'
-      - 'setup*'
-      - 'tox.ini'
+      - 'sunbeam-python/*'
 
 jobs:
   test:
