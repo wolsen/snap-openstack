@@ -684,7 +684,9 @@ class SetLocalHypervisorOptions(BaseStep):
     type=click.Path(dir_okay=False, path_type=Path),
 )
 def configure(
-    openrc: Optional[Path] = None, preseed: str = None, accept_defaults: bool = False
+    openrc: Optional[Path] = None,
+    preseed: Optional[Path] = None,
+    accept_defaults: bool = False,
 ) -> None:
     """Configure cloud with some sensible defaults."""
     name = utils.get_fqdn()
