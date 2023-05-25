@@ -591,7 +591,7 @@ class AddJujuMachineStep(BaseStep, JujuStepHelper):
             child = pexpect.spawn(
                 self._get_juju_binary(),
                 ["add-machine", "-m", CONTROLLER_MODEL, f"ssh:{self.machine_ip}"],
-                PEXPECT_TIMEOUT * 3,  # 3 minutes
+                PEXPECT_TIMEOUT * 5,  # 5 minutes
             )
             with open(log_file, "wb+") as f:
                 # Record the command output, but only the contents streaming from the
@@ -599,7 +599,7 @@ class AddJujuMachineStep(BaseStep, JujuStepHelper):
                 # sensitive information.
                 child.logfile_read = f
                 while True:
-                    index = child.expect(expect_list, PEXPECT_TIMEOUT)
+                    index = child.expect(expect_list)
                     LOG.debug(
                         "Juju add-machine: expect got regex related to "
                         f"{expect_list[index]}"
