@@ -158,6 +158,7 @@ class JujuStepHelper:
                 cloud_name,
                 "--file",
                 temp.name,
+                "--client",
             ]
             LOG.debug(f'Running command {" ".join(cmd)}')
             process = subprocess.run(cmd, capture_output=True, text=True, check=True)
