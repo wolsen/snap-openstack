@@ -16,7 +16,7 @@
 import logging
 import shutil
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import click
 import yaml
