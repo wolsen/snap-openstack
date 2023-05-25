@@ -142,6 +142,7 @@ def add(name: str, format: str) -> None:
 
 
 @click.command()
+@click.option("-a", "--accept-defaults", help="Accept all defaults.", is_flag=True)
 @click.option(
     "-p",
     "--preseed",
@@ -157,7 +158,12 @@ def add(name: str, format: str) -> None:
     callback=validate_roles,
     help="Specify which roles the node will be assigned in the cluster.",
 )
-def join(token: str, role: List[Role], preseed: Optional[Path] = None) -> None:
+def join(
+    token: str,
+    role: List[Role],
+    preseed: Optional[Path] = None,
+    accept_defaults: bool = False,
+) -> None:
     """Join node to the cluster.
 
     Join the node to the cluster.
