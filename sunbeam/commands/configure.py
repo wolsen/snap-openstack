@@ -593,6 +593,7 @@ class SetLocalHypervisorOptions(BaseStep):
         self.name = name
         self.jhelper = jhelper
         self.join_mode = join_mode
+        self.preseed_file = preseed_file
         self.client = Client()
         self.preseed_file = preseed_file
 
@@ -683,7 +684,9 @@ class SetLocalHypervisorOptions(BaseStep):
     type=click.Path(dir_okay=False, path_type=Path),
 )
 def configure(
-    openrc: Optional[Path] = None, preseed: str = None, accept_defaults: bool = False
+    openrc: Optional[Path] = None,
+    preseed: Optional[Path] = None,
+    accept_defaults: bool = False,
 ) -> None:
     """Configure cloud with some sensible defaults."""
     name = utils.get_fqdn()

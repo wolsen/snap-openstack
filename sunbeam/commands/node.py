@@ -15,6 +15,7 @@
 
 import logging
 import shutil
+from pathlib import Path
 from typing import List
 
 import click
@@ -141,6 +142,12 @@ def add(name: str, format: str) -> None:
 
 
 @click.command()
+@click.option(
+    "-p",
+    "--preseed",
+    help="Preseed file.",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
 @click.option("--token", type=str, help="Join token")
 @click.option(
     "--role",
@@ -150,8 +157,11 @@ def add(name: str, format: str) -> None:
     callback=validate_roles,
     help="Specify which roles the node will be assigned in the cluster.",
 )
-def join(token: str, role: List[Role]) -> None:
-    """Join a new node to the cluster."""
+def join(token: str, role: List[Role], preseed: Optional[Path] = None) -> None:
+    """Join node to the cluster.
+
+    Join the node to the cluster.
+    """
     node_roles = role
 
     is_control_node = any(role_.is_control_node() for role_ in node_roles)
@@ -220,7 +230,11 @@ def join(token: str, role: List[Role]) -> None:
 
     if is_storage_node:
         plan2.append(AddMicrocephUnitStep(name, jhelper))
-        plan2.append(ConfigureMicrocephOSDStep(name, jhelper))
+        plan2.append(
+            ConfigureMicrocephOSDStep(
+                name, jhelper, accept_defaults=accept_defaults, preseed_file=preseed
+            )
+        )
 
     if is_compute_node:
         plan2.extend(
@@ -228,7 +242,9 @@ def join(token: str, role: List[Role]) -> None:
                 TerraformInitStep(tfhelper_hypervisor_deploy),
                 DeployHypervisorApplicationStep(tfhelper_hypervisor_deploy, jhelper),
                 AddHypervisorUnitStep(name, jhelper),
-                SetLocalHypervisorOptions(name, jhelper, join_mode=True),
+                SetLocalHypervisorOptions(
+                    name, jhelper, join_mode=True, preseed_file=preseed
+                ),
             ]
         )
 
