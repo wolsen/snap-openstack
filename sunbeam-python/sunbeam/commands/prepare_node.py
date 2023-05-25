@@ -64,4 +64,4 @@ mkdir -p $HOME/.local/share
 @click.command()
 def prepare_node_script() -> None:
     """Generate script to prepare a node for Sunbeam use."""
-    console.print(PREPARE_NODE_TEMPLATE)
+    console.print(PREPARE_NODE_TEMPLATE, soft_wrap=True)
