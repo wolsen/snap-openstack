@@ -28,6 +28,7 @@ from sunbeam.commands import node as node_cmds
 from sunbeam.commands import openrc as openrc_cmds
 from sunbeam.commands import prepare_node as prepare_node_cmds
 from sunbeam.commands import resize as resize_cmds
+from sunbeam.utils import CatchGroup
 
 LOG = logging.getLogger()
 
@@ -36,7 +37,7 @@ LOG = logging.getLogger()
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
 
 
-@click.group("init", context_settings=CONTEXT_SETTINGS)
+@click.group("init", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
 @click.option("--quiet", "-q", default=False, is_flag=True)
 @click.option("--verbose", "-v", default=False, is_flag=True)
 @click.pass_context
@@ -49,7 +50,7 @@ def cli(ctx, quiet, verbose):
     """
 
 
-@click.group("cluster", context_settings=CONTEXT_SETTINGS)
+@click.group("cluster", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
 @click.pass_context
 def cluster(ctx):
     """Manage the Sunbeam Cluster"""

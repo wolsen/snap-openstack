@@ -16,8 +16,10 @@
 import glob
 import logging
 import socket
+import sys
 from pathlib import Path
 
+import click
 import netifaces
 import pwgen
 from pyroute2 import IPDB, NDB
@@ -118,3 +120,15 @@ def get_free_nic() -> str:
 def generate_password() -> str:
     """Generate a password."""
     return pwgen.pwgen(12)
+
+
+class CatchGroup(click.Group):
+    """Catch exceptions and print them to stderr."""
+
+    def __call__(self, *args, **kwargs):
+        try:
+            return self.main(*args, **kwargs)
+        except Exception as e:
+            LOG.debug(e, exc_info=True)
+            LOG.error("Error: %s", e)
+            sys.exit(1)
