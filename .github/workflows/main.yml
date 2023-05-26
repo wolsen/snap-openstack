@@ -6,5 +6,11 @@ on:
       - main
 
 jobs:
+  test-python:
+    uses: ./.github/workflows/test-python.yml
+  test-golang:
+    uses: ./.github/workflows/test-golang.yml
+  build-microcluster:
+    uses: ./.github/workflows/build-golang.yml
   build:
-    uses: ./.github/workflows/build-and-test.yml
+    uses: ./.github/workflows/build-snap.yml

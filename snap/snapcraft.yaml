@@ -107,9 +107,8 @@ parts:
     after:
       - dqlite
     plugin: go
-    source: https://github.com/openstack-snaps/sunbeam-microcluster
-    source-depth: 1
-    source-type: git
+    source: ./sunbeam-microcluster
+    source-type: local
     build-snaps:
       - go
     build-environment:
@@ -176,6 +175,7 @@ parts:
   sunbeam-and-openstackclients:
     plugin: python
     source: .
+    source-subdir: sunbeam-python/
     python-packages:
       - aodhclient
       - osc-placement
