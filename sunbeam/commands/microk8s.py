@@ -296,20 +296,13 @@ class AddMicrok8sCloudStep(BaseStep, JujuStepHelper):
         try:
             unit = run_sync(self.jhelper.get_leader_unit(APPLICATION, MODEL))
             result = run_sync(self.jhelper.run_action(unit, MODEL, "kubeconfig"))
-            source = result.get("kubeconfig")
-            # NOTE: snap has no permission to run scp, so commenting the below lines.
-            # Directly use source path in add_k8s_cloud as action is run on same
-            # machine as add_k8s_cloud.
-            # destination = f"{self.jhelper.data_location}/microk8s_kubeconfig"
-            # run_sync(self.jhelper.scp_from(unit, MODEL, source, destination))
+            if not result.get("content"):
+                return Result(
+                    ResultType.FAILED,
+                    "ERROR: Failed to add k8s cloud, not able to retrieve kubeconfig",
+                )
 
-            # NOTE: source path is hardcoded in microk8s charm
-            # https://github.com/canonical/charm-microk8s/issues/65
-            # TODO(hemanth): Action should return the content of kubeconfig file
-            kubeconfig = {}
-            with Path(source).open() as file:
-                kubeconfig = yaml.safe_load(file)
-
+            kubeconfig = yaml.safe_load(result.get("content"))
             run_sync(
                 self.jhelper.add_k8s_cloud(self.name, self.credential_name, kubeconfig)
             )
