@@ -18,9 +18,12 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+import yaml
 
 from sunbeam.clusterd.service import NodeNotExistInClusterException
 from sunbeam.commands.microk8s import (
+    CREDENTIAL_SUFFIX,
+    MICROK8S_CLOUD,
     AddMicrok8sCloudStep,
     AddMicrok8sUnitStep,
     DeployMicrok8sApplicationStep,
@@ -325,11 +328,30 @@ class TestAddMicrok8sCloudStep(unittest.TestCase):
 
         assert result.result_type == ResultType.SKIPPED
 
-    @patch("yaml.safe_load")
-    @patch.object(Path, "open")
-    def test_run(self, mock_path, mock_yaml):
-        mock_yaml.return_value = {}
-        action_result = {"kubeconfig": "/home/ubuntu/config"}
+    def test_run(self):
+        kubeconfig_content = """apiVersion: v1
+clusters:
+- cluster:
+    certificate-authority-data: fakecert
+    server: https://127.0.0.1:16443
+  name: microk8s-cluster
+contexts:
+- context:
+    cluster: microk8s-cluster
+    user: admin
+  name: microk8s
+current-context: microk8s
+kind: Config
+preferences: {}
+users:
+- name: admin
+  user:
+    token: faketoken"""
+
+        action_result = {
+            "kubeconfig": "/home/ubuntu/config",
+            "content": kubeconfig_content,
+        }
         self.jhelper.run_action.return_value = action_result
 
         step = AddMicrok8sCloudStep(self.jhelper)
@@ -337,7 +359,11 @@ class TestAddMicrok8sCloudStep(unittest.TestCase):
 
         self.jhelper.get_leader_unit.assert_called_once()
         self.jhelper.run_action.assert_called_once()
-        self.jhelper.add_k8s_cloud.assert_called_once()
+        self.jhelper.add_k8s_cloud.assert_called_with(
+            MICROK8S_CLOUD,
+            f"{MICROK8S_CLOUD}{CREDENTIAL_SUFFIX}",
+            yaml.safe_load(kubeconfig_content),
+        )
         assert result.result_type == ResultType.COMPLETED
 
     def test_run_application_not_found(self):
