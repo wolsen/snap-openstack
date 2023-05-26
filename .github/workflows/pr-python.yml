@@ -3,7 +3,7 @@ name: PR Sunbeam
 on:
   pull_request:
     paths:
-      - 'sunbeam-python/*'
+      - 'sunbeam-python/**'
 
 jobs:
   test:

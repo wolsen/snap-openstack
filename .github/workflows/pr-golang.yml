@@ -3,7 +3,7 @@ name: PR Microcluster
 on:
   pull_request:
     paths:
-      - 'sunbeam-microcluster/*'
+      - 'sunbeam-microcluster/**'
 
 jobs:
   test:
