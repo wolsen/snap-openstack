@@ -125,7 +125,7 @@ def add(name: str, format: str) -> None:
     def _print_output(token):
         """Helper for printing formatted output."""
         if format == FORMAT_DEFAULT:
-            console.print(f"Token for the Node {name}: {token}")
+            console.print(f"Token for the Node {name}: {token}", soft_wrap=True)
         elif format == FORMAT_YAML:
             click.echo(yaml.dump({"token": token}))
         elif format == FORMAT_VALUE:
