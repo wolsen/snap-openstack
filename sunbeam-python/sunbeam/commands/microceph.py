@@ -283,7 +283,7 @@ class ConfigureMicrocephOSDStep(BaseStep):
             LOG.debug(str(e))
             raise click.ClickException("Unable to list disks")
 
-        LOG.debug(f"Unparitioned disks: {unpartitioned_disks}")
+        LOG.debug(f"Unpartitioned disks: {unpartitioned_disks}")
         return unpartitioned_disks
 
     def prompt(self, console: Optional[Console] = None) -> None:
