@@ -144,10 +144,10 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         tfvars = {}
         storage_nodes = self.client.cluster.list_nodes_by_role("storage")
         if storage_nodes:
-            tfvars["enable_ceph"] = True
-            tfvars["ceph_offer_url"] = f"{CONTROLLER_MODEL}.{MICROCEPH_APPLICATION}"
+            tfvars["enable-ceph"] = True
+            tfvars["ceph-offer-url"] = f"{CONTROLLER_MODEL}.{MICROCEPH_APPLICATION}"
         else:
-            tfvars["enable_ceph"] = False
+            tfvars["enable-ceph"] = False
 
         return tfvars
 
@@ -188,8 +188,8 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         tfvars = {
             "model": self.model,
             # Make these channel options configurable by the user
-            "openstack_channel": "yoga/edge",
-            "ovn_channel": "22.03/edge",
+            "openstack-channel": "yoga/edge",
+            "ovn-channel": "22.03/edge",
             "cloud": self.cloud,
             "credential": f"{self.cloud}{CREDENTIAL_SUFFIX}",
             "config": {"workload-storage": MICROK8S_DEFAULT_STORAGECLASS},
@@ -207,7 +207,7 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         try:
             # Remove cinder-ceph from apps to wait on if ceph is not enabled
             apps = run_sync(self.jhelper.get_application_names(self.model))
-            if not tfvars.get("enable_ceph") and "cinder-ceph" in apps:
+            if not tfvars.get("enable-ceph") and "cinder-ceph" in apps:
                 apps.remove("cinder-ceph")
 
             run_sync(
