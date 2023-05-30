@@ -115,6 +115,12 @@ def compute_ingress_scale(topology: str, control_nodes: int) -> int:
     return control_nodes
 
 
+def compute_ceph_replica_scale(topology: str, storage_nodes: int) -> int:
+    if topology == "single" or storage_nodes < 2:
+        return 1
+    return min(storage_nodes, 3)
+
+
 class DeployControlPlaneStep(BaseStep, JujuStepHelper):
     """Deploy OpenStack using Terraform cloud"""
 
@@ -289,11 +295,15 @@ class ResizeControlPlaneStep(BaseStep, JujuStepHelper):
         )
         tf_vars = read_config(client, self._CONFIG)
         control_nodes = client.cluster.list_nodes_by_role("control")
+        storage_nodes = client.cluster.list_nodes_by_role("storage")
         tf_vars.update(
             {
                 "ha-scale": compute_ha_scale(topology),
                 "os-api-scale": compute_os_api_scale(topology, len(control_nodes)),
                 "ingress-scale": compute_ingress_scale(topology, len(control_nodes)),
+                "ceph-osd-replication-count": compute_ceph_replica_scale(
+                    topology, len(storage_nodes)
+                ),
             }
         )
         update_config(client, self._CONFIG, tf_vars)
