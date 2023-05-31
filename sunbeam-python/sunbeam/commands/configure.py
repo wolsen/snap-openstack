@@ -600,6 +600,34 @@ class SetLocalHypervisorOptions(BaseStep):
     def has_prompts(self) -> bool:
         return True
 
+    def prompt_for_nic(self) -> None:
+        """Prompt user for nic to use and do some validation."""
+        ext_net_bank = sunbeam.jobs.questions.QuestionBank(
+            questions=ext_net_questions(),
+            console=console,
+            accept_defaults=False,
+        )
+        nic = None
+        while True:
+            nic = ext_net_bank.nic.ask()
+            if utils.is_configured(nic):
+                agree_nic_up = sunbeam.jobs.questions.ConfirmQuestion(
+                    f"WARNING: Interface {nic} is configured. Any "
+                    "configuration will be lost, are you sure you want to "
+                    "continue?"
+                ).ask()
+                if not agree_nic_up:
+                    continue
+            if utils.is_nic_up(nic) and not utils.is_nic_connected(nic):
+                agree_nic_no_link = sunbeam.jobs.questions.ConfirmQuestion(
+                    f"WARNING: Interface {nic} is not connected. Are "
+                    "you sure you want to continue?"
+                ).ask()
+                if not agree_nic_no_link:
+                    continue
+            break
+        return nic
+
     def prompt(self, console: Optional[Console] = None) -> None:
         self.nic = None
         # If adding a node before configure step has run then answers will
@@ -617,31 +645,13 @@ class SetLocalHypervisorOptions(BaseStep):
         # If adding new nodes to the cluster then local access makes no sense
         # so always prompt for the nic.
         if self.join_mode or remote_access_location == utils.REMOTE_ACCESS:
-            ext_net_bank = sunbeam.jobs.questions.QuestionBank(
-                questions=ext_net_questions(),
-                console=console,
-                preseed=preseed,
-                previous_answers={},
-                accept_defaults=False,
-            )
-            while True:
-                self.nic = ext_net_bank.nic.ask()
-                if utils.is_configured(self.nic):
-                    agree_nic_up = sunbeam.jobs.questions.ConfirmQuestion(
-                        f"WARNING: Interface {self.nic} is configured. Any "
-                        "configuration will be lost, are you sure you want to "
-                        "continue?"
-                    ).ask()
-                    if not agree_nic_up:
-                        continue
-                if utils.is_nic_up(self.nic) and not utils.is_nic_connected(self.nic):
-                    agree_nic_no_link = sunbeam.jobs.questions.ConfirmQuestion(
-                        f"WARNING: Interface {self.nic} is not connected. Are "
-                        "you sure you want to continue?"
-                    ).ask()
-                    if not agree_nic_no_link:
-                        continue
-                break
+            ext_net_preseed = preseed.get("external_network", {})
+            # If nic is in the preseed assume the user knows what they are doing and
+            # bypass validation
+            if ext_net_preseed.get("nic"):
+                self.nic = ext_net_preseed.get("nic")
+            else:
+                self.nic = self.prompt_for_nic()
 
     def run(self, status: Optional[Status] = None) -> Result:
         if not self.nic:
