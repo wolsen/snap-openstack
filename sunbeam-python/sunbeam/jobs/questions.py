@@ -115,7 +115,7 @@ class Question:
                             sensible default so the original default can be
                             overriden at the point of prompting the user.
         """
-        if self.preseed:
+        if self.preseed is not None:
             self.answer = self.preseed
         else:
             default = self.calculate_default(new_default=new_default)
