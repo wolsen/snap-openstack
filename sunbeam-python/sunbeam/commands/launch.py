@@ -17,28 +17,22 @@ import json
 import logging
 import os
 import subprocess
+from typing import Optional
 
 import click
 import openstack
 import petname
-
-
-from typing import Optional
-
 from rich.console import Console
 from snaphelpers import Snap
 
 from sunbeam.commands.configure import retrieve_admin_credentials
 from sunbeam.commands.openstack import OPENSTACK_MODEL
-from sunbeam.jobs.juju import (
-    JujuHelper,
-    ModelNotFoundException,
-    run_sync
-)
+from sunbeam.jobs.juju import JujuHelper, ModelNotFoundException, run_sync
 
 LOG = logging.getLogger(__name__)
 console = Console()
 snap = Snap()
+
 
 @click.command()
 @click.argument(
@@ -49,21 +43,15 @@ snap = Snap()
     "-k",
     "--key",
     default="sunbeam",
-    help="The name of the SSH key in OpenStack to use for the instance. Creates a new key in ~/.config/openstack/ if the key does not exist in OpenStack"
+    help="""
+The name of the SSH key in OpenStack to use for the instance.
+Creates a new key in ~/.config/openstack/ if the key does not exist in OpenStack.
+""",
 )
-@click.option(
-    "-n",
-    "--name",
-    help="The name for the instance."
-)
-def launch(
-    image_name: str,
-    key: str,
-    name: Optional[str] = None
-    ) -> None:
-    """
-    Launch an OpenStack instance
-    """
+@click.option("-n", "--name", help="The name for the instance.")
+def launch(image_name: str, key: str, name: Optional[str] = None) -> None:
+    """Launch an OpenStack instance"""
+
     home = os.environ.get("SNAP_REAL_HOME")
     data_location = snap.paths.user_data
     jhelper = JujuHelper(data_location)
@@ -85,7 +73,7 @@ def launch(
                 capture_output=True,
                 text=True,
                 check=True,
-                cwd=snap.paths.user_common / "etc" /"demo-setup",
+                cwd=snap.paths.user_common / "etc" / "demo-setup",
             )
             tf_output = json.loads(process.stdout)
 
@@ -101,7 +89,7 @@ def launch(
             password=tf_output["OS_PASSWORD"]["value"],
             project_name=tf_output["OS_PROJECT_NAME"]["value"],
             user_domain_name=tf_output["OS_USER_DOMAIN_NAME"]["value"],
-            project_domain_name=tf_output["OS_PROJECT_DOMAIN_NAME"]["value"]
+            project_domain_name=tf_output["OS_PROJECT_DOMAIN_NAME"]["value"],
         )
     except openstack.exceptions.SDKException:
         LOG.error("Could not authenticate to Keystone.")
@@ -114,12 +102,13 @@ def launch(
             conn.compute.get_keypair(key)
             console.print(f"Found {key} key in OpenStack!")
         except openstack.exceptions.ResourceNotFound:
-            status.update(f"No {key} key found in OpenStack. Creating SSH key at {key_path}")
+            status.update(
+                f"No {key} key found in OpenStack. Creating SSH key at {key_path}"
+            )
             key_id = conn.compute.create_keypair(name=key)
             with open(key_path, "w", encoding="utf-8") as key_file:
                 os.fchmod(key_file.fileno(), 0o600)
                 key_file.write(key_id.private_key)
-                
 
     with console.status("Creating the OpenStack instance ... "):
         try:
@@ -142,7 +131,9 @@ def launch(
             server_id = server.id
         except openstack.exceptions.SDKException as e:
             LOG.error(f"Instance creation request failed: {e}")
-            raise click.ClickException("Unable to request new instance. Please run `sunbeam configure` first.")
+            raise click.ClickException(
+                "Unable to request new instance. Please run `sunbeam configure` first."
+            )
 
     with console.status("Allocating IP address to instance ... "):
         try:
@@ -150,8 +141,11 @@ def launch(
             ip_ = conn.network.create_ip(floating_network_id=external_network.id)
             conn.compute.add_floating_ip_to_server(server_id, ip_.floating_ip_address)
             console.print(
-                "Access instance with", f"`ssh -i {key_path} ubuntu@{ip_.floating_ip_address}`"
+                "Access instance with",
+                f"`ssh -i {key_path} ubuntu@{ip_.floating_ip_address}`",
             )
         except openstack.exceptions.SDKException as e:
             LOG.error(f"Error allocating IP address: {e}")
-            raise click.ClickException("Could not allocate IP address. Check your configuration.")
+            raise click.ClickException(
+                "Could not allocate IP address. Check your configuration."
+            )
