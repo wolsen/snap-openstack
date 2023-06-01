@@ -18,6 +18,7 @@ import logging
 import socket
 import sys
 from pathlib import Path
+from typing import List, Dict
 
 import click
 import netifaces
@@ -72,18 +73,27 @@ def get_nic_macs(nic: str) -> list:
     return sorted([a["addr"] for a in addrs[netifaces.AF_LINK]])
 
 
+def filter_link_local(addresses: List[Dict]) -> List[Dict]:
+    """Filter any IPv6 link local addresses from configured IPv6 addresses."""
+    if addresses is None:
+        return None
+    return [addr for addr in addresses if "fe80" not in addr.get("addr")]
+
+
 def is_configured(nic: str) -> bool:
     """Whether interface is configured with IPv4 or IPv6 address."""
     addrs = netifaces.ifaddresses(nic)
-    return bool(addrs.get(netifaces.AF_INET) or addrs.get(netifaces.AF_INET6))
+    return bool(
+        addrs.get(netifaces.AF_INET) or filter_link_local(addrs.get(netifaces.AF_INET6))
+    )
 
 
 def get_free_nics(include_configured=False) -> list:
     """Return a list of nics which doe not have a v4 or v6 address."""
     virtual_nic_dir = "/sys/devices/virtual/net/*"
     virtual_nics = [Path(p).name for p in glob.glob(virtual_nic_dir)]
-    bond_nic_dir = "/proc/net/bonding/*"
-    bonds = [Path(p).name for p in glob.glob(bond_nic_dir)]
+    bond_nic_dir = "/sys/devices/virtual/net/*/bonding"
+    bonds = [Path(p).parent.name for p in glob.glob(bond_nic_dir)]
     bond_macs = []
     for bond_iface in bonds:
         bond_macs.extend(get_nic_macs(bond_iface))
