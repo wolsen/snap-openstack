@@ -27,5 +27,4 @@ juju<3.3
 #juju>=3.2,<3.3
 
 # Used in the launch command to launch an instance
-openstacksdk==1.0.1
 petname

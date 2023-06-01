@@ -23,9 +23,12 @@ import openstack
 import petname
 
 
+from typing import Optional
+
 from rich.console import Console
 from snaphelpers import Snap
 
+from sunbeam.commands.configure import retrieve_admin_credentials
 from sunbeam.commands.openstack import OPENSTACK_MODEL
 from sunbeam.jobs.juju import (
     JujuHelper,
@@ -46,7 +49,7 @@ snap = Snap()
     "-k",
     "--key",
     default="sunbeam",
-    help="The path to the SSH key to use for the instance"
+    help="The name of the SSH key in OpenStack to use for the instance. Creates a new key in ~/.config/openstack/ if the key does not exist in OpenStack"
 )
 @click.option(
     "-n",
@@ -54,9 +57,9 @@ snap = Snap()
     help="The name for the instance."
 )
 def launch(
-    image_name: str = "ubuntu",
-    key: str = "sunbeam",
-    name: str = ""
+    image_name: str,
+    key: str,
+    name: Optional[str] = None
     ) -> None:
     """
     Launch an OpenStack instance
@@ -71,17 +74,7 @@ def launch(
             LOG.error(f"Expected model {OPENSTACK_MODEL} missing")
             raise click.ClickException("Please run `sunbeam cluster bootstrap` first")
 
-        app = "keystone"
-        action_cmd = "get-admin-account"
-        unit = run_sync(jhelper.get_leader_unit(app, model=OPENSTACK_MODEL))
-        if not unit:
-            _message = f"Unable to get{app} leader"
-            raise click.ClickException(_message)
-
-        action_result = run_sync(jhelper.run_action(unit, OPENSTACK_MODEL, action_cmd))
-        if action_result.get("return-code", 0) > 1:
-            _message = "Unable to retrieve openrc from Keystone service"
-            raise click.ClickException(_message)
+        admin_auth_info = retrieve_admin_credentials(jhelper, OPENSTACK_MODEL)
 
         try:
             terraform = str(snap.paths.snap / "bin" / "terraform")
@@ -98,12 +91,12 @@ def launch(
 
         except subprocess.CalledProcessError:
             LOG.exception("Error initializing Terraform")
-            return
+            raise click.ClickException("Please run `sunbeam configure` first")
 
     console.print("Launching an OpenStack instance ... ")
     try:
         conn = openstack.connect(
-            auth_url=action_result.get("public-endpoint"),
+            auth_url=admin_auth_info.get("OS_AUTH_URL"),
             username=tf_output["OS_USERNAME"]["value"],
             password=tf_output["OS_PASSWORD"]["value"],
             project_name=tf_output["OS_PROJECT_NAME"]["value"],
@@ -111,49 +104,54 @@ def launch(
             project_domain_name=tf_output["OS_PROJECT_DOMAIN_NAME"]["value"]
         )
     except openstack.exceptions.SDKException:
-        console.print(
-            "Unable to connect to OpenStack.",
-            " Is OpenStack running?",
-            " Have you run the configure command?",
-            " Do you have a clouds.yaml file?",
-        )
-        return
+        LOG.error("Could not authenticate to Keystone.")
+        raise click.ClickException("Unable to connect to OpenStack")
 
-    with console.status("Checking for SSH key pair ... "):
-        key_path = f"{home}/.ssh/{key}"
-        console.print("Checking for SSH public key in OpenStack ... ")
+    with console.status("Checking for SSH key pair ... ") as status:
+        key_path = f"{home}/.config/openstack/{key}"
+        status.update("Checking for SSH public key in OpenStack ... ")
         try:
             conn.compute.get_keypair(key)
             console.print(f"Found {key} key in OpenStack!")
         except openstack.exceptions.ResourceNotFound:
-            console.print(f"No {key} key found in OpenStack. Creating SSH key at {key_path}")
+            status.update(f"No {key} key found in OpenStack. Creating SSH key at {key_path}")
             key_id = conn.compute.create_keypair(name=key)
             with open(key_path, "w", encoding="utf-8") as key_file:
+                os.fchmod(key_file.fileno(), 0o600)
                 key_file.write(key_id.private_key)
-                os.chmod(key_path, "0o600")
+                
 
     with console.status("Creating the OpenStack instance ... "):
-        instance_name = name if name else petname.Generate()
-        image = conn.compute.find_image(image_name)
-        flavor = conn.compute.find_flavor("m1.tiny")
-        network = conn.network.find_network("demo-network")
-        keypair = conn.compute.find_keypair(key)
-        server = conn.compute.create_server(
-            name=instance_name,
-            image_id=image.id,
-            flavor_id=flavor.id,
-            networks=[{"uuid": network.id}],
-            key_name=keypair.name,
-        )
+        try:
+            instance_name = name if name else petname.Generate()
+            image = conn.compute.find_image(image_name)
+            flavor = conn.compute.find_flavor("m1.tiny")
+            network = conn.network.find_network(
+                f'{tf_output["OS_USERNAME"]["value"]}-network'
+            )
+            keypair = conn.compute.find_keypair(key)
+            server = conn.compute.create_server(
+                name=instance_name,
+                image_id=image.id,
+                flavor_id=flavor.id,
+                networks=[{"uuid": network.id}],
+                key_name=keypair.name,
+            )
 
-        server = conn.compute.wait_for_server(server)
-        server_id = server.id
+            server = conn.compute.wait_for_server(server)
+            server_id = server.id
+        except openstack.exceptions.SDKException as e:
+            LOG.error(f"Instance creation request failed: {e}")
+            raise click.ClickException("Unable to request new instance. Please run `sunbeam configure` first.")
 
     with console.status("Allocating IP address to instance ... "):
-        external_network = conn.network.find_network("external-network")
-        ip_ = conn.network.create_ip(floating_network_id=external_network.id)
-        conn.compute.add_floating_ip_to_server(server_id, ip_.floating_ip_address)
-
-    console.print(
-        "Access instance with", f"`ssh -i {key_path} ubuntu@{ip_.floating_ip_address}`"
-    )
+        try:
+            external_network = conn.network.find_network("external-network")
+            ip_ = conn.network.create_ip(floating_network_id=external_network.id)
+            conn.compute.add_floating_ip_to_server(server_id, ip_.floating_ip_address)
+            console.print(
+                "Access instance with", f"`ssh -i {key_path} ubuntu@{ip_.floating_ip_address}`"
+            )
+        except openstack.exceptions.SDKException as e:
+            LOG.error(f"Error allocating IP address: {e}")
+            raise click.ClickException("Could not allocate IP address. Check your configuration.")
