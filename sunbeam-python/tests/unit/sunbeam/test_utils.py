@@ -18,26 +18,39 @@ import pytest
 
 import sunbeam.utils as utils
 
+IFADDRESSES = {
+    "eth1": {
+        17: [{"addr": "00:16:3e:07:ba:1e", "broadcast": "ff:ff:ff:ff:ff:ff"}],
+        2: [
+            {
+                "addr": "10.177.200.93",
+                "netmask": "255.255.255.0",
+                "broadcast": "10.177.200.255",
+            }
+        ],
+        10: [
+            {
+                "addr": "fe80::216:3eff:fe07:ba1e%enp5s0",
+                "netmask": "ffff:ffff:ffff:ffff::/64",
+            }
+        ],
+    },
+    "bond1": {
+        17: [{"addr": "00:16:3e:07:ba:1e", "broadcast": "ff:ff:ff:ff:ff:ff"}],
+        10: [
+            {
+                "addr": "fe80::216:3eff:fe07:ba1e%bond1",
+                "netmask": "ffff:ffff:ffff:ffff::/64",
+            }
+        ],
+    },
+}
+
 
 @pytest.fixture()
 def ifaddresses():
     with patch("sunbeam.utils.netifaces.ifaddresses") as p:
-        p.return_value = {
-            17: [{"addr": "00:16:3e:07:ba:1e", "broadcast": "ff:ff:ff:ff:ff:ff"}],
-            2: [
-                {
-                    "addr": "10.177.200.93",
-                    "netmask": "255.255.255.0",
-                    "broadcast": "10.177.200.255",
-                }
-            ],
-            10: [
-                {
-                    "addr": "fe80::216:3eff:fe07:ba1e%enp5s0",
-                    "netmask": "ffff:ffff:ffff:ffff::/64",
-                }
-            ],
-        }
+        p.side_effect = lambda nic: IFADDRESSES.get(nic)
         yield p
 
 
@@ -71,11 +84,15 @@ class TestUtils:
 
     def test_get_local_ip_by_default_route(self, mocker, ifaddresses):
         gateways = mocker.patch("sunbeam.utils.netifaces.gateways")
-        gateways.return_value = {"default": {2: ("10.177.200.1", "enp5s0")}}
+        gateways.return_value = {"default": {2: ("10.177.200.1", "eth1")}}
         assert utils.get_local_ip_by_default_route() == "10.177.200.93"
 
     def test_get_nic_macs(self, ifaddresses):
         assert utils.get_nic_macs("eth1") == ["00:16:3e:07:ba:1e"]
+
+    def test_is_configured(self, ifaddresses):
+        assert not utils.is_configured("bond1")
+        assert utils.is_configured("eth1")
 
     def test_get_free_nics(self, mocker):
         glob = mocker.patch("sunbeam.utils.glob.glob")
@@ -83,6 +100,10 @@ class TestUtils:
             "/sys/devices/virtual/net/*": [
                 "/sys/devices/virtual/net/lo",
                 "/sys/devices/virtual/net/vxlan.calico",
+            ],
+            "/sys/devices/virtual/net/*/bonding": [
+                "/sys/devices/virtual/net/bond0/bonding",
+                "/sys/devices/virtual/net/bond1/bonding",
             ],
             "/proc/net/bonding/*": [
                 "/proc/net/bonding/bond0",
