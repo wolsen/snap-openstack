@@ -303,7 +303,7 @@ class ConfigureMicrocephOSDStep(BaseStep):
             preseed = {}
         # Set defaults
         preseed.setdefault("microceph_config", {})
-        preseed["microceph_config"].setdefault(self.name, {"osd_devices": ""})
+        preseed["microceph_config"].setdefault(self.name, {"osd_devices": None})
 
         microceph_config_bank = questions.QuestionBank(
             questions=self.microceph_config_questions(),
