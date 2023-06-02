@@ -15,7 +15,7 @@
 
 variable "charm_microk8s_channel" {
   description = "Operator channel for microk8s deployment"
-  default     = "latest/edge"
+  default     = "legacy/stable"
 }
 
 variable "microk8s_channel" {
