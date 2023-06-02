@@ -40,7 +40,7 @@ from sunbeam.jobs.juju import (
 
 LOG = logging.getLogger(__name__)
 OPENSTACK_MODEL = "openstack"
-OPENSTACK_DEPLOY_TIMEOUT = 2700  # 45 minutes
+OPENSTACK_DEPLOY_TIMEOUT = 3600  # 60 minutes
 
 CONFIG_KEY = "TerraformVarsOpenstack"
 TOPOLOGY_KEY = "Topology"
