@@ -18,7 +18,7 @@ import logging
 import socket
 import sys
 from pathlib import Path
-from typing import List, Dict
+from typing import Dict, List
 
 import click
 import netifaces
