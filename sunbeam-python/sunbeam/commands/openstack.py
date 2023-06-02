@@ -78,10 +78,7 @@ def determine_target_topology(client: Client) -> str:
     """
     control_nodes = client.cluster.list_nodes_by_role("control")
     compute_nodes = client.cluster.list_nodes_by_role("compute")
-    combined = [
-        dict(node)
-        for node in set(tuple(item.items()) for item in control_nodes + compute_nodes)
-    ]
+    combined = set(node["name"] for node in control_nodes + compute_nodes)
     host_total_ram = get_host_total_ram()
     if len(combined) == 1 and host_total_ram < RAM_32_GB_IN_KB:
         topology = "single"

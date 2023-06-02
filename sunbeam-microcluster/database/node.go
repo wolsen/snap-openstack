@@ -1,5 +1,14 @@
 package database
 
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"strings"
+
+	"github.com/canonical/microcluster/cluster"
+)
+
 //go:generate -command mapper lxd-generate db mapper -t node.mapper.go
 //go:generate mapper reset
 //
@@ -36,4 +45,39 @@ type NodeFilter struct {
 	Name      *string
 	Role      *string
 	MachineID *int
+}
+
+// GetNodesFromRoles returns a slice of Nodes that match the given roles.
+func GetNodesFromRoles(ctx context.Context, tx *sql.Tx, roles []string) ([]Node, error) {
+
+	stmt, err := cluster.StmtString(nodeObjects)
+
+	if err != nil {
+		return nil, fmt.Errorf("Failed to fetch prepared statement nodeObjets: %v", err)
+	}
+
+	queryParts := strings.SplitN(stmt, "ORDER BY", 2)
+
+	args := make([]any, 0)
+
+	if len(roles) > 0 {
+		queryParts[0] += " WHERE"
+		for i, role := range roles {
+			if i > 0 {
+				queryParts[0] += " AND"
+			}
+			queryParts[0] += " instr(nodes.role, ?) > 0"
+			args = append(args, role)
+		}
+	}
+
+	stmt = strings.Join(queryParts, " ORDER BY")
+
+	nodes, err := getNodesRaw(ctx, tx, stmt, args...)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to fetch from \"nodes\" table: %w", err)
+	}
+
+	return nodes, nil
+
 }

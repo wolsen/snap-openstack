@@ -15,7 +15,7 @@
 
 import json
 import logging
-from typing import Any
+from typing import Any, List, Optional, Union
 
 from requests import codes
 from requests.models import HTTPError
@@ -107,7 +107,7 @@ class MicroClusterService(service.BaseService):
 class ExtendedAPIService(service.BaseService):
     """Client for Sunbeam extended Cluster API."""
 
-    def add_node_info(self, name: str, role: str) -> None:
+    def add_node_info(self, name: str, role: List[str]) -> None:
         """Add Node information to cluster database."""
         data = {"name": name, "role": role}
         self._post("/1.0/nodes", data=json.dumps(data))
@@ -125,7 +125,9 @@ class ExtendedAPIService(service.BaseService):
         """Remove Node information from cluster database."""
         self._delete(f"1.0/nodes/{name}")
 
-    def update_node_info(self, name: str, role: str = "", machineid: int = -1) -> None:
+    def update_node_info(
+        self, name: str, role: Optional[List[str]] = None, machineid: int = -1
+    ) -> None:
         """Update role and machineid for node."""
         data = {"role": role, "machineid": machineid}
         self._put(f"1.0/nodes/{name}", data=json.dumps(data))
@@ -166,24 +168,25 @@ class ExtendedAPIService(service.BaseService):
         """Remove configuration from database."""
         self._delete(f"/1.0/config/{key}")
 
-    def list_nodes_by_role(self, role: str) -> list:
+    def list_nodes_by_role(self, role: Union[str, List[str]]) -> list:
         """List nodes by role."""
-        nodes = self.list_nodes()
-        nodes_by_role = [node for node in nodes if role.upper() in node.get("role")]
-        return nodes_by_role
+        if isinstance(role, list):
+            role = "&role=".join(role)
+        nodes = self._get(f"/1.0/nodes?role={role}")
+        return nodes.get("metadata")
 
 
 class ClusterService(MicroClusterService, ExtendedAPIService):
     """Lists and manages cluster."""
 
-    def bootstrap(self, name: str, address: str, role: str) -> None:
+    def bootstrap(self, name: str, address: str, role: List[str]) -> None:
         self.bootstrap_cluster(name, address)
         self.add_node_info(name, role)
 
     def add_node(self, name: str) -> str:
         return self.generate_token(name)
 
-    def join_node(self, name: str, address: str, token: str, role: str) -> None:
+    def join_node(self, name: str, address: str, token: str, role: List[str]) -> None:
         self.join(name, address, token)
         self.add_node_info(name, role)
 

@@ -74,6 +74,10 @@ class Role(enum.Enum):
         return self == Role.STORAGE
 
 
+def roles_to_str_list(roles: List[Role]) -> List[str]:
+    return [role.name.lower() for role in roles]
+
+
 class ResultType(enum.Enum):
     COMPLETED = 0
     FAILED = 1

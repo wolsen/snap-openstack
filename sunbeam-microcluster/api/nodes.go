@@ -33,15 +33,9 @@ var nodeCmd = rest.Endpoint{
 }
 
 func cmdNodesGetAll(s *state.State, r *http.Request) response.Response {
-	var role *string
+	roles := r.URL.Query()["role"]
 
-	roleParam := r.URL.Query().Get("role")
-
-	if roleParam != "" {
-		role = &roleParam
-	}
-
-	nodes, err := sunbeam.ListNodes(s, role)
+	nodes, err := sunbeam.ListNodes(s, roles)
 	if err != nil {
 		return response.InternalError(err)
 	}
