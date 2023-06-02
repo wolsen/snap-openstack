@@ -7,7 +7,7 @@ description: |
 version: "2023.1"
 
 confinement: strict
-grade: devel
+grade: stable
 
 architectures:
   - build-on: amd64
