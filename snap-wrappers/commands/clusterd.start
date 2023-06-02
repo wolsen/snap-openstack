@@ -1,15 +1,10 @@
 #!/bin/sh
 export DQLITE_SOCKET="@snap.${SNAP_INSTANCE_NAME}.dqlite"
 export SOCKET_GROUP="$(snapctl get 'daemon.group')"
-export LOG=""
+export DEBUG=""
 
-if [ "$(snapctl get daemon.verbose)" != "false" ]; then
-  export LOG="--verbose"
-fi
-
-# debug as priority over verbose, setting it last
 if [ "$(snapctl get daemon.debug)" != "false" ]; then
-  export LOG="--debug"
+  export DEBUG="--debug"
 fi
 
-exec sunbeamd --state-dir "${SNAP_COMMON}/state" --socket-group "${SOCKET_GROUP}" $LOG
+exec sunbeamd --state-dir "${SNAP_COMMON}/state" --socket-group "${SOCKET_GROUP}" --verbose $DEBUG
