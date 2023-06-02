@@ -315,9 +315,15 @@ class ResizeControlPlaneStep(BaseStep, JujuStepHelper):
             return Result(ResultType.FAILED, str(e))
 
         try:
+            # Remove cinder-ceph from apps to wait on if ceph is not enabled
+            apps = run_sync(self.jhelper.get_application_names(self.model))
+            if not storage_nodes and "cinder-ceph" in apps:
+                apps.remove("cinder-ceph")
+
             run_sync(
                 self.jhelper.wait_until_active(
                     self.model,
+                    apps,
                     timeout=OPENSTACK_DEPLOY_TIMEOUT,
                 )
             )
