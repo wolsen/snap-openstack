@@ -1,8 +1,31 @@
-# snap-openstack
+# MicroStack
 
-![OpenStack][openstack-badge] [![OpenDev Zuul Builds - MicroStack][gated-badge]][zuul-jobs] [![MicroStack Docs][microstack-docs-badge]][microstack-docs]
+## Small footprint, K8S native OpenStack
 
-## The smallest, simplest OpenStack
+MicroStack is a modern cloud solution that uses snaps, Juju,
+and Kubernetes to deploy and manage OpenStack.
 
-Pure upstream, lightweight OpenStack in a single package that makes OpenStack
-simple to setup, manage and maintain.
+Snaps are used to deploy and perform major cluster operations where
+Juju charmed operators are leveraged internally to manage individual
+cloud services. Traditional charms oversee the cloud data plane and
+Kubernetes charms govern the cloud control plane.
+
+Deploying and managing an OpenStack cloud is generally considered to
+be a challenging endeavour. MicroStack reduces the complexity traditionally
+imposed upon cloud administrators by automating cloud operations where
+possible and reaping the benefits of Kubernetes-based API services.
+
+MicroStack is designed from the ground up to accommodate users of
+varying skill levels. It is appropriate for public, regional, and
+private clouds, and can satisfy a wide range of use cases: from small
+single-node development environments through to large multi-node,
+MAAS-based, enterprise-grade solutions.
+
+See the full [MicroStack documentation][microstack-docs].
+
+## Reporting a bug
+
+Please report bugs to the [OpenStack Snap][microstack] project on Launchpad.
+
+[microstack-docs]: https://microstack.run/docs/
+[microstack]: https://bugs.launchpad.net/snap-openstack
