@@ -58,6 +58,7 @@ sudo snap install --channel {JUJU_CHANNEL} juju
 
 # Workaround a bug between snapd and juju
 mkdir -p $HOME/.local/share
+mkdir -p $HOME/.config/openstack
 """
 
 
