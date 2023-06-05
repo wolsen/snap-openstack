@@ -65,6 +65,7 @@ from sunbeam.jobs.common import (
     ResultType,
     Role,
     get_step_message,
+    roles_to_str_list,
     run_plan,
     run_preflight_checks,
     validate_roles,
@@ -152,6 +153,7 @@ def add(name: str, format: str) -> None:
 @click.option("--token", type=str, help="Join token")
 @click.option(
     "--role",
+    "roles",
     multiple=True,
     default=["control", "compute"],
     type=click.Choice(["control", "compute", "storage"], case_sensitive=False),
@@ -160,7 +162,7 @@ def add(name: str, format: str) -> None:
 )
 def join(
     token: str,
-    role: List[Role],
+    roles: List[Role],
     preseed: Optional[Path] = None,
     accept_defaults: bool = False,
 ) -> None:
@@ -168,18 +170,16 @@ def join(
 
     Join the node to the cluster.
     """
-    node_roles = role
-
-    is_control_node = any(role_.is_control_node() for role_ in node_roles)
-    is_compute_node = any(role_.is_compute_node() for role_ in node_roles)
-    is_storage_node = any(role_.is_storage_node() for role_ in node_roles)
+    is_control_node = any(role.is_control_node() for role in roles)
+    is_compute_node = any(role.is_compute_node() for role in roles)
+    is_storage_node = any(role.is_storage_node() for role in roles)
 
     # Register juju user with same name as Node fqdn
     name = utils.get_fqdn()
     ip = utils.get_local_ip_by_default_route()
 
-    roles_str = ",".join([role_.name for role_ in role])
-    pretty_roles = ", ".join([role_.name.lower() for role_ in role])
+    roles_str = roles_to_str_list(roles)
+    pretty_roles = ", ".join(role_.name.lower() for role_ in roles)
     LOG.debug(f"Node joining the cluster with roles: {pretty_roles}")
 
     preflight_checks = []
@@ -215,7 +215,7 @@ def join(
     jhelper = JujuHelper(data_location)
 
     plan1 = [
-        ClusterJoinNodeStep(token, roles_str.upper()),
+        ClusterJoinNodeStep(token, roles_str),
         SaveJujuUserLocallyStep(name, data_location),
         RegisterJujuUserStep(name, controller, data_location),
         AddJujuMachineStep(ip),
@@ -229,7 +229,7 @@ def join(
 
     jhelper = JujuHelper(data_location)
     plan2 = []
-    plan2.append(ClusterUpdateNodeStep(name, role="", machine_id=machine_id))
+    plan2.append(ClusterUpdateNodeStep(name, machine_id=machine_id))
 
     if is_control_node:
         plan2.append(AddMicrok8sUnitStep(name, jhelper))
@@ -291,9 +291,9 @@ def list(format: str) -> None:
                 "[green]up[/green]"
                 if node.get("status") == "ONLINE"
                 else "[red]down[/red]",
-                "x" if "CONTROL" in node.get("role", "") else "",
-                "x" if "COMPUTE" in node.get("role", "") else "",
-                "x" if "STORAGE" in node.get("role", "") else "",
+                "x" if "control" in node.get("roles", []) else "",
+                "x" if "compute" in node.get("roles", []) else "",
+                "x" if "storage" in node.get("roles", []) else "",
             )
         console.print(table)
     elif format == FORMAT_YAML:

@@ -14,7 +14,7 @@
 # limitations under the License.
 
 import logging
-from typing import Optional
+from typing import List, Optional
 
 from sunbeam import utils
 from sunbeam.clusterd.client import Client as clusterClient
@@ -41,7 +41,7 @@ LOG = logging.getLogger(__name__)
 class ClusterInitStep(BaseStep):
     """Bootstrap clustering on sunbeam clusterd."""
 
-    def __init__(self, role: str):
+    def __init__(self, role: List[str]):
         super().__init__("Bootstrap Cluster", "Bootstrapping Sunbeam cluster")
 
         self.port = CLUSTERD_PORT
@@ -133,7 +133,7 @@ class ClusterAddNodeStep(BaseStep):
 class ClusterJoinNodeStep(BaseStep):
     """Join node to the sunbeam cluster."""
 
-    def __init__(self, token, role):
+    def __init__(self, token: str, role: List[str]):
         super().__init__("Join node to Cluster", "Adding node to Sunbeam cluster")
 
         self.port = CLUSTERD_PORT
@@ -197,7 +197,7 @@ class ClusterListNodeStep(BaseStep):
                 for member in members
             }
             for node in nodes:
-                nodes_dict[node.get("name")].update({"role": node.get("role")})
+                nodes_dict[node.get("name")].update({"roles": node.get("role", [])})
 
             return Result(result_type=ResultType.COMPLETED, message=nodes_dict)
         except ClusterServiceUnavailableException as e:
@@ -208,7 +208,9 @@ class ClusterListNodeStep(BaseStep):
 class ClusterUpdateNodeStep(BaseStep):
     """Update node info in the cluster database."""
 
-    def __init__(self, name: str, role: str = "", machine_id: int = -1):
+    def __init__(
+        self, name: str, role: Optional[List[str]] = None, machine_id: int = -1
+    ):
         super().__init__("Update node info", "Updating node info in cluster database")
         self.client = clusterClient()
         self.name = name

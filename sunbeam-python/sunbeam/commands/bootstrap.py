@@ -62,6 +62,7 @@ from sunbeam.jobs.common import (
     Role,
     click_option_topology,
     get_step_message,
+    roles_to_str_list,
     run_plan,
     run_preflight_checks,
     validate_roles,
@@ -83,6 +84,7 @@ snap = Snap()
 )
 @click.option(
     "--role",
+    "roles",
     multiple=True,
     default=["control", "compute"],
     type=click.Choice(["control", "compute", "storage"], case_sensitive=False),
@@ -111,7 +113,7 @@ snap = Snap()
     ),
 )
 def bootstrap(
-    role: List[Role],
+    roles: List[Role],
     topology: str,
     database: str,
     preseed: Optional[Path] = None,
@@ -121,16 +123,14 @@ def bootstrap(
 
     Initialize the sunbeam cluster.
     """
-    node_roles = role
-
-    is_control_node = any(role_.is_control_node() for role_ in node_roles)
-    is_compute_node = any(role_.is_compute_node() for role_ in node_roles)
-    is_storage_node = any(role_.is_storage_node() for role_ in node_roles)
+    is_control_node = any(role.is_control_node() for role in roles)
+    is_compute_node = any(role.is_compute_node() for role in roles)
+    is_storage_node = any(role.is_storage_node() for role in roles)
 
     fqdn = utils.get_fqdn()
 
-    roles_str = ",".join([role_.name for role_ in role])
-    pretty_roles = ", ".join([role_.name.lower() for role_ in role])
+    roles_str = ",".join(role.name for role in roles)
+    pretty_roles = ", ".join(role.name.lower() for role in roles)
     LOG.debug(f"Bootstrap node: roles {roles_str}")
 
     cloud_type = snap.config.get("juju.cloud.type")
@@ -159,7 +159,7 @@ def bootstrap(
     run_preflight_checks(preflight_checks, console)
 
     plan = []
-    plan.append(ClusterInitStep(roles_str.upper()))
+    plan.append(ClusterInitStep(roles_to_str_list(roles)))
     plan.append(BootstrapJujuStep(cloud_name, cloud_type, CONTROLLER))
     run_plan(plan, console)
 

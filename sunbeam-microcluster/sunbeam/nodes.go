@@ -3,7 +3,9 @@ package sunbeam
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"sort"
 
 	"github.com/canonical/microcluster/state"
 
@@ -12,26 +14,24 @@ import (
 )
 
 // ListNodes return all the nodes, filterable by role (Optional)
-func ListNodes(s *state.State, role *string) (types.Nodes, error) {
+func ListNodes(s *state.State, roles []string) (types.Nodes, error) {
 	nodes := types.Nodes{}
-
-	filters := make([]database.NodeFilter, 0)
-
-	if role != nil {
-		filters = append(filters, database.NodeFilter{Role: role})
-	}
 
 	// Get the nodes from the database.
 	err := s.Database.Transaction(s.Context, func(ctx context.Context, tx *sql.Tx) error {
-		records, err := database.GetNodes(ctx, tx, filters...)
+		records, err := database.GetNodesFromRoles(ctx, tx, roles)
 		if err != nil {
 			return fmt.Errorf("Failed to fetch nodes: %w", err)
 		}
 
 		for _, node := range records {
+			nodeRole, err := roleFromStr(node.Role)
+			if err != nil {
+				return err
+			}
 			nodes = append(nodes, types.Node{
 				Name:      node.Name,
-				Role:      node.Role,
+				Role:      nodeRole,
 				MachineID: node.MachineID,
 			})
 		}
@@ -54,8 +54,12 @@ func GetNode(s *state.State, name string) (types.Node, error) {
 			return err
 		}
 
+		nodeRole, err := roleFromStr(record.Role)
+		if err != nil {
+			return err
+		}
 		node.Name = record.Name
-		node.Role = record.Role
+		node.Role = nodeRole
 		node.MachineID = record.MachineID
 
 		return nil
@@ -65,10 +69,14 @@ func GetNode(s *state.State, name string) (types.Node, error) {
 }
 
 // AddNode adds a node to the database
-func AddNode(s *state.State, name string, role string, machineid int) error {
+func AddNode(s *state.State, name string, role []string, machineid int) error {
+	nodeRole, err := roleToStr(role)
+	if err != nil {
+		return err
+	}
 	// Add node to the database.
-	err := s.Database.Transaction(s.Context, func(ctx context.Context, tx *sql.Tx) error {
-		_, err := database.CreateNode(ctx, tx, database.Node{Member: s.Name(), Name: name, Role: role, MachineID: machineid})
+	err = s.Database.Transaction(s.Context, func(ctx context.Context, tx *sql.Tx) error {
+		_, err := database.CreateNode(ctx, tx, database.Node{Member: s.Name(), Name: name, Role: nodeRole, MachineID: machineid})
 		if err != nil {
 			return fmt.Errorf("Failed to record node: %w", err)
 		}
@@ -83,22 +91,26 @@ func AddNode(s *state.State, name string, role string, machineid int) error {
 }
 
 // UpdateNode updates a node record in the database
-func UpdateNode(s *state.State, name string, role string, machineid int) error {
+func UpdateNode(s *state.State, name string, role []string, machineid int) error {
+	nodeRole, err := roleToStr(role)
+	if err != nil {
+		return err
+	}
 	// Update node to the database.
-	err := s.Database.Transaction(s.Context, func(ctx context.Context, tx *sql.Tx) error {
+	err = s.Database.Transaction(s.Context, func(ctx context.Context, tx *sql.Tx) error {
 		node, err := database.GetNode(ctx, tx, name)
 		if err != nil {
 			return fmt.Errorf("Failed to retrieve node details: %w", err)
 		}
 
-		if role == "" {
-			role = node.Role
+		if role == nil {
+			nodeRole = node.Role
 		}
 		if machineid == 0 {
 			machineid = node.MachineID
 		}
 
-		err = database.UpdateNode(ctx, tx, name, database.Node{Member: s.Name(), Name: name, Role: role, MachineID: machineid})
+		err = database.UpdateNode(ctx, tx, name, database.Node{Member: s.Name(), Name: name, Role: nodeRole, MachineID: machineid})
 		if err != nil {
 			return fmt.Errorf("Failed to update record node: %w", err)
 		}
@@ -128,4 +140,25 @@ func DeleteNode(s *state.State, name string) error {
 	}
 
 	return nil
+}
+
+// roleToStr converts a role slice to a string sorted
+func roleToStr(role []string) (string, error) {
+	sort.Strings(role)
+	roleJSON, err := json.Marshal(role)
+	if err != nil {
+		return "", fmt.Errorf("Failed to marshal role: %w", err)
+	}
+	return string(roleJSON), nil
+}
+
+// roleFromStr converts a role string to a slice sorted
+func roleFromStr(roleStr string) ([]string, error) {
+	var role []string
+	err := json.Unmarshal([]byte(roleStr), &role)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to unmarshal role: %w", err)
+	}
+	sort.Strings(role)
+	return role, nil
 }
