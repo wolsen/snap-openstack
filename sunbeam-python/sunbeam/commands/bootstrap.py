@@ -50,6 +50,7 @@ from sunbeam.commands.microk8s import (
     AddMicrok8sUnitStep,
     DeployMicrok8sApplicationStep,
 )
+from sunbeam.commands.mysql import ConfigureMySQLStep
 from sunbeam.commands.openstack import DeployControlPlaneStep
 from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
 from sunbeam.jobs.checks import (
@@ -239,6 +240,10 @@ def bootstrap(
     run_plan(plan4, console)
 
     plan5 = []
+
+    if is_control_node:
+        plan5.append(ConfigureMySQLStep(jhelper))
+
     if is_compute_node:
         plan5.append(TerraformInitStep(tfhelper_hypervisor_deploy))
         plan5.append(
