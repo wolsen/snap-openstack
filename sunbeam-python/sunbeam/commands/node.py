@@ -53,6 +53,10 @@ from sunbeam.commands.microceph import (
 )
 from sunbeam.commands.microk8s import AddMicrok8sUnitStep, RemoveMicrok8sUnitStep
 from sunbeam.commands.openstack import OPENSTACK_MODEL
+from sunbeam.commands.sunbeam_machine import (
+    AddSunbeamMachineUnitStep,
+    DeploySunbeamMachineApplicationStep,
+)
 from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
 from sunbeam.jobs.checks import (
     DaemonGroupCheck,
@@ -194,7 +198,7 @@ def join(
     data_location = snap.paths.user_data
 
     # NOTE: install to user writable location
-    tfplan_dirs = []
+    tfplan_dirs = ["deploy-sunbeam-machine"]
     if is_control_node:
         tfplan_dirs.extend(["deploy-microk8s", "deploy-microceph", "deploy-openstack"])
     if is_compute_node:
@@ -208,6 +212,13 @@ def join(
     tfhelper_hypervisor_deploy = TerraformHelper(
         path=snap.paths.user_common / "etc" / "deploy-openstack-hypervisor",
         plan="hypervisor-plan",
+        parallelism=1,
+        backend="http",
+        data_location=data_location,
+    )
+    tfhelper_sunbeam_machine = TerraformHelper(
+        path=snap.paths.user_common / "etc" / "deploy-sunbeam-machine",
+        plan="sunbeam-machine-plan",
         parallelism=1,
         backend="http",
         data_location=data_location,
@@ -230,6 +241,13 @@ def join(
     jhelper = JujuHelper(data_location)
     plan2 = []
     plan2.append(ClusterUpdateNodeStep(name, machine_id=machine_id))
+    plan2.extend(
+        [
+            TerraformInitStep(tfhelper_sunbeam_machine),
+            DeploySunbeamMachineApplicationStep(tfhelper_sunbeam_machine, jhelper),
+            AddSunbeamMachineUnitStep(name, jhelper),
+        ]
+    )
 
     if is_control_node:
         plan2.append(AddMicrok8sUnitStep(name, jhelper))
