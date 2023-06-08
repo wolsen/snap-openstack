@@ -242,7 +242,9 @@ def bootstrap(
     if is_compute_node:
         plan5.append(TerraformInitStep(tfhelper_hypervisor_deploy))
         plan5.append(
-            DeployHypervisorApplicationStep(tfhelper_hypervisor_deploy, jhelper)
+            DeployHypervisorApplicationStep(
+                tfhelper_hypervisor_deploy, tfhelper_openstack_deploy, jhelper
+            )
         )
         plan5.append(AddHypervisorUnitStep(fqdn, jhelper))
 

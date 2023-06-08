@@ -205,6 +205,13 @@ def join(
         LOG.debug(f"Updating {dst} from {src}...")
         shutil.copytree(src, dst, dirs_exist_ok=True)
 
+    tfhelper_openstack_deploy = TerraformHelper(
+        path=snap.paths.user_common / "etc" / "deploy-openstack",
+        plan="openstack-plan",
+        parallelism=1,
+        backend="http",
+        data_location=data_location,
+    )
     tfhelper_hypervisor_deploy = TerraformHelper(
         path=snap.paths.user_common / "etc" / "deploy-openstack-hypervisor",
         plan="hypervisor-plan",
@@ -246,7 +253,9 @@ def join(
         plan2.extend(
             [
                 TerraformInitStep(tfhelper_hypervisor_deploy),
-                DeployHypervisorApplicationStep(tfhelper_hypervisor_deploy, jhelper),
+                DeployHypervisorApplicationStep(
+                    tfhelper_hypervisor_deploy, tfhelper_openstack_deploy, jhelper
+                ),
                 AddHypervisorUnitStep(name, jhelper),
                 SetLocalHypervisorOptions(
                     name, jhelper, join_mode=True, preseed_file=preseed

@@ -41,3 +41,11 @@ variable "hypervisor_model" {
   type        = string
 }
 
+variable "openstack-state-backend" {
+  description = "backend type used for openstack state"
+  type        = string
+  default     = "local"
+}
+variable "openstack-state-config" {
+  type = map(any)
+}
