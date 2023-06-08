@@ -45,14 +45,13 @@ snap = Snap()
     default="sunbeam",
     help="""
 The name of the SSH key in OpenStack to use for the instance.
-Creates a new key in ~/.config/openstack/ if the key does not exist in OpenStack.
+Creates a new key in ~/snap/openstack/current/ if the key does not exist in OpenStack.
 """,
 )
 @click.option("-n", "--name", help="The name for the instance.")
 def launch(image_name: str, key: str, name: Optional[str] = None) -> None:
-    """Launch an OpenStack instance"""
+    """Launch an OpenStack instance on demo setup"""
 
-    home = os.environ.get("SNAP_REAL_HOME")
     data_location = snap.paths.user_data
     jhelper = JujuHelper(data_location)
     with console.status("Fetching user credentials ... "):
@@ -96,7 +95,7 @@ def launch(image_name: str, key: str, name: Optional[str] = None) -> None:
         raise click.ClickException("Unable to connect to OpenStack")
 
     with console.status("Checking for SSH key pair ... ") as status:
-        key_path = f"{home}/.config/openstack/{key}"
+        key_path = f"{data_location}/{key}"
         status.update("Checking for SSH public key in OpenStack ... ")
         try:
             conn.compute.get_keypair(key)
