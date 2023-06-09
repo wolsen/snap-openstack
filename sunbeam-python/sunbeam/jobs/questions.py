@@ -15,12 +15,14 @@
 
 import json
 import logging
+import sys
 from pathlib import Path
 from typing import Any, Callable, Optional
 
 import yaml
 from rich.console import Console
-from rich.prompt import Confirm, DefaultType, Prompt, Text
+from rich.prompt import Confirm, DefaultType, Prompt
+from rich.text import Text
 
 from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import ConfigItemNotFoundException
@@ -42,6 +44,20 @@ class PasswordPrompt(Prompt):
             Text: Text containing rendering of masked password value.
         """
         return Text(f"({default[:2]}{PASSWORD_MASK})", "prompt.default")
+
+
+class StreamWrapper:
+    def __init__(self, stream):
+        self.stream = stream
+
+    def readline(self):
+        value = self.stream.readline()
+        if value == "\n":
+            return ""
+        return value
+
+
+STDIN = StreamWrapper(sys.stdin)
 
 
 class Question:
@@ -128,6 +144,7 @@ class Question:
                     console=self.console,
                     choices=self.choices,
                     password=self.password,
+                    stream=STDIN,
                 )
         return self.answer
 
