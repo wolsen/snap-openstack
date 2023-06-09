@@ -55,7 +55,6 @@ from sunbeam.commands.microk8s import AddMicrok8sUnitStep, RemoveMicrok8sUnitSte
 from sunbeam.commands.openstack import OPENSTACK_MODEL
 from sunbeam.commands.sunbeam_machine import (
     AddSunbeamMachineUnitStep,
-    DeploySunbeamMachineApplicationStep,
 )
 from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
 from sunbeam.jobs.checks import (
@@ -216,13 +215,6 @@ def join(
         backend="http",
         data_location=data_location,
     )
-    tfhelper_sunbeam_machine = TerraformHelper(
-        path=snap.paths.user_common / "etc" / "deploy-sunbeam-machine",
-        plan="sunbeam-machine-plan",
-        parallelism=1,
-        backend="http",
-        data_location=data_location,
-    )
     jhelper = JujuHelper(data_location)
 
     plan1 = [
@@ -241,12 +233,8 @@ def join(
     jhelper = JujuHelper(data_location)
     plan2 = []
     plan2.append(ClusterUpdateNodeStep(name, machine_id=machine_id))
-    plan2.extend(
-        [
-            TerraformInitStep(tfhelper_sunbeam_machine),
-            DeploySunbeamMachineApplicationStep(tfhelper_sunbeam_machine, jhelper),
-            AddSunbeamMachineUnitStep(name, jhelper),
-        ]
+    plan2.append(
+        AddSunbeamMachineUnitStep(name, jhelper),
     )
 
     if is_control_node:

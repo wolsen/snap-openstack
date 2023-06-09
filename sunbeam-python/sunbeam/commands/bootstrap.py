@@ -220,6 +220,11 @@ def bootstrap(
 
     plan4 = []
     plan4.append(RegisterJujuUserStep(fqdn, CONTROLLER, data_location, replace=True))
+    # Deploy sunbeam machine charm
+    plan4.append(TerraformInitStep(tfhelper_sunbeam_machine))
+    plan4.append(DeploySunbeamMachineApplicationStep(tfhelper_sunbeam_machine, jhelper))
+    plan4.append(AddSunbeamMachineUnitStep(fqdn, jhelper))
+    # Deploy Microk8s application during bootstrap irrespective of node role.
     plan4.append(TerraformInitStep(tfhelper))
     plan4.append(
         DeployMicrok8sApplicationStep(
@@ -231,10 +236,6 @@ def bootstrap(
     # Deploy Microceph application during bootstrap irrespective of node role.
     plan4.append(TerraformInitStep(tfhelper_microceph_deploy))
     plan4.append(DeployMicrocephApplicationStep(tfhelper_microceph_deploy, jhelper))
-    # Deploy sunbeam machine charm
-    plan4.append(TerraformInitStep(tfhelper_sunbeam_machine))
-    plan4.append(DeploySunbeamMachineApplicationStep(tfhelper_sunbeam_machine, jhelper))
-    plan4.append(AddSunbeamMachineUnitStep(fqdn, jhelper))
 
     if is_storage_node:
         plan4.append(AddMicrocephUnitStep(fqdn, jhelper))
