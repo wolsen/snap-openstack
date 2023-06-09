@@ -63,6 +63,10 @@ def launch(image_name: str, key: str, name: Optional[str] = None) -> None:
 
         admin_auth_info = retrieve_admin_credentials(jhelper, OPENSTACK_MODEL)
 
+        terraform_plan_location = snap.paths.user_common / "etc" / "demo-setup"
+        if not terraform_plan_location.exists():
+            raise click.ClickException("Please run `sunbeam configure` first")
+
         try:
             terraform = str(snap.paths.snap / "bin" / "terraform")
             cmd = [terraform, "output", "-json"]
@@ -72,7 +76,7 @@ def launch(image_name: str, key: str, name: Optional[str] = None) -> None:
                 capture_output=True,
                 text=True,
                 check=True,
-                cwd=snap.paths.user_common / "etc" / "demo-setup",
+                cwd=terraform_plan_location,
             )
             tf_output = json.loads(process.stdout)
 
