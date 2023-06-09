@@ -47,6 +47,7 @@ class DeployHypervisorApplicationStep(BaseStep, JujuStepHelper):
     def __init__(
         self,
         tfhelper: TerraformHelper,
+        tfhelper_openstack: TerraformHelper,
         jhelper: JujuHelper,
     ):
         super().__init__(
@@ -54,6 +55,7 @@ class DeployHypervisorApplicationStep(BaseStep, JujuStepHelper):
             "Deploy openstack-hypervisor application onto cloud",
         )
         self.tfhelper = tfhelper
+        self.tfhelper_openstack = tfhelper_openstack
         self.jhelper = jhelper
         self.client = Client()
         self.hypervisor_model = CONTROLLER_MODEL.split("/")[-1]
@@ -81,11 +83,14 @@ class DeployHypervisorApplicationStep(BaseStep, JujuStepHelper):
         except ApplicationNotFoundException as e:
             LOG.debug(str(e))
 
+        openstack_backend_config = self.tfhelper_openstack.backend_config()
         self.tfhelper.write_tfvars(
             {
                 "hypervisor_model": self.hypervisor_model,
                 "openstack_model": self.openstack_model,
                 "machine_ids": machine_ids,
+                "openstack-state-backend": self.tfhelper_openstack.backend,
+                "openstack-state-config": openstack_backend_config,
             }
         )
         try:
