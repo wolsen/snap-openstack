@@ -46,18 +46,26 @@ class PasswordPrompt(Prompt):
         return Text(f"({default[:2]}{PASSWORD_MASK})", "prompt.default")
 
 
+# workaround until https://github.com/Textualize/rich/issues/2994 is fixed
 class StreamWrapper:
-    def __init__(self, stream):
-        self.stream = stream
+    def __init__(self, read_stream, write_stream):
+        self.read_stream = read_stream
+        self.write_stream = write_stream
 
     def readline(self):
-        value = self.stream.readline()
+        value = self.read_stream.readline()
         if value == "\n":
             return ""
         return value
 
+    def flush(self):
+        self.read_stream.flush()
 
-STDIN = StreamWrapper(sys.stdin)
+    def write(self, s: str):
+        self.write_stream.write(s)
+
+
+STREAM = StreamWrapper(sys.stdin, sys.stdout)
 
 
 class Question:
@@ -144,7 +152,7 @@ class Question:
                     console=self.console,
                     choices=self.choices,
                     password=self.password,
-                    stream=STDIN,
+                    stream=STREAM,
                 )
         return self.answer
 
