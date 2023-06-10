@@ -53,7 +53,10 @@ from sunbeam.commands.microceph import (
 )
 from sunbeam.commands.microk8s import AddMicrok8sUnitStep, RemoveMicrok8sUnitStep
 from sunbeam.commands.openstack import OPENSTACK_MODEL
-from sunbeam.commands.sunbeam_machine import AddSunbeamMachineUnitStep
+from sunbeam.commands.sunbeam_machine import (
+    AddSunbeamMachineUnitStep,
+    RemoveSunbeamMachineStep,
+)
 from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
 from sunbeam.jobs.checks import (
     DaemonGroupCheck,
@@ -326,6 +329,7 @@ def remove(name: str) -> None:
     plan = [
         RemoveMicrok8sUnitStep(name, jhelper),
         RemoveMicrocephUnitStep(name, jhelper),
+        RemoveSunbeamMachineStep(name, jhelper),
         RemoveJujuMachineStep(name),
         # Cannot remove user as the same user name cannot be resued,
         # so commenting the RemoveJujuUserStep
