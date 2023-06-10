@@ -107,9 +107,9 @@ class MicroClusterService(service.BaseService):
 class ExtendedAPIService(service.BaseService):
     """Client for Sunbeam extended Cluster API."""
 
-    def add_node_info(self, name: str, role: List[str]) -> None:
+    def add_node_info(self, name: str, role: List[str], machine: int = -1) -> None:
         """Add Node information to cluster database."""
-        data = {"name": name, "role": role}
+        data = {"name": name, "role": role, "machine": machine}
         self._post("/1.0/nodes", data=json.dumps(data))
 
     def list_nodes(self) -> list:
