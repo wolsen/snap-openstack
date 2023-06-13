@@ -51,7 +51,10 @@ from sunbeam.commands.microk8s import (
     DeployMicrok8sApplicationStep,
 )
 from sunbeam.commands.mysql import ConfigureMySQLStep
-from sunbeam.commands.openstack import DeployControlPlaneStep
+from sunbeam.commands.openstack import (
+    DeployControlPlaneStep,
+    PatchLoadBalancerServicesStep,
+)
 from sunbeam.commands.sunbeam_machine import (
     AddSunbeamMachineUnitStep,
     DeploySunbeamMachineApplicationStep,
@@ -259,6 +262,7 @@ def bootstrap(
 
     if is_control_node:
         plan5.append(ConfigureMySQLStep(jhelper))
+        plan5.append(PatchLoadBalancerServicesStep())
 
     if is_compute_node:
         plan5.append(TerraformInitStep(tfhelper_hypervisor_deploy))

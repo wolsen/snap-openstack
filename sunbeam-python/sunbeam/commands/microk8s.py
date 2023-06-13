@@ -26,7 +26,7 @@ from sunbeam.clusterd.service import NodeNotExistInClusterException
 from sunbeam.commands.juju import JujuStepHelper
 from sunbeam.commands.terraform import TerraformException, TerraformHelper
 from sunbeam.jobs import questions
-from sunbeam.jobs.common import BaseStep, Result, ResultType
+from sunbeam.jobs.common import BaseStep, Result, ResultType, update_config
 from sunbeam.jobs.juju import (
     MODEL,
     ActionFailedException,
@@ -41,9 +41,10 @@ LOG = logging.getLogger(__name__)
 MICROK8S_CLOUD = "sunbeam-microk8s"
 APPLICATION = "microk8s"
 MICROK8S_APP_TIMEOUT = 180  # 3 minutes, managing the application should be fast
-MICROK8S_UNIT_TIMEOUT = 1200  # 15 minutes, adding / removing units can take a long time
+MICROK8S_UNIT_TIMEOUT = 1200  # 20 minutes, adding / removing units can take a long time
 CREDENTIAL_SUFFIX = "-creds"
 MICROK8S_DEFAULT_STORAGECLASS = "microk8s-hostpath"
+CONFIG_KEY = "Microk8sConfig"
 
 
 def microk8s_addons_questions():
@@ -268,6 +269,8 @@ class RemoveMicrok8sUnitStep(BaseStep, JujuStepHelper):
 
 
 class AddMicrok8sCloudStep(BaseStep, JujuStepHelper):
+    _CONFIG = CONFIG_KEY
+
     def __init__(self, jhelper: JujuHelper):
         super().__init__(
             "Add MicroK8S cloud", "Adding MicroK8S cloud to Juju controller"
@@ -302,7 +305,8 @@ class AddMicrok8sCloudStep(BaseStep, JujuStepHelper):
                     "ERROR: Failed to add k8s cloud, not able to retrieve kubeconfig",
                 )
 
-            kubeconfig = yaml.safe_load(result.get("content"))
+            kubeconfig = yaml.safe_load(result["content"])
+            update_config(Client(), self._CONFIG, kubeconfig)
             run_sync(
                 self.jhelper.add_k8s_cloud(self.name, self.credential_name, kubeconfig)
             )

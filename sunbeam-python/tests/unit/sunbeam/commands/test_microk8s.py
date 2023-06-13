@@ -354,8 +354,9 @@ users:
         }
         self.jhelper.run_action.return_value = action_result
 
-        step = AddMicrok8sCloudStep(self.jhelper)
-        result = step.run()
+        with patch("sunbeam.commands.microk8s.Client"):
+            step = AddMicrok8sCloudStep(self.jhelper)
+            result = step.run()
 
         self.jhelper.get_leader_unit.assert_called_once()
         self.jhelper.run_action.assert_called_once()
