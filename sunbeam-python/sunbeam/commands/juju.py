@@ -920,3 +920,67 @@ class WriteCharmLogStep(BaseStep, JujuStepHelper):
             return Result(ResultType.FAILED, str(e))
 
         return Result(ResultType.COMPLETED, "Inspecting Charm Log")
+
+
+class JujuLoginStep(BaseStep, JujuStepHelper):
+    """Login to Juju Controller"""
+
+    def __init__(self, data_location: Path):
+        super().__init__("Login to Juju Controller", "Login to Juju Controller")
+        self.data_location = data_location
+
+    def is_skip(self, status: Optional["Status"] = None) -> Result:
+        """Determines if the step should be skipped or not.
+
+        :return: ResultType.SKIPPED if the Step should be skipped,
+                 ResultType.COMPLETED or ResultType.FAILED otherwise
+        """
+        try:
+            self.juju_account = JujuAccount.load(self.data_location)
+            LOG.debug(f"Local account found: {self.juju_account.user}")
+        except JujuAccountNotFound:
+            LOG.debug("Local account not found, most likely not bootstrapped")
+            return Result(ResultType.SKIPPED)
+
+        cmd = [
+            self._get_juju_binary(),
+            "show-user",
+        ]
+        LOG.debug(f'Running command {" ".join(cmd)}')
+        process = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        LOG.debug(f"Command finished. stdout={process.stdout}, stderr={process.stderr}")
+        if process.returncode == 0:
+            return Result(ResultType.SKIPPED)
+
+        return Result(ResultType.COMPLETED)
+
+    def run(self, status: Optional["Status"] = None) -> Result:
+        """Run the step to completion.
+
+        Invoked when the step is run and returns a ResultType to indicate
+
+        :return:
+        """
+
+        cmd = " ".join(
+            [
+                self._get_juju_binary(),
+                "login",
+                "--user",
+                self.juju_account.user,
+            ]
+        )
+        LOG.debug(f"Running command {cmd}")
+        process = pexpect.spawn(cmd)
+        try:
+            process.expect("^please enter password", timeout=PEXPECT_TIMEOUT)
+            process.sendline(self.juju_account.password)
+            process.expect(pexpect.EOF, timeout=PEXPECT_TIMEOUT)
+            process.close()
+        except pexpect.TIMEOUT as e:
+            LOG.debug("Process timeout")
+            return Result(ResultType.FAILED, str(e))
+        LOG.debug(f"Command stdout={process.before}")
+        if process.exitstatus != 0:
+            return Result(ResultType.FAILED, "Failed to login to Juju Controller")
+        return Result(ResultType.COMPLETED)
