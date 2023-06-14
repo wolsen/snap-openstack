@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import enum
 import logging
 from typing import List, Optional, Type
@@ -21,6 +22,8 @@ import click
 from click import decorators
 from rich.console import Console
 from rich.status import Status
+
+from sunbeam.clusterd.client import Client
 
 LOG = logging.getLogger(__name__)
 
@@ -287,3 +290,12 @@ def click_option_topology(func: decorators.FC) -> decorators.FC:
             "'large' for a large scale cluster"
         ),
     )(func)
+
+
+def update_config(client: Client, key: str, config: dict):
+    client.cluster.update_config(key, json.dumps(config))
+
+
+def read_config(client: Client, key: str) -> dict:
+    config = client.cluster.get_config(key)
+    return json.loads(config)

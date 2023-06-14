@@ -49,9 +49,13 @@ from sunbeam.commands.microk8s import (
     AddMicrok8sCloudStep,
     AddMicrok8sUnitStep,
     DeployMicrok8sApplicationStep,
+    StoreMicrok8sConfigStep,
 )
 from sunbeam.commands.mysql import ConfigureMySQLStep
-from sunbeam.commands.openstack import DeployControlPlaneStep
+from sunbeam.commands.openstack import (
+    DeployControlPlaneStep,
+    PatchLoadBalancerServicesStep,
+)
 from sunbeam.commands.sunbeam_machine import (
     AddSunbeamMachineUnitStep,
     DeploySunbeamMachineApplicationStep,
@@ -232,6 +236,7 @@ def bootstrap(
         )
     )
     plan4.append(AddMicrok8sUnitStep(fqdn, jhelper))
+    plan4.append(StoreMicrok8sConfigStep(jhelper))
     plan4.append(AddMicrok8sCloudStep(jhelper))
     # Deploy Microceph application during bootstrap irrespective of node role.
     plan4.append(TerraformInitStep(tfhelper_microceph_deploy))
@@ -259,6 +264,7 @@ def bootstrap(
 
     if is_control_node:
         plan5.append(ConfigureMySQLStep(jhelper))
+        plan5.append(PatchLoadBalancerServicesStep())
 
     if is_compute_node:
         plan5.append(TerraformInitStep(tfhelper_hypervisor_deploy))

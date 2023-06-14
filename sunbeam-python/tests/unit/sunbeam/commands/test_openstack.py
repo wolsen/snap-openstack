@@ -19,7 +19,13 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from sunbeam.commands.openstack import DeployControlPlaneStep, ResizeControlPlaneStep
+from sunbeam.clusterd.service import ConfigItemNotFoundException
+from sunbeam.commands.openstack import (
+    METALLB_ANNOTATION,
+    DeployControlPlaneStep,
+    PatchLoadBalancerServicesStep,
+    ResizeControlPlaneStep,
+)
 from sunbeam.commands.terraform import TerraformException
 from sunbeam.jobs.common import ResultType
 from sunbeam.jobs.juju import (
@@ -181,3 +187,109 @@ class TestResizeControlPlaneStep(unittest.TestCase):
 
         self.jhelper.wait_until_active.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
+
+
+class PatchLoadBalancerServicesStepTest(unittest.TestCase):
+    """"""
+
+    def __init__(self, methodName: str = "runTest") -> None:
+        super().__init__(methodName)
+        self.client = patch("sunbeam.commands.openstack.Client")
+        self.read_config = patch(
+            "sunbeam.commands.openstack.read_config",
+            Mock(
+                return_value={
+                    "apiVersion": "v1",
+                    "clusters": [
+                        {
+                            "cluster": {
+                                "server": "http://localhost:8888",
+                            },
+                            "name": "mock-cluster",
+                        }
+                    ],
+                    "contexts": [
+                        {
+                            "context": {"cluster": "mock-cluster", "user": "admin"},
+                            "name": "mock",
+                        }
+                    ],
+                    "current-context": "mock",
+                    "kind": "Config",
+                    "preferences": {},
+                    "users": [{"name": "admin", "user": {"token": "mock-token"}}],
+                }
+            ),
+        )
+
+    def setUp(self):
+        self.client.start()
+        self.read_config.start()
+
+    def tearDown(self):
+        self.client.stop()
+        self.read_config.stop()
+
+    def test_is_skip(self):
+        with patch(
+            "sunbeam.commands.openstack.KubeClient",
+            new=Mock(
+                return_value=Mock(
+                    get=Mock(
+                        return_value=Mock(
+                            metadata=Mock(annotations={METALLB_ANNOTATION: "fake-ip"})
+                        )
+                    )
+                )
+            ),
+        ):
+            step = PatchLoadBalancerServicesStep()
+            result = step.is_skip()
+        assert result.result_type == ResultType.SKIPPED
+
+    def test_is_skip_missing_annotation(self):
+        with patch(
+            "sunbeam.commands.openstack.KubeClient",
+            new=Mock(
+                return_value=Mock(
+                    get=Mock(return_value=Mock(metadata=Mock(annotations={})))
+                )
+            ),
+        ):
+            step = PatchLoadBalancerServicesStep()
+            result = step.is_skip()
+        assert result.result_type == ResultType.COMPLETED
+
+    def test_is_skip_missing_config(self):
+        with patch(
+            "sunbeam.commands.openstack.read_config",
+            new=Mock(side_effect=ConfigItemNotFoundException),
+        ):
+            step = PatchLoadBalancerServicesStep()
+            result = step.is_skip()
+        assert result.result_type == ResultType.FAILED
+
+    def test_run(self):
+        with patch(
+            "sunbeam.commands.openstack.KubeClient",
+            new=Mock(
+                return_value=Mock(
+                    get=Mock(
+                        return_value=Mock(
+                            metadata=Mock(annotations={}),
+                            status=Mock(
+                                loadBalancer=Mock(ingress=[Mock(ip="fake-ip")])
+                            ),
+                        )
+                    )
+                )
+            ),
+        ):
+            step = PatchLoadBalancerServicesStep()
+            step.is_skip()
+            result = step.run()
+        assert result.result_type == ResultType.COMPLETED
+        annotation = step.kube.patch.mock_calls[0][2]["obj"].metadata.annotations[
+            METALLB_ANNOTATION
+        ]
+        assert annotation == "fake-ip"

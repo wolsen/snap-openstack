@@ -13,13 +13,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import logging
 from typing import Optional
 
+from lightkube.core import exceptions
+from lightkube.core.client import Client as KubeClient, KubeConfig
+from lightkube.resources.core_v1 import Service
 from rich.status import Status
 
 from sunbeam.clusterd.client import Client
+from sunbeam.clusterd.service import ConfigItemNotFoundException
 from sunbeam.commands.juju import JujuStepHelper
 from sunbeam.commands.microceph import APPLICATION as MICROCEPH_APPLICATION
 from sunbeam.commands.microk8s import (
@@ -27,8 +30,16 @@ from sunbeam.commands.microk8s import (
     MICROK8S_CLOUD,
     MICROK8S_DEFAULT_STORAGECLASS,
 )
+from sunbeam.commands.microk8s import CONFIG_KEY as MICROK8S_CONFIG_KEY
 from sunbeam.commands.terraform import TerraformException, TerraformHelper
-from sunbeam.jobs.common import BaseStep, Result, ResultType, get_host_total_ram
+from sunbeam.jobs.common import (
+    BaseStep,
+    Result,
+    ResultType,
+    get_host_total_ram,
+    read_config,
+    update_config,
+)
 from sunbeam.jobs.juju import (
     CONTROLLER_MODEL,
     JujuHelper,
@@ -41,20 +52,12 @@ from sunbeam.jobs.juju import (
 LOG = logging.getLogger(__name__)
 OPENSTACK_MODEL = "openstack"
 OPENSTACK_DEPLOY_TIMEOUT = 3600  # 60 minutes
+METALLB_ANNOTATION = "metallb.universe.tf/loadBalancerIPs"
 
 CONFIG_KEY = "TerraformVarsOpenstack"
 TOPOLOGY_KEY = "Topology"
 
 RAM_32_GB_IN_KB = 32 * 1024 * 1024
-
-
-def update_config(client: Client, key: str, config: dict):
-    client.cluster.update_config(key, json.dumps(config))
-
-
-def read_config(client: Client, key: str) -> dict:
-    config = client.cluster.get_config(key)
-    return json.loads(config)
 
 
 def determine_target_topology_at_bootstrap() -> str:
@@ -327,5 +330,58 @@ class ResizeControlPlaneStep(BaseStep, JujuStepHelper):
         except (JujuWaitException, TimeoutException) as e:
             LOG.warning(str(e))
             return Result(ResultType.FAILED, str(e))
+
+        return Result(ResultType.COMPLETED)
+
+
+class PatchLoadBalancerServicesStep(BaseStep):
+    SERVICES = ["traefik", "rabbitmq", "ovn-relay"]
+
+    def __init__(
+        self,
+    ):
+        super().__init__(
+            "Patch LoadBalancer services",
+            "Patch LoadBalancer service annotations",
+        )
+
+    def is_skip(self, status: Optional[Status] = None) -> Result:
+        """Determines if the step should be skipped or not.
+
+        :return: ResultType.SKIPPED if the Step should be skipped,
+                ResultType.COMPLETED or ResultType.FAILED otherwise
+        """
+        client = Client()
+        try:
+            self.kubeconfig = read_config(client, MICROK8S_CONFIG_KEY)
+        except ConfigItemNotFoundException:
+            LOG.debug("MicroK8S config not found", exc_info=True)
+            return Result(ResultType.FAILED, "MicroK8S config not found")
+
+        kubeconfig = KubeConfig.from_dict(self.kubeconfig)
+        try:
+            self.kube = KubeClient(kubeconfig, "openstack")
+        except exceptions.ConfigError as e:
+            LOG.debug("Error creating k8s client", exc_info=True)
+            return Result(ResultType.FAILED, str(e))
+
+        for service_name in self.SERVICES:
+            service = self.kube.get(Service, service_name)
+            service_annotations = service.metadata.annotations
+            if METALLB_ANNOTATION not in service_annotations:
+                return Result(ResultType.COMPLETED)
+
+        return Result(ResultType.SKIPPED)
+
+    def run(self, status: Optional[Status] = None) -> Result:
+        """Patch LoadBalancer services annotations with MetalLB IP."""
+        for service_name in self.SERVICES:
+            service = self.kube.get(Service, service_name)
+            service_annotations = service.metadata.annotations
+            if METALLB_ANNOTATION not in service_annotations:
+                loadbalancer_ip = service.status.loadBalancer.ingress[0].ip
+                service_annotations[METALLB_ANNOTATION] = loadbalancer_ip
+                LOG.debug(f"Patching {service_name!r} to use IP {loadbalancer_ip!r}")
+                self.kube.patch(Service, service_name, obj=service)
 
         return Result(ResultType.COMPLETED)
