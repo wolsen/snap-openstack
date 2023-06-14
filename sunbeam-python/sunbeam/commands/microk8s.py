@@ -22,11 +22,14 @@ from rich.console import Console
 from rich.status import Status
 
 from sunbeam.clusterd.client import Client
-from sunbeam.clusterd.service import NodeNotExistInClusterException
+from sunbeam.clusterd.service import (
+    ConfigItemNotFoundException,
+    NodeNotExistInClusterException,
+)
 from sunbeam.commands.juju import JujuStepHelper
 from sunbeam.commands.terraform import TerraformException, TerraformHelper
 from sunbeam.jobs import questions
-from sunbeam.jobs.common import BaseStep, Result, ResultType, update_config
+from sunbeam.jobs.common import BaseStep, Result, ResultType, read_config, update_config
 from sunbeam.jobs.juju import (
     MODEL,
     ActionFailedException,
@@ -297,26 +300,57 @@ class AddMicrok8sCloudStep(BaseStep, JujuStepHelper):
     def run(self, status: Optional[Status] = None) -> Result:
         """Add microk8s clouds to Juju controller."""
         try:
+            kubeconfig = read_config(Client(), self._CONFIG)
+            run_sync(
+                self.jhelper.add_k8s_cloud(self.name, self.credential_name, kubeconfig)
+            )
+        except ConfigItemNotFoundException as e:
+            LOG.debug("Failed to add k8s cloud to Juju controller", exc_info=True)
+            return Result(ResultType.FAILED, str(e))
+
+        return Result(ResultType.COMPLETED)
+
+
+class StoreMicrok8sConfigStep(BaseStep, JujuStepHelper):
+    _CONFIG = CONFIG_KEY
+
+    def __init__(self, jhelper: JujuHelper):
+        super().__init__(
+            "Store MicroK8S config", "Store MicroK8S config into sunbeam database"
+        )
+        self.jhelper = jhelper
+
+    def is_skip(self, status: Optional[Status] = None) -> Result:
+        """Determines if the step should be skipped or not.
+
+        :return: ResultType.SKIPPED if the Step should be skipped,
+                ResultType.COMPLETED or ResultType.FAILED otherwise
+        """
+        try:
+            read_config(Client(), self._CONFIG)
+        except ConfigItemNotFoundException:
+            return Result(ResultType.COMPLETED)
+
+        return Result(ResultType.SKIPPED)
+
+    def run(self, status: Optional[Status] = None) -> Result:
+        """Store MicroK8S config in clusterd."""
+        try:
             unit = run_sync(self.jhelper.get_leader_unit(APPLICATION, MODEL))
             result = run_sync(self.jhelper.run_action(unit, MODEL, "kubeconfig"))
             if not result.get("content"):
                 return Result(
                     ResultType.FAILED,
-                    "ERROR: Failed to add k8s cloud, not able to retrieve kubeconfig",
+                    "ERROR: Failed to retrieve kubeconfig",
                 )
-
             kubeconfig = yaml.safe_load(result["content"])
             update_config(Client(), self._CONFIG, kubeconfig)
-            run_sync(
-                self.jhelper.add_k8s_cloud(self.name, self.credential_name, kubeconfig)
-            )
         except (
-            FileNotFoundError,
             ApplicationNotFoundException,
             LeaderNotFoundException,
             ActionFailedException,
         ) as e:
-            LOG.warning(str(e))
+            LOG.debug("Failed to store microk8s config", exc_info=True)
             return Result(ResultType.FAILED, str(e))
 
         return Result(ResultType.COMPLETED)
