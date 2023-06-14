@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import ipaddress
 import logging
 from typing import List, Optional
 
@@ -30,7 +31,8 @@ from sunbeam.clusterd.service import (
     TokenAlreadyGeneratedException,
     TokenNotFoundException,
 )
-from sunbeam.commands.juju import JujuStepHelper
+from sunbeam.commands.juju import BOOTSTRAP_CONFIG_KEY, JujuStepHelper
+from sunbeam.jobs import questions
 from sunbeam.jobs.common import BaseStep, Result, ResultType, Status
 from sunbeam.jobs.juju import JujuController
 
@@ -306,6 +308,15 @@ class ClusterUpdateJujuControllerStep(BaseStep, JujuStepHelper):
         self.client = clusterClient()
         self.controller = controller
 
+    def filter_ips(self, ips: List[str], network_str: Optional[str]) -> List[str]:
+        """Filter ips missing from specified network"""
+        if network_str is None:
+            return ips
+        network = ipaddress.ip_network(network_str)
+        return list(
+            filter(lambda ip: ipaddress.ip_address(ip.split(":")[0]) in network, ips)
+        )
+
     def is_skip(self, status: Optional[Status] = None) -> Result:
         """Determines if the step should be skipped or not.
 
@@ -313,10 +324,15 @@ class ClusterUpdateJujuControllerStep(BaseStep, JujuStepHelper):
                  ResultType.COMPLETED or ResultType.FAILED otherwise
         """
         try:
+            variables = questions.load_answers(self.client, BOOTSTRAP_CONFIG_KEY)
+            self.network = variables.get("bootstrap", {}).get("management_cidr")
             juju_controller = JujuController.load(self.client)
             LOG.debug(f"Controller(s) present at: {juju_controller.api_endpoints}")
-            # Controller found, and parsed successfully
-            return Result(ResultType.SKIPPED)
+            if juju_controller.api_endpoints == self.filter_ips(
+                juju_controller.api_endpoints, self.network
+            ):
+                # Controller found, and parsed successfully
+                return Result(ResultType.SKIPPED)
         except ClusterServiceUnavailableException as e:
             LOG.warning(e)
             return Result(ResultType.FAILED, str(e))
@@ -333,7 +349,8 @@ class ClusterUpdateJujuControllerStep(BaseStep, JujuStepHelper):
         controller = self.get_controller(self.controller)["details"]
 
         juju_controller = JujuController(
-            api_endpoints=controller["api-endpoints"], ca_cert=controller["ca-cert"]
+            api_endpoints=self.filter_ips(controller["api-endpoints"], self.network),
+            ca_cert=controller["ca-cert"],
         )
         try:
             juju_controller.write(self.client)

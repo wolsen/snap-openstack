@@ -48,6 +48,7 @@ MICROK8S_UNIT_TIMEOUT = 1200  # 20 minutes, adding / removing units can take a l
 CREDENTIAL_SUFFIX = "-creds"
 MICROK8S_DEFAULT_STORAGECLASS = "microk8s-hostpath"
 CONFIG_KEY = "Microk8sConfig"
+MICROK8S_ADDONS_CONFIG_KEY = "TerraformVarsMicrok8sAddons"
 
 
 def microk8s_addons_questions():
@@ -61,7 +62,7 @@ def microk8s_addons_questions():
 class DeployMicrok8sApplicationStep(BaseStep, JujuStepHelper):
     """Deploy Microk8s application using Terraform"""
 
-    _CONFIG = "TerraformVarsMicrok8sAddons"
+    _CONFIG = MICROK8S_ADDONS_CONFIG_KEY
 
     def __init__(
         self,

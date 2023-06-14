@@ -169,7 +169,15 @@ def bootstrap(
 
     plan = []
     plan.append(ClusterInitStep(roles_to_str_list(roles)))
-    plan.append(BootstrapJujuStep(cloud_name, cloud_type, CONTROLLER))
+    plan.append(
+        BootstrapJujuStep(
+            cloud_name,
+            cloud_type,
+            CONTROLLER,
+            accept_defaults=accept_defaults,
+            preseed_file=preseed,
+        )
+    )
     run_plan(plan, console)
 
     plan2 = []
