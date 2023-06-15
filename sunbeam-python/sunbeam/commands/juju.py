@@ -939,7 +939,7 @@ class JujuLoginStep(BaseStep, JujuStepHelper):
             self.juju_account = JujuAccount.load(self.data_location)
             LOG.debug(f"Local account found: {self.juju_account.user}")
         except JujuAccountNotFound:
-            LOG.debug("Local account not found, most likely not bootstrapped")
+            LOG.debug("Local account not found, most likely not bootstrapped / joined")
             return Result(ResultType.SKIPPED)
 
         cmd = [
