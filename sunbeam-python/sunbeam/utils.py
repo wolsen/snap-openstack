@@ -15,6 +15,7 @@
 
 import glob
 import logging
+import re
 import socket
 import sys
 from pathlib import Path
@@ -125,6 +126,23 @@ def get_free_nic() -> str:
     if len(nics) > 0:
         nic = nics[0]
     return nic
+
+
+def get_nameservers(ipv4_only=True) -> List[str]:
+    """Return a list of nameservers used by the host."""
+    resolve_config = Path("/run/systemd/resolve/resolv.conf")
+    nameservers = []
+    try:
+        with open(resolve_config, "r") as f:
+            contents = f.readlines()
+        nameservers = [
+            l.split()[1] for l in contents if re.match("^\s*nameserver\s", l)
+        ]
+        if ipv4_only:
+            nameservers = [n for n in nameservers if not re.search("[a-zA-Z]", n)]
+    except FileNotFoundError:
+        nameservers = []
+    return nameservers
 
 
 def generate_password() -> str:

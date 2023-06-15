@@ -17,7 +17,8 @@ import logging
 from typing import Optional
 
 from lightkube.core import exceptions
-from lightkube.core.client import Client as KubeClient, KubeConfig
+from lightkube.core.client import Client as KubeClient
+from lightkube.core.client import KubeConfig
 from lightkube.resources.core_v1 import Service
 from rich.status import Status
 
@@ -25,12 +26,12 @@ from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import ConfigItemNotFoundException
 from sunbeam.commands.juju import JujuStepHelper
 from sunbeam.commands.microceph import APPLICATION as MICROCEPH_APPLICATION
+from sunbeam.commands.microk8s import CONFIG_KEY as MICROK8S_CONFIG_KEY
 from sunbeam.commands.microk8s import (
     CREDENTIAL_SUFFIX,
     MICROK8S_CLOUD,
     MICROK8S_DEFAULT_STORAGECLASS,
 )
-from sunbeam.commands.microk8s import CONFIG_KEY as MICROK8S_CONFIG_KEY
 from sunbeam.commands.terraform import TerraformException, TerraformHelper
 from sunbeam.jobs.common import (
     BaseStep,

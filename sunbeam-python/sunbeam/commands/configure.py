@@ -136,6 +136,10 @@ def user_questions():
         "cidr": sunbeam.jobs.questions.PromptQuestion(
             "Network range to use for project network", default_value="192.168.122.0/24"
         ),
+        "nameservers": sunbeam.jobs.questions.PromptQuestion(
+            "List of nameservers guests should use for DNS resolution",
+            default_function=lambda: " ".join(utils.get_nameservers()),
+        ),
         "security_group_rules": sunbeam.jobs.questions.ConfirmQuestion(
             "Enable ping and SSH access to instances?", default_value=True
         ),
@@ -481,6 +485,9 @@ class UserQuestions(BaseStep):
             self.variables["user"]["username"] = user_bank.username.ask()
             self.variables["user"]["password"] = user_bank.password.ask()
             self.variables["user"]["cidr"] = user_bank.cidr.ask()
+            self.variables["user"][
+                "dns_nameservers"
+            ] = user_bank.nameservers.ask().split()
             self.variables["user"][
                 "security_group_rules"
             ] = user_bank.security_group_rules.ask()
