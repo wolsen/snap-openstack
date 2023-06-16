@@ -136,7 +136,7 @@ def get_nameservers(ipv4_only=True) -> List[str]:
         with open(resolve_config, "r") as f:
             contents = f.readlines()
         nameservers = [
-            l.split()[1] for l in contents if re.match("^\s*nameserver\s", l)
+            line.split()[1] for line in contents if re.match(r"^\s*nameserver\s", line)
         ]
         if ipv4_only:
             nameservers = [n for n in nameservers if not re.search("[a-zA-Z]", n)]
