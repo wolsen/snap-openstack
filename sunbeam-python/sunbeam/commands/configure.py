@@ -36,7 +36,15 @@ from sunbeam.commands.terraform import (
     TerraformHelper,
     TerraformInitStep,
 )
-from sunbeam.jobs.common import BaseStep, Result, ResultType, Status, run_plan
+from sunbeam.jobs.checks import DaemonGroupCheck
+from sunbeam.jobs.common import (
+    BaseStep,
+    Result,
+    ResultType,
+    Status,
+    run_plan,
+    run_preflight_checks,
+)
 from sunbeam.jobs.juju import (
     CONTROLLER_MODEL,
     JujuHelper,
@@ -699,6 +707,10 @@ def configure(
     accept_defaults: bool = False,
 ) -> None:
     """Configure cloud with some sensible defaults."""
+    preflight_checks = []
+    preflight_checks.append(DaemonGroupCheck())
+    run_preflight_checks(preflight_checks, console)
+
     name = utils.get_fqdn()
     snap = Snap()
     src = snap.paths.snap / "etc" / "demo-setup/"

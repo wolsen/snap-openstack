@@ -25,7 +25,8 @@ from snaphelpers import Snap
 
 from sunbeam.commands.juju import WriteCharmLogStep, WriteJujuStatusStep
 from sunbeam.commands.openstack import OPENSTACK_MODEL
-from sunbeam.jobs.common import run_plan
+from sunbeam.jobs.checks import DaemonGroupCheck
+from sunbeam.jobs.common import run_plan, run_preflight_checks
 from sunbeam.jobs.juju import CONTROLLER_MODEL, JujuHelper
 
 LOG = logging.getLogger(__name__)
@@ -41,6 +42,10 @@ def inspect() -> None:
     it finds, and create a tarball of logs and traces which can be
     attached to an issue filed against the sunbeam project.
     """
+    preflight_checks = []
+    preflight_checks.append(DaemonGroupCheck())
+    run_preflight_checks(preflight_checks, console)
+
     data_location = snap.paths.user_data
     jhelper = JujuHelper(data_location)
 
