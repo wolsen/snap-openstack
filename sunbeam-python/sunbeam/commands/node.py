@@ -56,9 +56,7 @@ from sunbeam.commands.microceph import (
 )
 from sunbeam.commands.microk8s import AddMicrok8sUnitStep, RemoveMicrok8sUnitStep
 from sunbeam.commands.openstack import OPENSTACK_MODEL
-from sunbeam.commands.sunbeam_machine import (
-    AddSunbeamMachineUnitStep,
-)
+from sunbeam.commands.sunbeam_machine import AddSunbeamMachineUnitStep
 from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
 from sunbeam.jobs.checks import (
     DaemonGroupCheck,
