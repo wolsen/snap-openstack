@@ -309,12 +309,23 @@ class ClusterUpdateJujuControllerStep(BaseStep, JujuStepHelper):
         self.controller = controller
 
     def filter_ips(self, ips: List[str], network_str: Optional[str]) -> List[str]:
-        """Filter ips missing from specified network"""
+        """Filter ips missing from specified networks
+
+        :param ips: list of ips to filter
+        :param network_str: network to filter ips from, separated by comma
+        """
         if network_str is None:
             return ips
-        network = ipaddress.ip_network(network_str)
+        networks = [ipaddress.ip_network(network) for network in network_str.split(",")]
         return list(
-            filter(lambda ip: ipaddress.ip_address(ip.split(":")[0]) in network, ips)
+            filter(
+                lambda ip: any(
+                    True
+                    for network in networks
+                    if ipaddress.ip_address(ip.split(":")[0]) in network
+                ),
+                ips,
+            )
         )
 
     def is_skip(self, status: Optional[Status] = None) -> Result:
@@ -325,11 +336,11 @@ class ClusterUpdateJujuControllerStep(BaseStep, JujuStepHelper):
         """
         try:
             variables = questions.load_answers(self.client, BOOTSTRAP_CONFIG_KEY)
-            self.network = variables.get("bootstrap", {}).get("management_cidr")
+            self.networks = variables.get("bootstrap", {}).get("management_cidr")
             juju_controller = JujuController.load(self.client)
             LOG.debug(f"Controller(s) present at: {juju_controller.api_endpoints}")
             if juju_controller.api_endpoints == self.filter_ips(
-                juju_controller.api_endpoints, self.network
+                juju_controller.api_endpoints, self.networks
             ):
                 # Controller found, and parsed successfully
                 return Result(ResultType.SKIPPED)
@@ -349,7 +360,7 @@ class ClusterUpdateJujuControllerStep(BaseStep, JujuStepHelper):
         controller = self.get_controller(self.controller)["details"]
 
         juju_controller = JujuController(
-            api_endpoints=self.filter_ips(controller["api-endpoints"], self.network),
+            api_endpoints=self.filter_ips(controller["api-endpoints"], self.networks),
             ca_cert=controller["ca-cert"],
         )
         try:

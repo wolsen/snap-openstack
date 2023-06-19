@@ -175,7 +175,7 @@ class JujuStepHelper:
 def bootstrap_questions():
     return {
         "management_cidr": questions.PromptQuestion(
-            "Management cidr shared by the hosts",
+            "Management CIDRs shared by the hosts (separated by comma)",
             default_value=utils.get_local_cidr_by_default_routes(),
         ),
     }
