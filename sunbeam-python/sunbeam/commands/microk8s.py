@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import ipaddress
 import logging
 from pathlib import Path
 from typing import Optional
@@ -50,10 +51,23 @@ MICROK8S_DEFAULT_STORAGECLASS = "microk8s-hostpath"
 CONFIG_KEY = "Microk8sConfig"
 
 
+def validate_metallb_range(value: str):
+    ips = value.split("-")
+    if len(ips) == 1:
+        ipaddress.ip_network(ips[0])
+    elif len(ips) == 2:
+        ipaddress.ip_address(ips[0])
+        ipaddress.ip_address(ips[1])
+    else:
+        raise ValueError("Invalid IP range, must be in the form of 'ip-ip' or 'cidr'")
+
+
 def microk8s_addons_questions():
     return {
         "metallb": questions.PromptQuestion(
-            "MetalLB address allocation range", default_value="10.20.21.10-10.20.21.20"
+            "MetalLB address allocation range",
+            default_value="10.20.21.10-10.20.21.20",
+            validation_function=validate_metallb_range,
         ),
     }
 

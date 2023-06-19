@@ -78,6 +78,7 @@ class Question:
         default_value: Any = None,
         choices: Optional[list] = None,
         password: bool = False,
+        validation_function: Optional[Callable] = None,
     ):
         """Setup question.
 
@@ -88,6 +89,8 @@ class Question:
         :param choices: A list of choices for the user to choose from
         :param console: the console to prompt on
         :param password: whether answer to question is a password
+        :param validation_function: A function to use to validate the answer,
+                                    must raise ValueError when value is invalid.
         """
         self.preseed = None
         self.console = None
@@ -99,6 +102,7 @@ class Question:
         self.choices = choices
         self.accept_defaults = False
         self.password = password
+        self.validation_function = validation_function
 
     @property
     def question_function(self):
@@ -154,6 +158,17 @@ class Question:
                     password=self.password,
                     stream=STREAM,
                 )
+        if self.validation_function is not None:
+            try:
+                self.validation_function(self.answer)
+            except ValueError as e:
+                message = f"Invalid value for {self.question!r}: {e}"
+                if self.preseed is not None:
+                    LOG.error(message)
+                    raise
+                LOG.warn(message)
+                self.ask(new_default=new_default)
+
         return self.answer
 
 
