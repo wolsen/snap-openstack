@@ -37,6 +37,7 @@ from sunbeam.commands.juju import (
     BackupBootstrapUserStep,
     BootstrapJujuStep,
     CreateJujuUserStep,
+    JujuLoginStep,
     RegisterJujuUserStep,
     SaveJujuUserLocallyStep,
 )
@@ -168,6 +169,7 @@ def bootstrap(
     run_preflight_checks(preflight_checks, console)
 
     plan = []
+    plan.append(JujuLoginStep(data_location))
     plan.append(ClusterInitStep(roles_to_str_list(roles)))
     plan.append(BootstrapJujuStep(cloud_name, cloud_type, CONTROLLER))
     run_plan(plan, console)

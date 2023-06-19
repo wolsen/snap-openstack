@@ -38,7 +38,10 @@ from sunbeam.commands.hypervisor import (
     AddHypervisorUnitStep,
     DeployHypervisorApplicationStep,
 )
-from sunbeam.commands.juju import AddJujuMachineStep  # RemoveJujuUserStep,
+from sunbeam.commands.juju import (
+    AddJujuMachineStep,
+    JujuLoginStep,
+)  # RemoveJujuUserStep,
 from sunbeam.commands.juju import (
     CreateJujuUserStep,
     JujuGrantModelAccessStep,
@@ -225,6 +228,7 @@ def join(
     jhelper = JujuHelper(data_location)
 
     plan1 = [
+        JujuLoginStep(data_location),
         ClusterJoinNodeStep(token, roles_str),
         SaveJujuUserLocallyStep(name, data_location),
         RegisterJujuUserStep(name, controller, data_location),

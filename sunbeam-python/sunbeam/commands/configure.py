@@ -30,6 +30,7 @@ from snaphelpers import Snap
 import sunbeam.jobs.questions
 from sunbeam import utils
 from sunbeam.clusterd.client import Client
+from sunbeam.commands.juju import JujuLoginStep
 from sunbeam.commands.openstack import OPENSTACK_MODEL
 from sunbeam.commands.terraform import (
     TerraformException,
@@ -741,6 +742,7 @@ def configure(
     )
     answer_file = tfhelper.path / "config.auto.tfvars.json"
     plan = [
+        JujuLoginStep(data_location),
         UserQuestions(
             answer_file=answer_file,
             preseed_file=preseed,
