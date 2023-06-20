@@ -143,7 +143,9 @@ def user_questions():
             password=True,
         ),
         "cidr": sunbeam.jobs.questions.PromptQuestion(
-            "Network range to use for project network", default_value="192.168.122.0/24"
+            "Network range to use for project network",
+            default_value="192.168.122.0/24",
+            validation_function=ipaddress.ip_network,
         ),
         "nameservers": sunbeam.jobs.questions.PromptQuestion(
             "List of nameservers guests should use for DNS resolution",
@@ -165,15 +167,22 @@ def ext_net_questions():
         "cidr": sunbeam.jobs.questions.PromptQuestion(
             "CIDR of network to use for external networking",
             default_value="10.20.20.0/24",
+            validation_function=ipaddress.ip_network,
         ),
         "gateway": sunbeam.jobs.questions.PromptQuestion(
-            "IP address of default gateway for external network", default_value=None
+            "IP address of default gateway for external network",
+            default_value=None,
+            validation_function=ipaddress.ip_address,
         ),
         "start": sunbeam.jobs.questions.PromptQuestion(
-            "Start of IP allocation range for external network", default_value=None
+            "Start of IP allocation range for external network",
+            default_value=None,
+            validation_function=ipaddress.ip_address,
         ),
         "end": sunbeam.jobs.questions.PromptQuestion(
-            "End of IP allocation range for external network", default_value=None
+            "End of IP allocation range for external network",
+            default_value=None,
+            validation_function=ipaddress.ip_address,
         ),
         "network_type": sunbeam.jobs.questions.PromptQuestion(
             "Network type for access to external network",
@@ -197,12 +206,17 @@ def ext_net_questions_local_only():
                 "be in use"
             ),
             default_value="10.20.20.0/24",
+            validation_function=ipaddress.ip_network,
         ),
         "start": sunbeam.jobs.questions.PromptQuestion(
-            "Start of IP allocation range for external network", default_value=None
+            "Start of IP allocation range for external network",
+            default_value=None,
+            validation_function=ipaddress.ip_address,
         ),
         "end": sunbeam.jobs.questions.PromptQuestion(
-            "End of IP allocation range for external network", default_value=None
+            "End of IP allocation range for external network",
+            default_value=None,
+            validation_function=ipaddress.ip_address,
         ),
         "network_type": sunbeam.jobs.questions.PromptQuestion(
             "Network type for access to external network",
