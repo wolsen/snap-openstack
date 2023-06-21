@@ -40,11 +40,9 @@ from sunbeam.commands.hypervisor import (
 )
 from sunbeam.commands.juju import (
     AddJujuMachineStep,
-    JujuLoginStep,
-)  # RemoveJujuUserStep,
-from sunbeam.commands.juju import (
     CreateJujuUserStep,
     JujuGrantModelAccessStep,
+    JujuLoginStep,
     RegisterJujuUserStep,
     RemoveJujuMachineStep,
     SaveJujuUserLocallyStep,
