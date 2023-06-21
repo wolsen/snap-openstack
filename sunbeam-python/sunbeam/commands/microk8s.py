@@ -51,21 +51,29 @@ MICROK8S_DEFAULT_STORAGECLASS = "microk8s-hostpath"
 CONFIG_KEY = "Microk8sConfig"
 
 
-def validate_metallb_range(value: str):
-    ips = value.split("-")
-    if len(ips) == 1:
-        ipaddress.ip_network(ips[0])
-    elif len(ips) == 2:
-        ipaddress.ip_address(ips[0])
-        ipaddress.ip_address(ips[1])
-    else:
-        raise ValueError("Invalid IP range, must be in the form of 'ip-ip' or 'cidr'")
+def validate_metallb_range(ip_ranges: str):
+    for ip_range in ip_ranges.split(","):
+        ips = ip_range.split("-")
+        if len(ips) == 1:
+            if "/" not in ips[0]:
+                raise ValueError(
+                    "Invalid CIDR definition, must be in the form 'ip/mask'"
+                )
+            ipaddress.ip_network(ips[0])
+        elif len(ips) == 2:
+            ipaddress.ip_address(ips[0])
+            ipaddress.ip_address(ips[1])
+        else:
+            raise ValueError(
+                "Invalid IP range, must be in the form of 'ip-ip' or 'cidr'"
+            )
 
 
 def microk8s_addons_questions():
     return {
         "metallb": questions.PromptQuestion(
-            "MetalLB address allocation range",
+            "MetalLB address allocation range "
+            "(supports multiple ranges, comma separated)",
             default_value="10.20.21.10-10.20.21.20",
             validation_function=validate_metallb_range,
         ),
