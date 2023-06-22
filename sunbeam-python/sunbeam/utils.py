@@ -47,9 +47,49 @@ def is_nic_up(iface_name: str) -> bool:
         return state.upper() == "UP"
 
 
+def get_hypervisor_hostname() -> str:
+    """Get FQDN as per libvirt."""
+    # Use same logic used by libvirt
+    # https://github.com/libvirt/libvirt/blob/a5bf2c4bf962cfb32f9137be5f0ba61cdd14b0e7/src/util/virutil.c#L406
+    hostname = socket.gethostname()
+    if "." in hostname:
+        return hostname
+
+    addrinfo = socket.getaddrinfo(
+        hostname, None, family=socket.AF_UNSPEC, flags=socket.AI_CANONNAME
+    )
+    for addr in addrinfo:
+        fqdn = addr[3]
+        if fqdn and fqdn != "localhost":
+            return fqdn
+
+    return hostname
+
+
 def get_fqdn() -> str:
     """Get FQDN of the machine"""
-    return socket.getfqdn()
+    # If the fqdn returned by this function and from libvirt are different,
+    # the hypervisor name and the one registered in OVN will be different
+    # which leads to port binding errors,
+    # see https://bugs.launchpad.net/snap-openstack/+bug/2023931
+
+    fqdn = get_hypervisor_hostname()
+    if "." in fqdn:
+        return fqdn
+
+    # Deviation from libvirt logic
+    # Try to get fqdn from IP address as a last resort
+    ip = get_local_ip_by_default_route()
+    try:
+        fqdn = socket.getfqdn(socket.gethostbyaddr(ip)[0])
+        if fqdn != "localhost":
+            return fqdn
+    except Exception as e:
+        LOG.debug("Ignoring error in getting FQDN")
+        LOG.debug(e, exc_info=True)
+
+    # return hostname if fqdn is localhost
+    return socket.gethostname()
 
 
 def get_local_ip_by_default_route() -> str:

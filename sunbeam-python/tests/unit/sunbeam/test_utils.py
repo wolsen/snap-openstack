@@ -78,9 +78,38 @@ class TestUtils:
         assert not utils.is_nic_up("eth3")
 
     def test_get_fqdn(self, mocker):
+        gethostname = mocker.patch("sunbeam.utils.socket.gethostname")
+        gethostname.return_value = "myhost"
+        getaddrinfo = mocker.patch("sunbeam.utils.socket.getaddrinfo")
+        getaddrinfo.return_value = [(2, 1, 6, "myhost.local", ("10.5.3.44", 0))]
+        assert utils.get_fqdn() == "myhost.local"
+
+    def test_get_fqdn_when_gethostname_has_dot(self, mocker):
+        gethostname = mocker.patch("sunbeam.utils.socket.gethostname")
+        gethostname.return_value = "myhost.local"
+        assert utils.get_fqdn() == "myhost.local"
+
+    def test_get_fqdn_when_getaddrinfo_has_localhost_as_fqdn(self, mocker):
+        gethostname = mocker.patch("sunbeam.utils.socket.gethostname")
+        gethostname.return_value = "myhost"
+        getaddrinfo = mocker.patch("sunbeam.utils.socket.getaddrinfo")
+        getaddrinfo.return_value = [(2, 1, 6, "localhost", ("10.5.3.44", 0))]
+        local_ip = mocker.patch("sunbeam.utils.get_local_ip_by_default_route")
+        local_ip.return_value = "127.0.0.1"
         getfqdn = mocker.patch("sunbeam.utils.socket.getfqdn")
         getfqdn.return_value = "myhost.local"
         assert utils.get_fqdn() == "myhost.local"
+
+    def test_get_fqdn_when_getfqdn_returns_localhost(self, mocker):
+        gethostname = mocker.patch("sunbeam.utils.socket.gethostname")
+        gethostname.return_value = "myhost"
+        getaddrinfo = mocker.patch("sunbeam.utils.socket.getaddrinfo")
+        getaddrinfo.return_value = [(2, 1, 6, "localhost", ("10.5.3.44", 0))]
+        local_ip = mocker.patch("sunbeam.utils.get_local_ip_by_default_route")
+        local_ip.return_value = "127.0.0.1"
+        getfqdn = mocker.patch("sunbeam.utils.socket.getfqdn")
+        getfqdn.return_value = "localhost"
+        assert utils.get_fqdn() == "myhost"
 
     def test_get_local_ip_by_default_route(self, mocker, ifaddresses):
         gateways = mocker.patch("sunbeam.utils.netifaces.gateways")
