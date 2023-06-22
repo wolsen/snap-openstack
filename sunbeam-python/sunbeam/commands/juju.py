@@ -942,14 +942,24 @@ class JujuLoginStep(BaseStep, JujuStepHelper):
             LOG.debug("Local account not found, most likely not bootstrapped / joined")
             return Result(ResultType.SKIPPED)
 
-        cmd = [
-            self._get_juju_binary(),
-            "show-user",
-        ]
-        LOG.debug(f'Running command {" ".join(cmd)}')
-        process = subprocess.run(cmd, capture_output=True, text=True, check=False)
-        LOG.debug(f"Command finished. stdout={process.stdout}, stderr={process.stderr}")
-        if process.returncode == 0:
+        cmd = " ".join(
+            [
+                self._get_juju_binary(),
+                "show-user",
+            ]
+        )
+        LOG.debug(f"Running command {cmd}")
+        expect_list = ["^please enter password", "{}", pexpect.EOF]
+        with pexpect.spawn(cmd) as process:
+            try:
+                index = process.expect(expect_list, timeout=PEXPECT_TIMEOUT)
+            except pexpect.TIMEOUT as e:
+                LOG.debug("Process timeout")
+                return Result(ResultType.FAILED, str(e))
+            LOG.debug(f"Command stdout={process.before}")
+        if index in (0, 1):
+            return Result(ResultType.COMPLETED)
+        elif index == 2:
             return Result(ResultType.SKIPPED)
 
         return Result(ResultType.COMPLETED)
