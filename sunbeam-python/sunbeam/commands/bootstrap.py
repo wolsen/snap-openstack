@@ -67,6 +67,7 @@ from sunbeam.jobs.checks import (
     JujuSnapCheck,
     LocalShareCheck,
     SshKeysConnectedCheck,
+    VerifyHypervisorHostnameCheck,
 )
 from sunbeam.jobs.common import (
     Role,
@@ -165,6 +166,11 @@ def bootstrap(
     preflight_checks.append(SshKeysConnectedCheck())
     preflight_checks.append(DaemonGroupCheck())
     preflight_checks.append(LocalShareCheck())
+    if is_compute_node:
+        hypervisor_hostname = utils.get_hypervisor_hostname()
+        preflight_checks.append(
+            VerifyHypervisorHostnameCheck(fqdn, hypervisor_hostname)
+        )
 
     run_preflight_checks(preflight_checks, console)
 
