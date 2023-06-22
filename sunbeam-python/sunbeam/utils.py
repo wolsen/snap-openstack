@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import glob
+import ipaddress
 import logging
 import re
 import socket
@@ -92,10 +93,11 @@ def get_fqdn() -> str:
     return socket.gethostname()
 
 
-def get_local_ip_by_default_route() -> str:
-    """Get IP address of host associated with default gateway"""
+def get_ifaddresses_by_default_route() -> dict:
+    """Get address configuration from interface associated with default gateway."""
     interface = "lo"
     ip = "127.0.0.1"
+    netmask = "255.0.0.0"
 
     # TOCHK: Gathering only IPv4
     if "default" in netifaces.gateways():
@@ -103,9 +105,23 @@ def get_local_ip_by_default_route() -> str:
 
     ip_list = netifaces.ifaddresses(interface)[netifaces.AF_INET]
     if len(ip_list) > 0 and "addr" in ip_list[0]:
-        ip = ip_list[0]["addr"]
+        return ip_list[0]
 
-    return ip
+    return {"addr": ip, "netmask": netmask}
+
+
+def get_local_ip_by_default_route() -> str:
+    """Get IP address of host associated with default gateway."""
+    return get_ifaddresses_by_default_route()["addr"]
+
+
+def get_local_cidr_by_default_routes() -> str:
+    """Get CIDR of host associated with default gateway"""
+    conf = get_ifaddresses_by_default_route()
+    ip = conf["addr"]
+    netmask = conf["netmask"]
+    network = ipaddress.ip_network(f"{ip}/{netmask}", strict=False)
+    return str(network)
 
 
 def get_nic_macs(nic: str) -> list:

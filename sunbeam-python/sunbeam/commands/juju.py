@@ -26,12 +26,14 @@ from typing import Optional
 
 import pexpect
 import pwgen
+from pyroute2 import Console
 import yaml
 from snaphelpers import Snap
 
 from sunbeam import utils
 from sunbeam.clusterd.client import Client as clusterClient
 from sunbeam.clusterd.service import NodeNotExistInClusterException
+from sunbeam.jobs import questions
 from sunbeam.jobs.common import BaseStep, Result, ResultType
 from sunbeam.jobs.juju import (
     CONTROLLER_MODEL,
@@ -45,6 +47,7 @@ from sunbeam.jobs.juju import (
 
 LOG = logging.getLogger(__name__)
 PEXPECT_TIMEOUT = 60
+BOOTSTRAP_CONFIG_KEY = "BootstrapAnswers"
 
 
 class JujuStepHelper:
@@ -169,19 +172,77 @@ class JujuStepHelper:
         return True
 
 
+def bootstrap_questions():
+    return {
+        "management_cidr": questions.PromptQuestion(
+            "Management CIDRs shared by the hosts (separated by comma)",
+            default_value=utils.get_local_cidr_by_default_routes(),
+        ),
+    }
+
+
 class BootstrapJujuStep(BaseStep, JujuStepHelper):
     """Bootstraps the Juju controller."""
 
-    def __init__(self, cloud_name: str, cloud_type: str, controller: str):
+    _CONFIG = BOOTSTRAP_CONFIG_KEY
+
+    def __init__(
+        self,
+        cloud_name: str,
+        cloud_type: str,
+        controller: str,
+        preseed_file: Optional[Path] = None,
+        accept_defaults: bool = False,
+    ):
         super().__init__("Bootstrap Juju", "Bootstrapping Juju onto machine")
 
         self.cloud = cloud_name
         self.cloud_type = cloud_type
         self.controller = controller
+        self.preseed_file = preseed_file
+        self.accept_defaults = accept_defaults
         self.juju_clouds = []
+        self.client = clusterClient()
 
         home = os.environ.get("SNAP_REAL_HOME")
         os.environ["JUJU_DATA"] = f"{home}/.local/share/juju"
+
+    def prompt(self, console: Optional[Console] = None) -> None:
+        """Determines if the step can take input from the user.
+
+        Prompts are used by Steps to gather the necessary input prior to
+        running the step. Steps should not expect that the prompt will be
+        available and should provide a reasonable default where possible.
+        """
+        self.variables = questions.load_answers(self.client, self._CONFIG)
+        self.variables.setdefault("bootstrap", {})
+
+        if self.preseed_file:
+            preseed = questions.read_preseed(self.preseed_file)
+        else:
+            preseed = {}
+        bootstrap_bank = questions.QuestionBank(
+            questions=bootstrap_questions(),
+            console=console,  # type: ignore
+            preseed=preseed.get("bootstrap"),
+            previous_answers=self.variables.get("bootstrap", {}),
+            accept_defaults=self.accept_defaults,
+        )
+
+        self.variables["bootstrap"][
+            "management_cidr"
+        ] = bootstrap_bank.management_cidr.ask()
+
+        LOG.debug(self.variables)
+        questions.write_answers(self.client, self._CONFIG, self.variables)
+
+    def has_prompts(self) -> bool:
+        """Returns true if the step has prompts that it can ask the user.
+
+        :return: True if the step can ask the user for prompts,
+                 False otherwise
+        """
+        return True
 
     def is_skip(self, status: Optional["Status"] = None) -> Result:
         """Determines if the step should be skipped or not.
