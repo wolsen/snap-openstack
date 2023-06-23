@@ -13,9 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import asyncio
 import logging
-from typing import Optional
+from typing import List, Optional
 
+
+from juju.client.client import FullStatus
 from lightkube.core import exceptions
 from lightkube.core.client import Client as KubeClient
 from lightkube.core.client import KubeConfig
@@ -136,7 +139,7 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
     ):
         super().__init__(
             "Deploying OpenStack Control Plane",
-            "Deploying OpenStack Control Plane to Kubernetes",
+            "Deploying OpenStack Control Plane to Kubernetes (this may take a while)",
         )
         self.tfhelper = tfhelper
         self.jhelper = jhelper
@@ -178,8 +181,10 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         # - Enabling HA
         # - Enabling/disabling specific services
         # - Switch channels for the charmed operators
-        determined_topology = determine_target_topology_at_bootstrap()
+        if status is not None:
+            status.update(self.status + "determining appropriate configuration")
 
+        determined_topology = determine_target_topology_at_bootstrap()
         if self.topology == "auto":
             self.topology = determined_topology
         LOG.debug(f"Bootstrap: topology {self.topology}")
@@ -205,18 +210,21 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         tfvars.update(self.get_storage_tfvars())
         update_config(self.client, self._CONFIG, tfvars)
         self.tfhelper.write_tfvars(tfvars)
+        if status is not None:
+            status.update(self.status + "deploying services")
         try:
             self.tfhelper.apply()
         except TerraformException as e:
             LOG.exception("Error configuring cloud")
             return Result(ResultType.FAILED, str(e))
 
+        # Remove cinder-ceph from apps to wait on if ceph is not enabled
+        apps = run_sync(self.jhelper.get_application_names(self.model))
+        if not tfvars.get("enable-ceph") and "cinder-ceph" in apps:
+            apps.remove("cinder-ceph")
+        LOG.debug(f"Application monitored for readiness: {apps}")
+        task = run_sync(self.update_status_background(apps, status))
         try:
-            # Remove cinder-ceph from apps to wait on if ceph is not enabled
-            apps = run_sync(self.jhelper.get_application_names(self.model))
-            if not tfvars.get("enable-ceph") and "cinder-ceph" in apps:
-                apps.remove("cinder-ceph")
-
             run_sync(
                 self.jhelper.wait_until_active(
                     self.model,
@@ -227,8 +235,37 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         except (JujuWaitException, TimeoutException) as e:
             LOG.warning(str(e))
             return Result(ResultType.FAILED, str(e))
+        finally:
+            if not task.done():
+                task.cancel()
 
         return Result(ResultType.COMPLETED)
+
+    async def update_status_background(
+        self, applications: List[str], status: Optional[Status]
+    ):
+        async def _update_status_background():
+            if status is not None:
+                nb_apps = len(applications)
+                model = await self.jhelper.get_model(self.model)
+                while True:
+                    active_apps = 0
+                    full_status: FullStatus = await model.get_status(applications)
+                    for app in full_status.applications.values():
+                        if app is None or app.status is None:
+                            continue
+                        if app.status.status == "active":
+                            active_apps += 1
+
+                    status.update(
+                        self.status + "waiting for services to come online "
+                        f"({active_apps}/{nb_apps})"
+                    )
+                    if active_apps == nb_apps:
+                        return
+                    await asyncio.sleep(30)
+
+        return asyncio.create_task(_update_status_background())
 
 
 class ResizeControlPlaneStep(BaseStep, JujuStepHelper):

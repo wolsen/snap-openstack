@@ -185,6 +185,14 @@ class BaseStep:
         """
         pass
 
+    @property
+    def status(self):
+        """Returns the status to display.
+
+        :return: the status of the step
+        """
+        return self.description + " ... "
+
 
 def run_preflight_checks(checks: list, console: Console):
     """Run preflight checks sequentially.
@@ -202,7 +210,7 @@ def run_preflight_checks(checks: list, console: Console):
                 raise click.ClickException(check.message)
 
 
-def run_plan(plan: list, console: Console) -> dict:
+def run_plan(plan: List[BaseStep], console: Console) -> dict:
     """Run plans sequentially.
 
     Runs each step of the plan, logs each step of
@@ -214,25 +222,24 @@ def run_plan(plan: list, console: Console) -> dict:
     results = {}
 
     for step in plan:
-        LOG.debug(f"Starting step {step.name}")
-        message = f"{step.description} ... "
-        with console.status(message) as status:
+        LOG.debug(f"Starting step {step.name!r}")
+        with console.status(step.status) as status:
             if step.has_prompts():
                 status.stop()
                 step.prompt(console)
                 status.start()
 
-            skip_result = step.is_skip()
+            skip_result = step.is_skip(status)
             if skip_result.result_type == ResultType.SKIPPED:
                 results[step.__class__.__name__] = skip_result
                 LOG.debug(f"Skipping step {step.name}")
                 continue
 
             LOG.debug(f"Running step {step.name}")
-            result = step.run()
+            result = step.run(status)
             results[step.__class__.__name__] = result
             LOG.debug(
-                f"Finished running step {step.name}. " f"Result: {result.result_type}"
+                f"Finished running step {step.name!r}. Result: {result.result_type}"
             )
 
         if result.result_type == ResultType.FAILED:
