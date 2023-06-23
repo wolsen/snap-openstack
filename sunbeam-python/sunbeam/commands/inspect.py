@@ -101,7 +101,7 @@ def plans(format: str):
         table.add_column("Locked", justify="center")
         for plan in plans:
             table.add_row(
-                plan.lstrip("tfstate-"),
+                plan,
                 "x" if plan in locks else "",
             )
         console.print(table)
