@@ -196,6 +196,8 @@ def get_nameservers(ipv4_only=True) -> List[str]:
         ]
         if ipv4_only:
             nameservers = [n for n in nameservers if not re.search("[a-zA-Z]", n)]
+        # De-duplicate the list of nameservers
+        nameservers = list(set(nameservers))
     except FileNotFoundError:
         nameservers = []
     return nameservers
