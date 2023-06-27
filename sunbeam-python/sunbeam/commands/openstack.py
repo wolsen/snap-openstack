@@ -17,7 +17,6 @@ import asyncio
 import logging
 from typing import List, Optional
 
-
 from juju.client.client import FullStatus
 from lightkube.core import exceptions
 from lightkube.core.client import Client as KubeClient

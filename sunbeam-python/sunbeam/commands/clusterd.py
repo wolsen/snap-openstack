@@ -65,7 +65,7 @@ class ClusterInitStep(BaseStep):
             if self.fqdn in member_names:
                 return Result(ResultType.SKIPPED)
         except ClusterServiceUnavailableException as e:
-            LOG.warning(e)
+            LOG.debug(e)
             return Result(ResultType.FAILED, str(e))
 
         return Result(ResultType.COMPLETED)
@@ -116,7 +116,7 @@ class ClusterAddNodeStep(BaseStep):
             if self.node_name in token_d:
                 return Result(ResultType.SKIPPED, token_d.get(self.node_name))
         except ClusterServiceUnavailableException as e:
-            LOG.warning(e)
+            LOG.debug(e)
             return Result(ResultType.FAILED, str(e))
 
         return Result(ResultType.COMPLETED)
@@ -158,7 +158,7 @@ class ClusterJoinNodeStep(BaseStep):
             if self.fqdn in member_names:
                 return Result(ResultType.SKIPPED)
         except ClusterServiceUnavailableException as e:
-            LOG.warning(e)
+            LOG.debug(e)
             return Result(ResultType.FAILED, str(e))
 
         return Result(ResultType.COMPLETED)
@@ -203,7 +203,7 @@ class ClusterListNodeStep(BaseStep):
 
             return Result(result_type=ResultType.COMPLETED, message=nodes_dict)
         except ClusterServiceUnavailableException as e:
-            LOG.warning(e)
+            LOG.debug(e)
             return Result(ResultType.FAILED, str(e))
 
 
@@ -225,7 +225,7 @@ class ClusterUpdateNodeStep(BaseStep):
             self.client.cluster.update_node_info(self.name, self.role, self.machine_id)
             return Result(result_type=ResultType.COMPLETED)
         except ClusterServiceUnavailableException as e:
-            LOG.warning(e)
+            LOG.debug(e)
             return Result(ResultType.FAILED, str(e))
 
 
@@ -279,7 +279,7 @@ class ClusterAddJujuUserStep(BaseStep):
             user = self.client.cluster.get_juju_user(self.username)
             LOG.debug(f"JujuUser {user} found in database.")
         except ClusterServiceUnavailableException as e:
-            LOG.warning(e)
+            LOG.debug(e)
             return Result(ResultType.FAILED, str(e))
         except JujuUserNotFoundException:
             return Result(ResultType.COMPLETED)
@@ -292,7 +292,7 @@ class ClusterAddJujuUserStep(BaseStep):
             self.client.cluster.add_juju_user(self.username, self.token)
             return Result(result_type=ResultType.COMPLETED)
         except ClusterServiceUnavailableException as e:
-            LOG.warning(e)
+            LOG.debug(e)
             return Result(ResultType.FAILED, str(e))
 
 
@@ -345,7 +345,7 @@ class ClusterUpdateJujuControllerStep(BaseStep, JujuStepHelper):
                 # Controller found, and parsed successfully
                 return Result(ResultType.SKIPPED)
         except ClusterServiceUnavailableException as e:
-            LOG.warning(e)
+            LOG.debug(e)
             return Result(ResultType.FAILED, str(e))
         except ConfigItemNotFoundException:
             pass  # Credentials missing, schedule for record
@@ -366,7 +366,7 @@ class ClusterUpdateJujuControllerStep(BaseStep, JujuStepHelper):
         try:
             juju_controller.write(self.client)
         except ClusterServiceUnavailableException as e:
-            LOG.warning(e)
+            LOG.debug(e)
             return Result(ResultType.FAILED, str(e))
 
         return Result(result_type=ResultType.COMPLETED)

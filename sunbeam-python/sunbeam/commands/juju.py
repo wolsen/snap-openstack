@@ -26,8 +26,8 @@ from typing import Optional
 
 import pexpect
 import pwgen
-from pyroute2 import Console
 import yaml
+from pyroute2 import Console
 from snaphelpers import Snap
 
 from sunbeam import utils
@@ -175,7 +175,7 @@ class JujuStepHelper:
 def bootstrap_questions():
     return {
         "management_cidr": questions.PromptQuestion(
-            "Management CIDRs shared by the hosts (separated by comma)",
+            "Management networks shared by hosts (CIDRs, separated by comma)",
             default_value=utils.get_local_cidr_by_default_routes(),
         ),
     }
@@ -384,7 +384,8 @@ class JujuGrantModelAccessStep(BaseStep, JujuStepHelper):
 
     def __init__(self, jhelper: JujuHelper, name: str, model: str):
         super().__init__(
-            "Grant access on model", f"Grant user {name} admin access to model {model}"
+            "Grant access on model",
+            f"Granting user {name} admin access to model {model}",
         )
 
         self.jhelper = jhelper
@@ -440,7 +441,7 @@ class RemoveJujuUserStep(BaseStep, JujuStepHelper):
     """Remove user in juju."""
 
     def __init__(self, name: str):
-        super().__init__("Remove User", "Removing machine user from Juju")
+        super().__init__("Remove User", f"Removing machine user {name} from Juju")
         self.username = name
 
         home = os.environ.get("SNAP_REAL_HOME")
@@ -492,7 +493,9 @@ class RegisterJujuUserStep(BaseStep, JujuStepHelper):
     def __init__(
         self, name: str, controller: str, data_location: Path, replace: bool = False
     ):
-        super().__init__("Register Juju User", "Registering Juju user using token")
+        super().__init__(
+            "Register Juju User", f"Registering machine user {name} using token"
+        )
         self.username = name
         self.controller = controller
         self.data_location = data_location
@@ -826,7 +829,7 @@ class SaveJujuUserLocallyStep(BaseStep):
     """Save user locally."""
 
     def __init__(self, name: str, data_location: Path):
-        super().__init__("Save User", "Save Juju user for local usage")
+        super().__init__("Save User", f"Saving machine user {name} for local usage")
         self.username = name
         self.data_location = data_location
 
@@ -875,7 +878,7 @@ class WriteJujuStatusStep(BaseStep, JujuStepHelper):
         model: str,
         file_path: Path,
     ):
-        super().__init__("Write Model status", f"Record status of model {model}")
+        super().__init__("Write Model status", f"Recording status of model {model}")
 
         self.jhelper = jhelper
         self.model = model
@@ -930,7 +933,7 @@ class WriteCharmLogStep(BaseStep, JujuStepHelper):
         file_path: Path,
     ):
         super().__init__(
-            "Get charm logs model", f"Getting charm logs for {model} model"
+            "Get charm logs model", f"Retrieving charm logs for {model} model"
         )
         self.jhelper = jhelper
         self.model = model
@@ -987,7 +990,9 @@ class JujuLoginStep(BaseStep, JujuStepHelper):
     """Login to Juju Controller"""
 
     def __init__(self, data_location: Path):
-        super().__init__("Login to Juju Controller", "Login to Juju Controller")
+        super().__init__(
+            "Login to Juju controller", "Authenticating with Juju controller"
+        )
         self.data_location = data_location
 
     def is_skip(self, status: Optional["Status"] = None) -> Result:
