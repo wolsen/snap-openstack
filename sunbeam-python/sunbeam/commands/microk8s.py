@@ -339,7 +339,8 @@ class StoreMicrok8sConfigStep(BaseStep, JujuStepHelper):
 
     def __init__(self, jhelper: JujuHelper):
         super().__init__(
-            "Store MicroK8S config", "Store MicroK8S config into sunbeam database"
+            "Store MicroK8S config",
+            "Storing MicroK8S configuration in sunbeam database",
         )
         self.jhelper = jhelper
 
