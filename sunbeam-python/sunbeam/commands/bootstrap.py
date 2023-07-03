@@ -24,6 +24,7 @@ from rich.console import Console
 from snaphelpers import Snap
 
 from sunbeam import utils
+from sunbeam.commands.bootstrap_state import SetBootstrapped
 from sunbeam.commands.clusterd import (
     ClusterAddJujuUserStep,
     ClusterInitStep,
@@ -288,6 +289,7 @@ def bootstrap(
         )
         plan5.append(AddHypervisorUnitStep(fqdn, jhelper))
 
+    plan5.append(SetBootstrapped())
     run_plan(plan5, console)
 
     click.echo(f"Node has been bootstrapped with roles: {pretty_roles}")

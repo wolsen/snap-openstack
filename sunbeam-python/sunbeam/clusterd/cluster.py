@@ -107,6 +107,10 @@ class MicroClusterService(service.BaseService):
 class ExtendedAPIService(service.BaseService):
     """Client for Sunbeam extended Cluster API."""
 
+    # SUNBEAM_BOOTSTRAP_KEY is used to track whether sunbeam bootstrap has
+    # sucessfully run. Note: this is distinct from microcluster bootstrap.
+    SUNBEAM_BOOTSTRAP_KEY = "sunbeam_bootstrapped"
+
     def add_node_info(self, name: str, role: List[str]) -> None:
         """Add Node information to cluster database."""
         data = {"name": name, "role": role}
@@ -193,6 +197,24 @@ class ExtendedAPIService(service.BaseService):
     def unlock_terraform_plan(self, plan: str, lock: dict) -> None:
         """Unlock plan."""
         self._put(f"/1.0/terraformunlock/{plan}", data=json.dumps(lock))
+
+    def unset_sunbeam_bootstrapped(self) -> None:
+        """Remove sunbeam bootstrapped key."""
+        self.update_config(self.SUNBEAM_BOOTSTRAP_KEY, json.dumps("False"))
+
+    def set_sunbeam_bootstrapped(self) -> None:
+        """Mark sunbeam deployment as bootstrapped."""
+        self.update_config(self.SUNBEAM_BOOTSTRAP_KEY, json.dumps("True"))
+
+    def check_sunbeam_bootstrapped(self) -> bool:
+        """Check if the sunbeam deployment has been bootstrapped"""
+        try:
+            state = json.loads(self.get_config(self.SUNBEAM_BOOTSTRAP_KEY))
+        except service.ConfigItemNotFoundException:
+            state = False
+        except service.ClusterServiceUnavailableException:
+            state = False
+        return state
 
 
 class ClusterService(MicroClusterService, ExtendedAPIService):
