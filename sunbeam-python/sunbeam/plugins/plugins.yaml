@@ -1,3 +1,9 @@
 sunbeam-plugins:
   description: Sunbeam core plugins
-  plugins: []
+  plugins:
+    - name: "pro"
+      version: "0.0.1"
+      description: "Ubuntu pro plugin"
+      path: sunbeam.plugins.pro.plugin.ProPlugin
+      supported_architectures:
+        - amd64

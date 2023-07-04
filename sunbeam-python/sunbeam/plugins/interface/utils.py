@@ -24,7 +24,7 @@ import yaml
 LOG = logging.getLogger()
 
 
-def get_all_registered_groups(self, cli: click.Group) -> dict:
+def get_all_registered_groups(cli: click.Group) -> dict:
     """Get all the groups from cli object."""
 
     def _get_all_groups(group):

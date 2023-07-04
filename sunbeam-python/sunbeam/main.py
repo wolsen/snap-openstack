@@ -31,7 +31,6 @@ from sunbeam.commands import node as node_cmds
 from sunbeam.commands import openrc as openrc_cmds
 from sunbeam.commands import prepare_node as prepare_node_cmds
 from sunbeam.commands import resize as resize_cmds
-from sunbeam.commands.plugins import pro
 from sunbeam.plugins.interface.utils import get_plugin_classes
 from sunbeam.utils import CatchGroup
 
@@ -98,12 +97,10 @@ def main():
     cluster.add_command(node_cmds.remove)
     cluster.add_command(resize_cmds.resize)
 
-    # Plugins
-    for plugin in (pro,):
-        plugin.register(enable, disable)
     cli.add_command(enable)
     cli.add_command(disable)
 
+    # Register the plugins
     # Core plugins in snap-openstack repo
     core_plugin_file = Path(__file__).parent / CORE_PLUGINS_YAML
     for plugin in get_plugin_classes(core_plugin_file):

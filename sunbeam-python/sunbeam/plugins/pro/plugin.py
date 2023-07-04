@@ -13,13 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Ubuntu Pro subscription management plugin."""
-
 import logging
 import shutil
+from pathlib import Path
 from typing import Optional
 
 import click
+from packaging.version import Version
 from rich.console import Console
 from rich.status import Status
 from snaphelpers import Snap
@@ -32,6 +32,7 @@ from sunbeam.commands.terraform import (
 )
 from sunbeam.jobs.common import BaseStep, Result, ResultType, run_plan
 from sunbeam.jobs.juju import MODEL, JujuHelper, TimeoutException, run_sync
+from sunbeam.plugins.interface.v1.base import EnableDisablePlugin
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -141,79 +142,79 @@ class DisableUbuntuProApplicationStep(BaseStep, JujuStepHelper):
         return Result(ResultType.COMPLETED)
 
 
-@click.command()
-@click.option(
-    "-t",
-    "--token",
-    help="Ubuntu Pro token to use for subscription attachment",
-    prompt=True,
-)
-def enable_pro(token: str) -> None:
-    """Enable Ubuntu Pro across deployment.
+class ProPlugin(EnableDisablePlugin):
+    version = Version("0.0.1")
 
-    Minimum hardware requirements for support:
+    def __init__(self) -> None:
+        super().__init__(name="pro")
+        self.token = None
+        self.snap = Snap()
+        self.tfplan = f"deploy-{self.name}"
 
-    https://microstack.run/docs/enterprise-reqs
-    """
+    def pre_enable(self):
+        src = Path(__file__).parent / "etc" / self.tfplan
+        dst = self.snap.paths.user_common / "etc" / self.tfplan
+        LOG.debug(f"Updating {dst} from {src}...")
+        shutil.copytree(src, dst, dirs_exist_ok=True)
 
-    tfplan = "deploy-ubuntu-pro"
-    snap = Snap()
-    src = snap.paths.snap / "etc" / tfplan
-    dst = snap.paths.user_common / "etc" / tfplan
-    LOG.debug(f"Updating {dst} from {src}...")
-    shutil.copytree(src, dst, dirs_exist_ok=True)
+    def run_enable_plans(self):
+        data_location = self.snap.paths.user_data
+        tfhelper = TerraformHelper(
+            path=self.snap.paths.user_common / "etc" / self.tfplan,
+            plan="ubuntu-pro-plan",
+            backend="http",
+            data_location=data_location,
+        )
+        jhelper = JujuHelper(data_location)
+        plan = [
+            TerraformInitStep(tfhelper),
+            EnableUbuntuProApplicationStep(tfhelper, jhelper, self.token),
+        ]
 
-    data_location = snap.paths.user_data
-    tfhelper = TerraformHelper(
-        path=snap.paths.user_common / "etc" / tfplan,
-        plan="ubuntu-pro-plan",
-        backend="http",
-        data_location=data_location,
+        run_plan(plan, console)
+
+        click.echo(
+            "Please check minimum hardware requirements for support:\n\n"
+            "    https://microstack.run/docs/enterprise-reqs\n"
+        )
+        click.echo("Ubuntu Pro enabled.")
+
+    def pre_disable(self):
+        self.pre_enable()
+
+    def run_disable_plans(self):
+        data_location = self.snap.paths.user_data
+        tfhelper = TerraformHelper(
+            path=self.snap.paths.user_common / "etc" / self.tfplan,
+            plan="ubuntu-pro-plan",
+            backend="http",
+            data_location=data_location,
+        )
+        plan = [
+            TerraformInitStep(tfhelper),
+            DisableUbuntuProApplicationStep(tfhelper),
+        ]
+
+        run_plan(plan, console)
+        click.echo("Ubuntu Pro disabled.")
+
+    @click.command()
+    @click.option(
+        "-t",
+        "--token",
+        help="Ubuntu Pro token to use for subscription attachment",
+        prompt=True,
     )
-    jhelper = JujuHelper(data_location)
-    plan = [
-        TerraformInitStep(tfhelper),
-        EnableUbuntuProApplicationStep(tfhelper, jhelper, token),
-    ]
+    def enable_plugin(self, token: str) -> None:
+        """Enable Ubuntu Pro across deployment.
 
-    run_plan(plan, console)
+        Minimum hardware requirements for support:
 
-    click.echo(
-        "Please check minimum hardware requirements for support:\n\n"
-        "    https://microstack.run/docs/enterprise-reqs\n"
-    )
-    click.echo("Ubuntu Pro enabled.")
+        https://microstack.run/docs/enterprise-reqs
+        """
+        self.token = token
+        super().enable_plugin()
 
-
-@click.command()
-def disable_pro() -> None:
-    """Disable Ubuntu Pro across deployment."""
-
-    tfplan = "deploy-ubuntu-pro"
-    snap = Snap()
-    src = snap.paths.snap / "etc" / tfplan
-    dst = snap.paths.user_common / "etc" / tfplan
-    LOG.debug(f"Updating {dst} from {src}...")
-    shutil.copytree(src, dst, dirs_exist_ok=True)
-
-    data_location = snap.paths.user_data
-    tfhelper = TerraformHelper(
-        path=snap.paths.user_common / "etc" / tfplan,
-        plan="ubuntu-pro-plan",
-        backend="http",
-        data_location=data_location,
-    )
-    plan = [
-        TerraformInitStep(tfhelper),
-        DisableUbuntuProApplicationStep(tfhelper),
-    ]
-
-    run_plan(plan, console)
-
-    click.echo("Ubuntu Pro disabled.")
-
-
-def register(enable: click.Group, disable: click.Group):
-    """Register plugin enable and disable commands."""
-    enable.add_command(enable_pro, "pro")
-    disable.add_command(disable_pro, "pro")
+    @click.command()
+    def disable_plugin(self) -> None:
+        super().disable_plugin()

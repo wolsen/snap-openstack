@@ -21,7 +21,8 @@ import click
 from packaging.version import Version
 
 from sunbeam.clusterd.client import Client
-from sunbeam.plugin.interface import utils
+from sunbeam.clusterd.service import ConfigItemNotFoundException
+from sunbeam.plugins.interface import utils
 
 LOG = logging.getLogger(__name__)
 
@@ -47,7 +48,6 @@ class BasePlugin(ABC):
     def __init__(self, name):
         self.name = name
         self.client = Client()
-        self.update_plugin_info({})
 
     @property
     def plugin_key(self) -> str:
@@ -79,7 +79,11 @@ class BasePlugin(ABC):
 
     def get_plugin_info(self) -> dict:
         """Get plugin information from clusterdb."""
-        return self.client.cluster.get_config(self.plugin_key)
+        try:
+            return self.client.cluster.get_config(self.plugin_key)
+        except ConfigItemNotFoundException as e:
+            LOG.debug(str(e))
+            return {}
 
     def update_plugin_info(self, info: dict) -> None:
         """Update plugin information in clusterdb."""
@@ -202,7 +206,6 @@ class EnableDisablePlugin(BasePlugin):
 
     def __init__(self, name: str):
         super().__init__(name=name)
-        self.update_plugin_info({"enabled": "false"})
 
     @property
     def enabled(self) -> bool:
