@@ -15,6 +15,7 @@
 
 
 import logging
+from abc import ABC, abstractmethod
 
 from packaging.version import Version
 
@@ -35,7 +36,7 @@ class ClickInstantiator:
         return self.command(self.klass(), *args, **kwargs)
 
 
-class BasePlugin:
+class BasePlugin(ABC):
     # Version of plugin interface used by Plugin
     interface_version = Version("0.0.1")
 
@@ -93,6 +94,7 @@ class BasePlugin:
         # Validate if command functions mentioned in above dict are defined in subclass
         return True
 
+    @abstractmethod
     def commands(self) -> dict:
         """Dict of clickgroup along with commands.
 
@@ -192,3 +194,54 @@ class BasePlugin:
                 # This allows plugin to create new groups and commands in single place.
                 if isinstance(cmd, click.Group):
                     groups[cmd_name] = cmd
+
+
+class EnableDisablePlugin(BasePlugin):
+    interface_version = Version("0.0.1")
+
+    def __init__(self, name: str):
+        super().__init__(name=name)
+        self.update_plugin_info({"enabled": "false"})
+
+    @property
+    def enabled(self) -> bool:
+        info = self.get_plugin_info(self.plugin_key)
+        return info.get("enabled", "false").lower() == "true"
+
+    def pre_enable(self):
+        pass
+
+    def post_enable(self):
+        pass
+
+    @abstractmethod
+    def run_enable_plans(self):
+        """Run plans to enable plugin."""
+
+    def enable_plugin(self):
+        self.pre_enable()
+        self.run_enable_plans()
+        self.post_enable()
+        self.update_plugin_info({"enabled": "true"})
+
+    def pre_disable(self):
+        pass
+
+    def post_disable(self):
+        pass
+
+    @abstractmethod
+    def run_disable_plans(self):
+        """Run plans to disable plugin."""
+
+    def disable_plugin(self):
+        self.pre_disable()
+        self.run_disable_plans()
+        self.post_disable()
+        self.update_plugin_info({"enabled": "false"})
+
+    def commands(self) -> dict:
+        return {
+            "enable": [{"name": self.name, "command": "enable_plugin"}],
+            "disable": [{"name": self.name, "command": "disable_plugin"}],
+        }
