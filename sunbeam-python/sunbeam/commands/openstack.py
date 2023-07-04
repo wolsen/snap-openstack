@@ -166,12 +166,32 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         :return: ResultType.SKIPPED if the Step should be skipped,
                 ResultType.COMPLETED or ResultType.FAILED otherwise
         """
-        try:
-            run_sync(self.jhelper.get_model(OPENSTACK_MODEL))
-        except ModelNotFoundException:
-            return Result(ResultType.COMPLETED)
+        if status is not None:
+            status.update(self.status + "determining appropriate configuration")
 
-        return Result(ResultType.SKIPPED)
+        try:
+            previous_config = read_config(self.client, TOPOLOGY_KEY)
+        except ConfigItemNotFoundException:
+            # Config was never registered in database
+            previous_config = {}
+
+        determined_topology = determine_target_topology_at_bootstrap()
+
+        if self.topology == "auto":
+            self.topology = previous_config.get("topology", determined_topology)
+        LOG.debug(f"Bootstrap: topology {self.topology}")
+
+        if self.database == "auto":
+            self.database = previous_config.get("database", determined_topology)
+        LOG.debug(f"Bootstrap: database topology {self.database}")
+
+        if (database := previous_config.get("database")) and database != self.database:
+            return Result(
+                ResultType.FAILED,
+                "Database topology cannot be changed, please destroy and re-bootstrap",
+            )
+
+        return Result(ResultType.COMPLETED)
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Execute configuration using terraform."""
@@ -180,17 +200,6 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         # - Enabling HA
         # - Enabling/disabling specific services
         # - Switch channels for the charmed operators
-        if status is not None:
-            status.update(self.status + "determining appropriate configuration")
-
-        determined_topology = determine_target_topology_at_bootstrap()
-        if self.topology == "auto":
-            self.topology = determined_topology
-        LOG.debug(f"Bootstrap: topology {self.topology}")
-
-        if self.database == "auto":
-            self.database = determined_topology
-        LOG.debug(f"Bootstrap: database topology {self.database}")
         update_config(
             self.client,
             TOPOLOGY_KEY,
