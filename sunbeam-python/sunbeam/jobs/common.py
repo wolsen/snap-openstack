@@ -235,6 +235,9 @@ def run_plan(plan: List[BaseStep], console: Console) -> dict:
                 LOG.debug(f"Skipping step {step.name}")
                 continue
 
+            if skip_result.result_type == ResultType.FAILED:
+                raise click.ClickException(skip_result.message)
+
             LOG.debug(f"Running step {step.name}")
             result = step.run(status)
             results[step.__class__.__name__] = result
