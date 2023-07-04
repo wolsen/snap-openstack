@@ -17,20 +17,20 @@ from typing import Optional
 
 from rich.status import Status
 
-from sunbeam.jobs.common import BaseStep, Result, ResultType
 from sunbeam.clusterd.client import Client
+from sunbeam.jobs.common import BaseStep, Result, ResultType
 
 LOG = logging.getLogger(__name__)
 
 
 class SetBootstrapped(BaseStep):
-    """Post Deployment step to configure MySQL."""
+    """Post Deployment step to update bootstrap flag in cluster DB."""
 
     def __init__(self):
         super().__init__("Mark bootstrapped", "Mark deployment bootstrapped")
         self.client = Client()
 
     def run(self, status: Optional[Status] = None) -> Result:
-        LOG.warning("Setting deployment as bootstrapped")
+        LOG.debug("Setting deployment as bootstrapped")
         self.client.cluster.set_sunbeam_bootstrapped()
         return Result(ResultType.COMPLETED)

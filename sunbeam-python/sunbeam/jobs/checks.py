@@ -282,5 +282,8 @@ class VerifyBootstrappedCheck(Check):
         if bootstrapped:
             return True
         else:
-            self.message = ("Deployment not bootstrapped or bootstrap process has not completed succesfully. Please run `sunbeam cluster bootstrap`")
+            self.message = (
+                "Deployment not bootstrapped or bootstrap process has not "
+                "completed succesfully. Please run `sunbeam cluster bootstrap`"
+            )
             return False
