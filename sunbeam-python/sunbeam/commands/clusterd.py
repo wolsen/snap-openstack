@@ -67,6 +67,8 @@ class ClusterInitStep(BaseStep):
                 return Result(ResultType.SKIPPED)
         except ClusterServiceUnavailableException as e:
             LOG.debug(e)
+            if "Sunbeam Cluster not initialized" in str(e):
+                return Result(ResultType.COMPLETED)
             return Result(ResultType.FAILED, str(e))
 
         return Result(ResultType.COMPLETED)
@@ -160,6 +162,8 @@ class ClusterJoinNodeStep(BaseStep):
                 return Result(ResultType.SKIPPED)
         except ClusterServiceUnavailableException as e:
             LOG.debug(e)
+            if "Sunbeam Cluster not initialized" in str(e):
+                return Result(ResultType.COMPLETED)
             return Result(ResultType.FAILED, str(e))
 
         return Result(ResultType.COMPLETED)
