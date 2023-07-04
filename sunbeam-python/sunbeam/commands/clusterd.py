@@ -15,7 +15,8 @@
 
 import ipaddress
 import logging
-from typing import List, Optional
+import re
+from typing import List, Optional, Union
 
 from sunbeam import utils
 from sunbeam.clusterd.client import Client as clusterClient
@@ -308,6 +309,16 @@ class ClusterUpdateJujuControllerStep(BaseStep, JujuStepHelper):
         self.client = clusterClient()
         self.controller = controller
 
+    def _extract_ip(self, ip) -> Union[ipaddress.IPv4Address, ipaddress.IPv6Address]:
+        """Extract ip from ipv4 or ipv6 ip:port"""
+        # Check for ipv6 addr
+        ipv6_addr = re.match(r"\[(.*?)\]", ip)
+        if ipv6_addr:
+            ip_str = ipv6_addr.group(1)
+        else:
+            ip_str = ip.split(":")[0]
+        return ipaddress.ip_address(ip_str)
+
     def filter_ips(self, ips: List[str], network_str: Optional[str]) -> List[str]:
         """Filter ips missing from specified networks
 
@@ -320,9 +331,7 @@ class ClusterUpdateJujuControllerStep(BaseStep, JujuStepHelper):
         return list(
             filter(
                 lambda ip: any(
-                    True
-                    for network in networks
-                    if ipaddress.ip_address(ip.split(":")[0]) in network
+                    True for network in networks if self._extract_ip(ip) in network
                 ),
                 ips,
             )
