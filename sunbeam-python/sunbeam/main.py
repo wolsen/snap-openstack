@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import logging
+from pathlib import Path
 
 import click
 from snaphelpers import Snap
@@ -31,6 +32,7 @@ from sunbeam.commands import openrc as openrc_cmds
 from sunbeam.commands import prepare_node as prepare_node_cmds
 from sunbeam.commands import resize as resize_cmds
 from sunbeam.commands.plugins import pro
+from sunbeam.plugins.interface.utils import get_plugin_classes
 from sunbeam.utils import CatchGroup
 
 LOG = logging.getLogger()
@@ -38,6 +40,9 @@ LOG = logging.getLogger()
 # Update the help options to allow -h in addition to --help for
 # triggering the help for various commands
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
+
+# Core plugins yaml
+CORE_PLUGINS_YAML = "plugins/plugins.yaml"
 
 
 @click.group("init", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
@@ -98,6 +103,12 @@ def main():
         plugin.register(enable, disable)
     cli.add_command(enable)
     cli.add_command(disable)
+
+    # Core plugins in snap-openstack repo
+    core_plugin_file = Path(__file__).parent / CORE_PLUGINS_YAML
+    for plugin in get_plugin_classes(core_plugin_file):
+        p = plugin()
+        p.register(cli)
 
     cli()
 

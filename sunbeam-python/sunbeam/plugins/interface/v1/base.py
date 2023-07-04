@@ -17,6 +17,7 @@
 import logging
 from abc import ABC, abstractmethod
 
+import click
 from packaging.version import Version
 
 from sunbeam.clusterd.client import Client
@@ -169,7 +170,7 @@ class BasePlugin(ABC):
         """
         raise NotImplementedError
 
-    def register(self, groups_dict: dict):
+    def register(self, cli: click.Group):
         """Register plugin groups and commands."""
         LOG.debug(f"Registering plugin {self.name}")
         groups = utils.get_all_registered_groups(cli)
