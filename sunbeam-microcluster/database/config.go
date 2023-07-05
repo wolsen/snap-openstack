@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/lxc/lxd/lxd/db/query"
+	"github.com/canonical/lxd/lxd/db/query"
 )
 
 //go:generate -command mapper lxd-generate db mapper -t config.mapper.go
