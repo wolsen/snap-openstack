@@ -113,25 +113,25 @@ class BasePlugin(ABC):
             "enable": [
                 {
                     "name": "subcmd",
-                    "command": "enable_subcmd",
+                    "command": self.enable_subcmd,
                 },
             ],
             "disable": [
                 {
                     "name": "subcmd",
-                    "command": "disable_subcmd",
+                    "command": self.disable_subcmd,
                 },
             ],
             "init": [
                 {
                     "name": "subgroup",
-                    "command": "trobuleshoot",
+                    "command": self.trobuleshoot,
                 },
             ],
             "subgroup": [
                 {
                     "name": "subcmd",
-                    "command": "troubleshoot_subcmd",
+                    "command": self.troubleshoot_subcmd,
                 },
             ],
         }
@@ -172,7 +172,6 @@ class BasePlugin(ABC):
         sunbeam disable subcmd
         sunbeam troubleshoot subcmd
         """
-        raise NotImplementedError
 
     def register(self, cli: click.Group):
         """Register plugin groups and commands."""
@@ -188,7 +187,7 @@ class BasePlugin(ABC):
                 )
 
             for command in commands:
-                cmd = getattr(self, command.get("command"))
+                cmd = command.get("command")
                 cmd_name = command.get("name")
                 cmd.callback = ClickInstantiator(cmd.callback, type(self))
                 group_obj.add_command(cmd, cmd_name)
@@ -246,6 +245,6 @@ class EnableDisablePlugin(BasePlugin):
 
     def commands(self) -> dict:
         return {
-            "enable": [{"name": self.name, "command": "enable_plugin"}],
-            "disable": [{"name": self.name, "command": "disable_plugin"}],
+            "enable": [{"name": self.name, "command": self.enable_plugin}],
+            "disable": [{"name": self.name, "command": self.disable_plugin}],
         }
