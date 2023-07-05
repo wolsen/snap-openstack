@@ -126,7 +126,7 @@ def unlock_plan(plan: str, force: bool):
     try:
         lock = client.cluster.get_terraform_lock(plan)
     except ConfigItemNotFoundException as e:
-        raise click.ClickException(f"Plan {plan} not found") from e
+        raise click.ClickException(f"Lock for {plan!r} not found") from e
     if not force:
         lock_creation_time = datetime.datetime.strptime(
             lock["Created"][:-4] + "Z", "%Y-%m-%dT%H:%M:%S.%fZ"
@@ -142,5 +142,5 @@ def unlock_plan(plan: str, force: bool):
     try:
         client.cluster.unlock_terraform_plan(plan, lock)
     except ConfigItemNotFoundException as e:
-        raise click.ClickException(f"Plan {plan!r} not found") from e
+        raise click.ClickException(f"Lock for {plan!r} not found") from e
     console.print(f"Unlocked plan {plan!r}")
