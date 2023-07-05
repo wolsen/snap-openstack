@@ -757,7 +757,6 @@ def configure(
         path=snap.paths.user_common / "etc" / "demo-setup",
         env=admin_credentials,
         plan="demo-setup",
-        parallelism=1,
         backend="http",
         data_location=data_location,
     )

@@ -216,14 +216,12 @@ def join(
     tfhelper_openstack_deploy = TerraformHelper(
         path=snap.paths.user_common / "etc" / "deploy-openstack",
         plan="openstack-plan",
-        parallelism=1,
         backend="http",
         data_location=data_location,
     )
     tfhelper_hypervisor_deploy = TerraformHelper(
         path=snap.paths.user_common / "etc" / "deploy-openstack-hypervisor",
         plan="hypervisor-plan",
-        parallelism=1,
         backend="http",
         data_location=data_location,
     )

@@ -204,35 +204,30 @@ def bootstrap(
     tfhelper = TerraformHelper(
         path=snap.paths.user_common / "etc" / "deploy-microk8s",
         plan="microk8s-plan",
-        parallelism=1,
         backend="http",
         data_location=data_location,
     )
     tfhelper_openstack_deploy = TerraformHelper(
         path=snap.paths.user_common / "etc" / "deploy-openstack",
         plan="openstack-plan",
-        parallelism=1,
         backend="http",
         data_location=data_location,
     )
     tfhelper_hypervisor_deploy = TerraformHelper(
         path=snap.paths.user_common / "etc" / "deploy-openstack-hypervisor",
         plan="hypervisor-plan",
-        parallelism=1,
         backend="http",
         data_location=data_location,
     )
     tfhelper_microceph_deploy = TerraformHelper(
         path=snap.paths.user_common / "etc" / "deploy-microceph",
         plan="microceph-plan",
-        parallelism=1,
         backend="http",
         data_location=data_location,
     )
     tfhelper_sunbeam_machine = TerraformHelper(
         path=snap.paths.user_common / "etc" / "deploy-sunbeam-machine",
         plan="sunbeam-machine-plan",
-        parallelism=1,
         backend="http",
         data_location=data_location,
     )
