@@ -22,6 +22,7 @@ from packaging.version import Version
 
 from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import ConfigItemNotFoundException
+from sunbeam.jobs.common import read_config, update_config
 from sunbeam.plugins.interface import utils
 
 LOG = logging.getLogger(__name__)
@@ -80,7 +81,7 @@ class BasePlugin(ABC):
     def get_plugin_info(self) -> dict:
         """Get plugin information from clusterdb."""
         try:
-            return self.client.cluster.get_config(self.plugin_key)
+            return read_config(self.client, self.plugin_key)
         except ConfigItemNotFoundException as e:
             LOG.debug(str(e))
             return {}
@@ -90,7 +91,7 @@ class BasePlugin(ABC):
         info_from_db = self.get_plugin_info()
         info_from_db.update(info)
         info_from_db.update({"version": self.version})
-        self.client.cluster.update_config(self.plugin_key, info_from_db)
+        update_config(self.client, self.plugin_key, info_from_db)
 
     def validate_commands(self) -> bool:
         # TODO(hemanth): Validate the dictionary if it follows the format

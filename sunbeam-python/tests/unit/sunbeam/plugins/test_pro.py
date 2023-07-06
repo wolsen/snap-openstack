@@ -19,13 +19,13 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from sunbeam.commands.terraform import TerraformException
+from sunbeam.jobs.common import ResultType
+from sunbeam.jobs.juju import TimeoutException
 from sunbeam.plugins.pro.plugin import (
     DisableUbuntuProApplicationStep,
     EnableUbuntuProApplicationStep,
 )
-from sunbeam.commands.terraform import TerraformException
-from sunbeam.jobs.common import ResultType
-from sunbeam.jobs.juju import TimeoutException
 
 
 @pytest.fixture(autouse=True)
