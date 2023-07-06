@@ -67,6 +67,7 @@ from sunbeam.jobs.checks import (
     JujuSnapCheck,
     LocalShareCheck,
     SshKeysConnectedCheck,
+    SystemRequirementsCheck,
     VerifyHypervisorHostnameCheck,
 )
 from sunbeam.jobs.common import (
@@ -162,6 +163,7 @@ def bootstrap(
         shutil.copytree(src, dst, dirs_exist_ok=True)
 
     preflight_checks = []
+    preflight_checks.append(SystemRequirementsCheck())
     preflight_checks.append(JujuSnapCheck())
     preflight_checks.append(SshKeysConnectedCheck())
     preflight_checks.append(DaemonGroupCheck())
