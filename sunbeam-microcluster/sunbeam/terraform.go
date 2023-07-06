@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/canonical/lxd/shared/api"
 	"github.com/canonical/microcluster/state"
-	"github.com/lxc/lxd/shared/api"
 
 	"github.com/openstack-snaps/snap-openstack/sunbeam-microcluster/api/types"
 )
