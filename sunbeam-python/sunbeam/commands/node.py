@@ -61,6 +61,7 @@ from sunbeam.jobs.checks import (
     JujuSnapCheck,
     LocalShareCheck,
     SshKeysConnectedCheck,
+    SystemRequirementsCheck,
     VerifyFQDNCheck,
     VerifyHypervisorHostnameCheck,
 )
@@ -186,6 +187,7 @@ def join(
     LOG.debug(f"Node joining the cluster with roles: {pretty_roles}")
 
     preflight_checks = []
+    preflight_checks.append(SystemRequirementsCheck())
     preflight_checks.append(JujuSnapCheck())
     preflight_checks.append(SshKeysConnectedCheck())
     preflight_checks.append(DaemonGroupCheck())
