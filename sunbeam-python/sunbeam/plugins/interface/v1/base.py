@@ -90,7 +90,7 @@ class BasePlugin(ABC):
         """Update plugin information in clusterdb."""
         info_from_db = self.get_plugin_info()
         info_from_db.update(info)
-        info_from_db.update({"version": self.version})
+        info_from_db.update({"version": str(self.version)})
         update_config(self.client, self.plugin_key, info_from_db)
 
     def validate_commands(self) -> bool:
@@ -99,6 +99,14 @@ class BasePlugin(ABC):
 
         # Validate if command functions mentioned in above dict are defined in subclass
         return True
+
+    def is_openstack_control_plane(self):
+        """Is plugin deploys openstack control plane."""
+        return False
+
+    def is_cluster_bootstrapped(self):
+        """Is sunbeam cluster bootstrapped."""
+        return self.client.cluster.check_sunbeam_bootstrapped()
 
     @abstractmethod
     def commands(self) -> dict:
