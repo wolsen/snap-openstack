@@ -20,12 +20,12 @@ from pathlib import Path
 
 from snaphelpers import Snap, SnapCtl
 
+from sunbeam.clusterd.client import Client
 from sunbeam.jobs.common import (
     RAM_16_GB_IN_KB,
     get_host_total_cores,
     get_host_total_ram,
 )
-from sunbeam.clusterd.client import Client
 
 LOG = logging.getLogger(__name__)
 
