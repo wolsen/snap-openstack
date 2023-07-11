@@ -44,6 +44,7 @@ def get_all_registered_groups(cli: click.Group) -> dict:
         return groups
 
     groups = _get_all_groups(cli)
+    groups["init"] = cli
     return groups
 
 

@@ -94,10 +94,34 @@ class BasePlugin(ABC):
         update_config(self.client, self.plugin_key, info_from_db)
 
     def validate_commands(self) -> bool:
-        # TODO(hemanth): Validate the dictionary if it follows the format
-        # {<group>: [{"name": <command name>, "command": <command function>}]}
+        """validate the commands dictionary.
 
-        # Validate if command functions mentioned in above dict are defined in subclass
+        Validate if the dictionary follows the format
+        {<group>: [{"name": <command name>, "command": <command function>}]}
+        """
+        for group, commands in self.commands().items():
+            for command in commands:
+                cmd_name = command.get("name")
+                cmd_func = command.get("command")
+                if None in (cmd_name, cmd_func):
+                    LOG.warning(
+                        f"Plugin {self.name}: Commands dictionary is not in "
+                        "required format"
+                    )
+                    return False
+
+                if not any(
+                    [
+                        isinstance(cmd_func, click.Group),
+                        isinstance(cmd_func, click.Command),
+                    ]
+                ):
+                    LOG.warning(
+                        f"Plugin {self.name}: {cmd_func} should be either "
+                        "click.Group or click.Command"
+                    )
+                    return False
+
         return True
 
     def is_openstack_control_plane(self):
@@ -185,22 +209,45 @@ class BasePlugin(ABC):
     def register(self, cli: click.Group):
         """Register plugin groups and commands."""
         LOG.debug(f"Registering plugin {self.name}")
-        groups = utils.get_all_registered_groups(cli)
+        if not self.validate_commands():
+            LOG.warning(f"Not able to register the plugin {self.name}")
+            return
 
+        groups = utils.get_all_registered_groups(cli)
+        LOG.debug(f"Registered groups: {groups}")
         for group, commands in self.commands().items():
             group_obj = groups.get(group)
             if not group_obj:
                 cmd_names = [command.get("name") for command in commands]
                 LOG.warning(
-                    f"Not able to register command {cmd_names} in group {group}"
+                    f"Plugin {self.name}: Not able to register command "
+                    f"{cmd_names} in group {group} as group does not exist"
                 )
+                continue
 
             for command in commands:
                 cmd = command.get("command")
                 cmd_name = command.get("name")
                 cmd.callback = ClickInstantiator(cmd.callback, type(self))
+                if cmd_name in group_obj.list_commands({}):
+                    if isinstance(cmd, click.Command):
+                        LOG.warning(
+                            f"Plugin {self.name}: Discarding adding command "
+                            f"{cmd_name} as it already exists in group {group}"
+                        )
+                    else:
+                        # Should be sub group and already exists
+                        LOG.debug(
+                            f"Plugin {self.name}: Group {cmd_name} already "
+                            f"part of parent group {group}"
+                        )
+                    continue
+
                 group_obj.add_command(cmd, cmd_name)
-                LOG.debug(f"Command {cmd_name} registered in group {group}")
+                LOG.debug(
+                    f"Plugin {self.name}: Command {cmd_name} registered in "
+                    f"group {group}"
+                )
 
                 # Add newly created click groups to the registered groups so that
                 # commands within the plugin can be registered on group.
@@ -230,6 +277,8 @@ class EnableDisablePlugin(BasePlugin):
     def run_enable_plans(self):
         """Run plans to enable plugin."""
 
+    @abstractmethod
+    @click.command()
     def enable_plugin(self):
         self.pre_enable()
         self.run_enable_plans()
@@ -246,6 +295,8 @@ class EnableDisablePlugin(BasePlugin):
     def run_disable_plans(self):
         """Run plans to disable plugin."""
 
+    @abstractmethod
+    @click.command()
     def disable_plugin(self):
         self.pre_disable()
         self.run_disable_plans()
