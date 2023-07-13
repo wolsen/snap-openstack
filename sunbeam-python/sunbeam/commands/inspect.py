@@ -15,9 +15,9 @@
 
 import datetime
 import logging
+import shutil
 import tarfile
 import tempfile
-import shutil
 from pathlib import Path
 
 import click
