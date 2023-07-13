@@ -228,7 +228,6 @@ class BasePlugin(ABC):
             for command in commands:
                 cmd = command.get("command")
                 cmd_name = command.get("name")
-                cmd.callback = ClickInstantiator(cmd.callback, type(self))
                 if cmd_name in group_obj.list_commands({}):
                     if isinstance(cmd, click.Command):
                         LOG.warning(
@@ -243,6 +242,7 @@ class BasePlugin(ABC):
                         )
                     continue
 
+                cmd.callback = ClickInstantiator(cmd.callback, type(self))
                 group_obj.add_command(cmd, cmd_name)
                 LOG.debug(
                     f"Plugin {self.name}: Command {cmd_name} registered in "
