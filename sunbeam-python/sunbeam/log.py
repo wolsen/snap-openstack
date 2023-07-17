@@ -66,6 +66,10 @@ def setup_root_logging(logfile: Optional[Path] = None):
         handler.setLevel(logging.DEBUG)
         handler.setFormatter(logging.Formatter("%(message)s", datefmt="[%X]"))
         logger.addHandler(handler)
+    else:
+        handler = logging.StreamHandler()
+        handler.setLevel(logging.WARNING)
+        logger.addHandler(handler)
 
     if logfile:
         handler = logging.FileHandler(logfile)
