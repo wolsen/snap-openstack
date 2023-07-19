@@ -56,43 +56,75 @@ from sunbeam.plugins.interface.v1.base import EnableDisablePlugin
 LOG = logging.getLogger(__name__)
 console = Console()
 
-APPLICATION_DEPLOY_TIMEOUT = 1200  # 15 minutes
+APPLICATION_DEPLOY_TIMEOUT = 900  # 15 minutes
 
 
-class TERRAFORM_PLAN_LOCATION(Enum):
+class TerraformPlanLocation(Enum):
+    """Enum to define Terraform plan location
+
+    There are 2 choices - either in sunbeam-terraform repo or
+    part of plugin in etc/deploy-<plugin name> directory.
+    """
+
     SUNBEAM_TERRAFORM_REPO = 1
     PLUGIN_REPO = 2
 
 
 class OpenStackControlPlanePlugin(EnableDisablePlugin):
+    """Interface for plugins to manage OpenStack Control plane components.
+
+    Plugins that manages OpenStack control plane components using terraform
+    plans can use this interface.
+
+    The terraform plans can be defined either in sunbeam-terraform repo or as part
+    of the plugin in specific directory etc/deploy-<plugin name>.
+    """
+
     interface_version = Version("0.0.1")
 
-    def __init__(self, name: str, tf_plan_location: TERRAFORM_PLAN_LOCATION) -> None:
+    def __init__(self, name: str, tf_plan_location: TerraformPlanLocation) -> None:
+        """Constructor for plugin interface.
+
+        :param name: Name of the plugin
+        :param tf_plan_location: Location where terraform plans are placed
+        """
         super().__init__(name=name)
         self.app_name = self.name.capitalize()
         self.tf_plan_location = tf_plan_location
-        if self.tf_plan_location == TERRAFORM_PLAN_LOCATION.SUNBEAM_TERRAFORM_REPO:
+
+        # Based on terraform plan location, tfplan will be either
+        # openstack or plugin name
+        if self.tf_plan_location == TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO:
             self.tfplan = "openstack"
         else:
             self.tfplan = self.name
 
         self.snap = Snap()
 
-    def _get_tf_plan_full_path(self):
-        if self.tf_plan_location == TERRAFORM_PLAN_LOCATION.SUNBEAM_TERRAFORM_REPO:
+    def _get_tf_plan_full_path(self) -> Path:
+        """Returns terraform plan absolute path."""
+        if self.tf_plan_location == TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO:
             return self.snap.paths.snap / "etc" / f"deploy-{self.tfplan}"
         else:
             plugin_class_dir = Path(inspect.getfile(self.__class__)).parent
             return plugin_class_dir / "etc" / f"deploy-{self.tfplan}"
 
-    def _get_plan_name(self):
+    def _get_plan_name(self) -> str:
+        """Returns plan name in format defined in cluster db."""
         return f"{self.tfplan}-plan"
 
-    def is_openstack_control_plane(self):
-        """Is plugin deploys openstack control plane."""
+    def is_openstack_control_plane(self) -> bool:
+        """Is plugin deploys openstack control plane.
+
+        :returns: True if plugin deploys openstack control plane, else False.
+        """
         return True
 
-    def pre_enable(self):
+    def pre_enable(self) -> None:
+        """Handler to perform tasks before enabling the plugin.
+
+        Perform preflight checks, copy of terraform plan to required locations.
+        """
         preflight_checks = []
         preflight_checks.append(VerifyBootstrappedCheck())
         run_preflight_checks(preflight_checks, console)
@@ -101,7 +133,8 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         LOG.debug(f"Updating {dst} from {src}...")
         shutil.copytree(src, dst, dirs_exist_ok=True)
 
-    def run_enable_plans(self):
+    def run_enable_plans(self) -> None:
+        """Run plans to enable plugin."""
         data_location = self.snap.paths.user_data
         tfhelper = TerraformHelper(
             path=self.snap.paths.user_common / "etc" / f"deploy-{self.tfplan}",
@@ -118,10 +151,15 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         run_plan(plan, console)
         click.echo(f"OpenStack {self.name} application enabled.")
 
-    def pre_disable(self):
+    def pre_disable(self) -> None:
+        """Handler to perform tasks before disabling the plugin.
+
+        Perform preflight checks, copy of terraform plan to required locations.
+        """
         self.pre_enable()
 
-    def run_disable_plans(self):
+    def run_disable_plans(self) -> None:
+        """Run plans to disable the plugin."""
         data_location = self.snap.paths.user_data
         tfhelper = TerraformHelper(
             path=self.snap.paths.user_common / "etc" / f"deploy-{self.tfplan}",
@@ -138,17 +176,26 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         run_plan(plan, console)
         click.echo(f"OpenStack {self.name} application disabled.")
 
-    def get_tfvar_config_key(self):
-        if self.tf_plan_location == TERRAFORM_PLAN_LOCATION.SUNBEAM_TERRAFORM_REPO:
+    def get_tfvar_config_key(self) -> str:
+        """Returns Config key to save terraform vars.
+
+        If the terraform plans are in sunbeam-terraform repo, use the config
+        key defined by the plan DeployOpenStackControlPlane i.e.,
+        TerraformVarsOpenstack.
+        If the terraform plans are part of plugin directory, use config key
+        TerraformVars-<plugin name>.
+        """
+        if self.tf_plan_location == TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO:
             return "TerraformVarsOpenstack"
         else:
             return f"TerraformVars{self.app_name}"
 
     def get_database_topology(self) -> str:
+        """Returns the database topology of the cluster."""
         # Database topology can be set only during bootstrap and cannot be changed.
         return determine_target_topology_at_bootstrap()
 
-    def set_application_timeout_on_enable(self) -> str:
+    def set_application_timeout_on_enable(self) -> int:
         """Set Application Timeout on enabling the plugin.
 
         The plugin plan will timeout if the applications
@@ -156,7 +203,7 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         """
         return APPLICATION_DEPLOY_TIMEOUT
 
-    def set_application_timeout_on_disable(self) -> str:
+    def set_application_timeout_on_disable(self) -> int:
         """Set Application Timeout on disabling the plugin.
 
         The plugin plan will timeout if the applications
@@ -187,22 +234,31 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
 
     @abstractmethod
     def enable_plugin(self) -> None:
+        """Enable plugin command."""
         super().enable_plugin()
 
     @abstractmethod
     def disable_plugin(self) -> None:
+        """Disable plugin command."""
         super().disable_plugin()
 
 
 class EnableOpenStackApplicationStep(BaseStep, JujuStepHelper):
-    """Enable OpenStack Heat application using Terraform"""
+    """Generic step to enable OpenStack application using Terraform"""
 
     def __init__(
         self,
         tfhelper: TerraformHelper,
         jhelper: JujuHelper,
         plugin: OpenStackControlPlanePlugin,
-    ):
+    ) -> None:
+        """Constructor for the generic plan.
+
+        :param tfhelper: Terraform helper pointing to terraform plan
+        :param jhelper: Juju helper with loaded juju credentials
+        :param plugin: Plugin that uses this plan to perform callbacks to
+                       plugin.
+        """
         super().__init__(
             f"Enable OpenStack {plugin.name}",
             f"Enabling OpenStack {plugin.name} application",
@@ -248,14 +304,21 @@ class EnableOpenStackApplicationStep(BaseStep, JujuStepHelper):
 
 
 class DisableOpenStackApplicationStep(BaseStep, JujuStepHelper):
-    """Disable OpenStack Heat application using Terraform"""
+    """Generic step to disable OpenStack application using Terraform"""
 
     def __init__(
         self,
         tfhelper: TerraformHelper,
         jhelper: JujuHelper,
         plugin: OpenStackControlPlanePlugin,
-    ):
+    ) -> None:
+        """Constructor for the generic plan.
+
+        :param tfhelper: Terraform helper pointing to terraform plan
+        :param jhelper: Juju helper with loaded juju credentials
+        :param plugin: Plugin that uses this plan to perform callbacks to
+                       plugin.
+        """
         super().__init__(
             f"Disable OpenStack {plugin.name}",
             f"Disabling OpenStack {plugin.name} application",

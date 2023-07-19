@@ -30,6 +30,12 @@ LOG = logging.getLogger(__name__)
 RAM_16_GB_IN_KB = 16 * 1024 * 1024
 RAM_32_GB_IN_KB = 32 * 1024 * 1024
 
+# Formatting related constants
+FORMAT_TABLE = "table"
+FORMAT_YAML = "yaml"
+FORMAT_DEFAULT = "default"
+FORMAT_VALUE = "value"
+
 
 class Role(enum.Enum):
     """The role that the current node will play

@@ -14,7 +14,6 @@
 # limitations under the License.
 
 import logging
-from pathlib import Path
 
 import click
 from snaphelpers import Snap
@@ -31,7 +30,7 @@ from sunbeam.commands import node as node_cmds
 from sunbeam.commands import openrc as openrc_cmds
 from sunbeam.commands import prepare_node as prepare_node_cmds
 from sunbeam.commands import resize as resize_cmds
-from sunbeam.plugins.interface.utils import get_plugin_classes
+from sunbeam.jobs.plugin import PluginManager
 from sunbeam.utils import CatchGroup
 
 LOG = logging.getLogger()
@@ -101,11 +100,7 @@ def main():
     cli.add_command(disable)
 
     # Register the plugins
-    # Core plugins in snap-openstack repo
-    core_plugin_file = Path(__file__).parent / CORE_PLUGINS_YAML
-    for plugin in get_plugin_classes(core_plugin_file):
-        p = plugin()
-        p.register(cli)
+    PluginManager.register(cli)
 
     cli()
 

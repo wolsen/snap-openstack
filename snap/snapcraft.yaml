@@ -238,6 +238,13 @@ parts:
       ./bin/openstack complete > usr/share/bash-completion/completions/openstack
       echo "complete -F _openstack openstack.openstack" >> usr/share/bash-completion/completions/openstack
 
+  plugin-packages:
+    plugin: nil
+    stage-packages:
+      - git
+    stage:
+      - -usr/share/doc
+
 plugs:
   juju-bin:
     interface: content

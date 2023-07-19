@@ -14,18 +14,27 @@
 # limitations under the License.
 
 
-import importlib
 import logging
-from pathlib import Path
 
 import click
-import yaml
 
 LOG = logging.getLogger()
 
 
 def get_all_registered_groups(cli: click.Group) -> dict:
-    """Get all the groups from cli object."""
+    """Get all the registered groups from cli object.
+
+    :param cli: Click group
+    :returns: Dict of <group name>: <Group function>
+
+    In case of recursive groups, group name will be <parent>.<group>
+    Example of output format:
+    {
+        "init": <click.Group cli>,
+        "enable": <click.Group enable>,
+        "enable.tls": <click.Group tls>
+    }
+    """
 
     def _get_all_groups(group):
         groups = {}
@@ -46,29 +55,3 @@ def get_all_registered_groups(cli: click.Group) -> dict:
     groups = _get_all_groups(cli)
     groups["init"] = cli
     return groups
-
-
-def get_plugin_classes(plugin_file: Path) -> list:
-    """Return list of plugin classes from plugin yaml."""
-    plugins_yaml = {}
-    with plugin_file.open() as file:
-        plugins_yaml = yaml.safe_load(file)
-
-    plugins = plugins_yaml.get("sunbeam-plugins", {}).get("plugins", {})
-    plugin_classes_str = [
-        plugin.get("path") for plugin in plugins if plugin.get("path")
-    ]
-
-    plugin_classes = []
-    for plugin_class in plugin_classes_str:
-        module_class_ = plugin_class.rsplit(".", 1)
-        try:
-            module = importlib.import_module(module_class_[0])
-            plugin_class = getattr(module, module_class_[1])
-            plugin_classes.append(plugin_class)
-        except (ModuleNotFoundError, AttributeError) as e:
-            LOG.debug(str(e))
-            LOG.warning(f"Ignored loading plugin: {plugin_class}")
-            continue
-
-    return plugin_classes
