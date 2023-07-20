@@ -210,6 +210,38 @@ class TerraformHelper:
             LOG.warning(e.stderr)
             raise TerraformException(str(e))
 
+    def destroy(self):
+        """terraform destroy"""
+        os_env = os.environ.copy()
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        tf_log = str(self.path / f"terraform-destroy-{timestamp}.log")
+        os_env.update({"TF_LOG": "INFO", "TF_LOG_PATH": tf_log})
+        if self.env:
+            os_env.update(self.env)
+        if self.data_location:
+            os_env.update(self.update_juju_provider_credentials())
+
+        try:
+            cmd = [self.terraform, "destroy", "-auto-approve", "-no-color"]
+            if self.parallelism is not None:
+                cmd.append(f"-parallelism={self.parallelism}")
+            LOG.debug(f'Running command {" ".join(cmd)}')
+            process = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+                cwd=self.path,
+                env=os_env,
+            )
+            LOG.debug(
+                f"Command finished. stdout={process.stdout}, stderr={process.stderr}"
+            )
+        except subprocess.CalledProcessError as e:
+            LOG.error(f"terraform destroy failed: {e.output}")
+            LOG.warning(e.stderr)
+            raise TerraformException(str(e))
+
 
 class TerraformInitStep(BaseStep):
     """Initialize Terraform with required providers."""

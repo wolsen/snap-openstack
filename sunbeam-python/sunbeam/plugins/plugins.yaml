@@ -13,3 +13,9 @@ sunbeam-plugins:
       path: sunbeam.plugins.repo.plugin.RepoPlugin
       supported_architectures:
         - amd64
+    - name: "vault"
+      version: "0.0.1"
+      description: "Vault plugin"
+      path: sunbeam.plugins.vault.plugin.VaultPlugin
+      supported_architectures:
+        - amd64
