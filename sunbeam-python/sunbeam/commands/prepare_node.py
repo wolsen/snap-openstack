@@ -32,6 +32,14 @@ PREPARE_NODE_TEMPLATE = f"""#!/bin/bash
 # please review carefully before execution.
 USER=$(whoami)
 
+if [ $(id -u) -eq 0 -o "$USER" = root ]; then
+    cat << EOF
+ERROR: Node Preparation script for OpenStack Sunbeam must be executed by
+       non-root user with sudo permissions.
+EOF
+    exit 1
+fi
+
 # Check if user has passwordless sudo permissions and setup if need be
 SUDO_ASKPASS=/bin/false sudo -A whoami &> /dev/null &&
 sudo grep -r $USER /etc/{{sudoers,sudoers.d}} | grep NOPASSWD:ALL &> /dev/null || {{
