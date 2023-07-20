@@ -66,6 +66,10 @@ from sunbeam.jobs.checks import (
     VerifyHypervisorHostnameCheck,
 )
 from sunbeam.jobs.common import (
+    FORMAT_DEFAULT,
+    FORMAT_TABLE,
+    FORMAT_VALUE,
+    FORMAT_YAML,
     ResultType,
     Role,
     get_step_message,
@@ -79,11 +83,6 @@ from sunbeam.jobs.juju import CONTROLLER, JujuHelper
 LOG = logging.getLogger(__name__)
 console = Console()
 snap = Snap()
-
-FORMAT_TABLE = "table"
-FORMAT_YAML = "yaml"
-FORMAT_DEFAULT = "default"
-FORMAT_VALUE = "value"
 
 
 def remove_trailing_dot(value: str) -> str:

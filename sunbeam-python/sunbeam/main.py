@@ -30,7 +30,7 @@ from sunbeam.commands import node as node_cmds
 from sunbeam.commands import openrc as openrc_cmds
 from sunbeam.commands import prepare_node as prepare_node_cmds
 from sunbeam.commands import resize as resize_cmds
-from sunbeam.commands.plugins import pro
+from sunbeam.jobs.plugin import PluginManager
 from sunbeam.utils import CatchGroup
 
 LOG = logging.getLogger()
@@ -38,6 +38,9 @@ LOG = logging.getLogger()
 # Update the help options to allow -h in addition to --help for
 # triggering the help for various commands
 CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
+
+# Core plugins yaml
+CORE_PLUGINS_YAML = "plugins/plugins.yaml"
 
 
 @click.group("init", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
@@ -93,11 +96,11 @@ def main():
     cluster.add_command(node_cmds.remove)
     cluster.add_command(resize_cmds.resize)
 
-    # Plugins
-    for plugin in (pro,):
-        plugin.register(enable, disable)
     cli.add_command(enable)
     cli.add_command(disable)
+
+    # Register the plugins
+    PluginManager.register(cli)
 
     cli()
 
