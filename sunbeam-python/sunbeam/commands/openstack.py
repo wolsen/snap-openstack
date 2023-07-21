@@ -123,6 +123,41 @@ def compute_ceph_replica_scale(topology: str, storage_nodes: int) -> int:
     return min(storage_nodes, 3)
 
 
+async def _update_status_background(
+    step, applications: List[str], status: Optional[Status]
+):
+    async def _update_status_background_coro():
+        if status is not None:
+            model = await step.jhelper.get_model(step.model)
+            active_units = {}
+            while True:
+                nb_units = 0
+                full_status: FullStatus = await model.get_status(applications)
+                for app in full_status.applications.values():
+                    if app is None or app.status is None:
+                        continue
+                    nb_units += app.int_ or 0
+                    for unit, unit_status in app.units.items():
+                        if unit_status is None or unit_status.workload_status is None:
+                            continue
+                        if unit_status.workload_status.status == "active":
+                            active_units[unit] = active_units.get(unit, 0) + 1
+                        else:
+                            active_units[unit] = 0
+
+                # Consider unit active if it has been active for at least 2 periods
+                nb_active_units = len(
+                    list(filter(lambda unit: unit >= 2, active_units.values()))
+                )
+                status.update(
+                    step.status + "waiting for services to come online "
+                    f"({nb_active_units}/{nb_units})"
+                )
+                await asyncio.sleep(20)
+
+    return asyncio.create_task(_update_status_background_coro())
+
+
 class DeployControlPlaneStep(BaseStep, JujuStepHelper):
     """Deploy OpenStack using Terraform cloud"""
 
@@ -230,7 +265,7 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         if not tfvars.get("enable-ceph") and "cinder-ceph" in apps:
             apps.remove("cinder-ceph")
         LOG.debug(f"Application monitored for readiness: {apps}")
-        task = run_sync(self.update_status_background(apps, status))
+        task = run_sync(_update_status_background(self, apps, status))
         try:
             run_sync(
                 self.jhelper.wait_until_active(
@@ -247,32 +282,6 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
                 task.cancel()
 
         return Result(ResultType.COMPLETED)
-
-    async def update_status_background(
-        self, applications: List[str], status: Optional[Status]
-    ):
-        async def _update_status_background():
-            if status is not None:
-                nb_apps = len(applications)
-                model = await self.jhelper.get_model(self.model)
-                while True:
-                    active_apps = 0
-                    full_status: FullStatus = await model.get_status(applications)
-                    for app in full_status.applications.values():
-                        if app is None or app.status is None:
-                            continue
-                        if app.status.status == "active":
-                            active_apps += 1
-
-                    status.update(
-                        self.status + "waiting for services to come online "
-                        f"({active_apps}/{nb_apps})"
-                    )
-                    if active_apps == nb_apps:
-                        return
-                    await asyncio.sleep(30)
-
-        return asyncio.create_task(_update_status_background())
 
 
 class ResizeControlPlaneStep(BaseStep, JujuStepHelper):
@@ -315,6 +324,8 @@ class ResizeControlPlaneStep(BaseStep, JujuStepHelper):
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Execute configuration using terraform."""
+        if status is not None:
+            status.update(self.status + "fetching configuration")
         client = Client()
         topology_dict = read_config(client, TOPOLOGY_KEY)
         if self.topology == "auto":
@@ -352,6 +363,8 @@ class ResizeControlPlaneStep(BaseStep, JujuStepHelper):
             }
         )
         update_config(client, self._CONFIG, tf_vars)
+        if status is not None:
+            status.update(self.status + "scaling services")
         self.tfhelper.write_tfvars(tf_vars)
         try:
             self.tfhelper.apply()
@@ -359,12 +372,12 @@ class ResizeControlPlaneStep(BaseStep, JujuStepHelper):
             LOG.exception("Error resizing control plane")
             return Result(ResultType.FAILED, str(e))
 
+        # Remove cinder-ceph from apps to wait on if ceph is not enabled
+        apps = run_sync(self.jhelper.get_application_names(self.model))
+        if not storage_nodes and "cinder-ceph" in apps:
+            apps.remove("cinder-ceph")
+        task = run_sync(_update_status_background(self, apps, status))
         try:
-            # Remove cinder-ceph from apps to wait on if ceph is not enabled
-            apps = run_sync(self.jhelper.get_application_names(self.model))
-            if not storage_nodes and "cinder-ceph" in apps:
-                apps.remove("cinder-ceph")
-
             run_sync(
                 self.jhelper.wait_until_active(
                     self.model,
@@ -375,6 +388,9 @@ class ResizeControlPlaneStep(BaseStep, JujuStepHelper):
         except (JujuWaitException, TimeoutException) as e:
             LOG.warning(str(e))
             return Result(ResultType.FAILED, str(e))
+        finally:
+            if not task.done():
+                task.cancel()
 
         return Result(ResultType.COMPLETED)
 
