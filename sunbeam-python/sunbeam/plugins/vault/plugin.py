@@ -443,3 +443,31 @@ class VaultPlugin(EnableDisablePlugin):
     @click.command()
     def disable_plugin(self) -> None:
         super().disable_plugin()
+
+    @click.group()
+    @click.pass_context
+    def vault_group(ctx, self):
+        """Manage Vault."""
+        ctx.obj = self
+
+    @vault_group.command()
+    @click.pass_obj
+    def unseal(self) -> None:
+        """Unseal Vault automatically."""
+        data_location = self.snap.paths.user_data
+        jhelper = JujuHelper(data_location)
+        plan = [
+            UnsealVaultStep(self, jhelper),
+            AuthoriseVaultStep(self, jhelper),
+        ]
+
+        run_plan(plan, console)
+
+        click.echo("Vault unsealed.")
+
+    def commands(self) -> dict:
+        """Dict of clickgroup along with commands."""
+        commands = super().commands()
+        if self.enabled:
+            commands.update({"init": [{"name": "vault", "command": self.vault_group}]})
+        return commands
