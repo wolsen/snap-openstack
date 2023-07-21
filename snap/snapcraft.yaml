@@ -215,7 +215,6 @@ parts:
       - toml
       - setuptools-rust
       - Cython
-      - hvac
     python-constraints:
       - upper-constraints.txt
     build-packages:

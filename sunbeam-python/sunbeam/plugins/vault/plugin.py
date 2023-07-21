@@ -30,6 +30,7 @@ from typing import Optional
 
 import click
 import hvac
+from juju.client.client import ApplicationStatus
 from juju.client.client import FullStatus
 from packaging.version import Version
 from requests.exceptions import ConnectionError
@@ -52,6 +53,7 @@ from sunbeam.jobs.juju import (
     ActionFailedException,
     JujuHelper,
     JujuWaitException,
+    LeaderNotFoundException,
     TimeoutException,
     run_sync,
 )
@@ -62,6 +64,10 @@ console = Console()
 
 APPLICATION = "vault"
 VAULT_DEPLOY_TIMEOUT = 1200  # 20 minutes
+
+
+class VaultPluginException(Exception):
+    pass
 
 
 class EnableVaultStep(BaseStep, JujuStepHelper):
@@ -178,6 +184,20 @@ class DisableVaultStep(BaseStep, JujuStepHelper):
         return Result(ResultType.COMPLETED)
 
 
+def get_vault_status(jhelper: JujuHelper, model: str) -> ApplicationStatus:
+    model_impl = run_sync(jhelper.get_model(model))
+    model_status: FullStatus = run_sync(model_impl.get_status(["vault"]))
+    vault_status = model_status.applications.get("vault")
+
+    if vault_status is None:
+        raise VaultPluginException("Vault not deployed")
+
+    if len(vault_status.units) != 1:
+        raise VaultPluginException("Invalid number of Vault units deployed")
+
+    return vault_status
+
+
 class WaitVaultRouteableStep(BaseStep, JujuStepHelper):
     """Retry getting route to Vault"""
 
@@ -192,15 +212,10 @@ class WaitVaultRouteableStep(BaseStep, JujuStepHelper):
         :return: ResultType.SKIPPED if the Step should be skipped,
                 ResultType.COMPLETED or ResultType.FAILED otherwise
         """
-        model = run_sync(self.jhelper.get_model(self.model))
-        model_status: FullStatus = run_sync(model.get_status(["vault"]))
-        vault_status = model_status.applications["vault"]
-
-        if vault_status is None:
-            return Result(ResultType.FAILED, "Vault not deployed")
-
-        if len(vault_status.units) != 1:
-            return Result(ResultType.FAILED, "Invalid number of Vault units deployed")
+        try:
+            vault_status = get_vault_status(self.jhelper, self.model)
+        except VaultPluginException as e:
+            return Result(ResultType.FAILED, str(e))
 
         vault_ip = vault_status.public_address
         self.vault_address = f"http://{vault_ip}:8200"
@@ -215,7 +230,7 @@ class WaitVaultRouteableStep(BaseStep, JujuStepHelper):
 
         return Result(ResultType.SKIPPED)
 
-    def run(self, status: Status | None) -> Result:
+    def run(self, status: Optional[Status] = None) -> Result:
         """Block until Vault is routeable"""
         TIMEOUT = 30
         wait_time = 0
@@ -249,21 +264,16 @@ class UnsealVaultStep(BaseStep, JujuStepHelper):
         self.jhelper = jhelper
         self.model = OPENSTACK_MODEL
 
-    def is_skip(self, status: Status | None = None) -> Result:
+    def is_skip(self, status: Optional[Status] = None) -> Result:
         """Determines if the step should be skipped or not.
 
         :return: ResultType.SKIPPED if the Step should be skipped,
                 ResultType.COMPLETED or ResultType.FAILED otherwise
         """
-        model = run_sync(self.jhelper.get_model(self.model))
-        model_status: FullStatus = run_sync(model.get_status(["vault"]))
-        vault_status = model_status.applications["vault"]
-
-        if vault_status is None:
-            return Result(ResultType.FAILED, "Vault not deployed")
-
-        if len(vault_status.units) != 1:
-            return Result(ResultType.FAILED, "Invalid number of Vault units deployed")
+        try:
+            vault_status = get_vault_status(self.jhelper, self.model)
+        except VaultPluginException as e:
+            return Result(ResultType.FAILED, str(e))
 
         vault_ip = vault_status.public_address
 
@@ -275,7 +285,7 @@ class UnsealVaultStep(BaseStep, JujuStepHelper):
 
         return Result(ResultType.COMPLETED)
 
-    def run(self, status: Status | None) -> Result:
+    def run(self, status: Optional[Status] = None) -> Result:
         """Initialize and unseal vault"""
         vault = hvac.Client(url=self.vault_address)
         if not vault.sys.is_initialized():
@@ -304,21 +314,16 @@ class AuthoriseVaultStep(BaseStep, JujuStepHelper):
         self.model = OPENSTACK_MODEL
         self.read_token = lambda: plugin.get_plugin_info().get("root_token")
 
-    def is_skip(self, status: Status | None = None) -> Result:
+    def is_skip(self, status: Optional[Status] = None) -> Result:
         """Determines if the step should be skipped or not.
 
         :return: ResultType.SKIPPED if the Step should be skipped,
                 ResultType.COMPLETED or ResultType.FAILED otherwise
         """
-        model = run_sync(self.jhelper.get_model(self.model))
-        model_status: FullStatus = run_sync(model.get_status(["vault"]))
-        vault_status = model_status.applications["vault"]
-
-        if vault_status is None:
-            return Result(ResultType.FAILED, "Vault not deployed")
-
-        if len(vault_status.units) != 1:
-            return Result(ResultType.FAILED, "Invalid number of Vault units deployed")
+        try:
+            vault_status = get_vault_status(self.jhelper, self.model)
+        except VaultPluginException as e:
+            return Result(ResultType.FAILED, str(e))
 
         if vault_status.status and vault_status.status.status == "active":
             return Result(ResultType.SKIPPED)
@@ -334,7 +339,7 @@ class AuthoriseVaultStep(BaseStep, JujuStepHelper):
                     f"Vault status: {workload_status.status} - {workload_status.info}"
                 )
                 return Result(
-                    ResultType.FAILED, "Vault is not in an authorisable state"
+                    ResultType.SKIPPED, "Vault is not in an authorisable state"
                 )
 
         token = self.read_token()
@@ -352,13 +357,17 @@ class AuthoriseVaultStep(BaseStep, JujuStepHelper):
 
         return Result(ResultType.COMPLETED)
 
-    def run(self, status: Status | None) -> Result:
+    def run(self, status: Optional[Status] = None) -> Result:
         """Authorise Vault charm to access Vault"""
         vault = hvac.Client(url=self.vault_address)
         vault.token = self.read_token()
         token_response = vault.auth.token.create(ttl="10m")
         token = token_response["auth"]["client_token"]
-        leader = run_sync(self.jhelper.get_leader_unit(APPLICATION, self.model))
+        try:
+            leader = run_sync(self.jhelper.get_leader_unit(APPLICATION, self.model))
+        except LeaderNotFoundException:
+            LOG.debug("Failed to get leader unit", exc_info=True)
+            return Result(ResultType.FAILED, "Failed to get leader unit")
         try:
             run_sync(
                 self.jhelper.run_action(
