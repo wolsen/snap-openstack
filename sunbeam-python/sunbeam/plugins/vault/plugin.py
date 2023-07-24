@@ -38,6 +38,7 @@ from rich.console import Console
 from rich.status import Status
 from snaphelpers import Snap
 
+from sunbeam.clusterd.service import ClusterServiceUnavailableException
 from sunbeam.commands.juju import JujuStepHelper
 from sunbeam.commands.microk8s import (
     MICROK8S_CLOUD,
@@ -482,6 +483,15 @@ class VaultPlugin(EnableDisablePlugin):
     def commands(self) -> dict:
         """Dict of clickgroup along with commands."""
         commands = super().commands()
-        if self.enabled:
+        try:
+            enabled = self.enabled
+        except ClusterServiceUnavailableException:
+            LOG.debug(
+                "Failed to query for plugin status, is cloud bootstrapped ?",
+                exc_info=True,
+            )
+            enabled = False
+
+        if enabled:
             commands.update({"init": [{"name": "vault", "command": self.vault_group}]})
         return commands
