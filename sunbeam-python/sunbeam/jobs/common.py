@@ -323,3 +323,7 @@ def update_config(client: Client, key: str, config: dict):
 def read_config(client: Client, key: str) -> dict:
     config = client.cluster.get_config(key)
     return json.loads(config)
+
+
+def delete_config(client: Client, key: str):
+    client.cluster.delete_config(key)
