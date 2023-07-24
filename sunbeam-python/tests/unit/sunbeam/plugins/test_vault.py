@@ -17,6 +17,7 @@ from pathlib import Path
 from unittest.mock import patch, AsyncMock, Mock
 
 import pytest
+import tenacity
 from requests.exceptions import ConnectionError
 
 from sunbeam.commands.terraform import TerraformException
@@ -69,12 +70,6 @@ def vaultplugin():
 @pytest.fixture()
 def hvac():
     with patch("sunbeam.plugins.vault.plugin.hvac") as p:
-        yield p
-
-
-@pytest.fixture()
-def sleep():
-    with patch("sunbeam.plugins.vault.plugin.time.sleep") as p:
         yield p
 
 
@@ -237,15 +232,16 @@ class TestWaitVaultRouteableStep(VaultDeployed):
         result = step.run()
         assert result.result_type == ResultType.COMPLETED
 
-    def test_run_retried(self, jhelper, hvac, sleep):
+    def test_run_retried(self, jhelper, hvac):
         hvac.Client.return_value.sys.is_initialized.side_effect = [
             ConnectionError("No route to host"),
             True,
         ]
         step = vault_plugin.WaitVaultRouteableStep(jhelper)
+        step._retry_run.retry.wait = tenacity.wait_none()
         step.vault_address = "vault.example.com"
         result = step.run()
-        sleep.assert_called_once()
+        assert hvac.Client.return_value.sys.is_initialized.call_count == 2
         assert result.result_type == ResultType.COMPLETED
 
     def test_run_vault_unknown_error(self, jhelper, hvac):
@@ -253,17 +249,21 @@ class TestWaitVaultRouteableStep(VaultDeployed):
             "Unknown Error"
         )
         step = vault_plugin.WaitVaultRouteableStep(jhelper)
+        step._retry_run.retry.wait = tenacity.wait_none()
         step.vault_address = "vault.example.com"
         result = step.run()
+        assert hvac.Client.return_value.sys.is_initialized.call_count == 1
         assert result.result_type == ResultType.FAILED
 
-    def test_run_vault_timeout(self, jhelper, hvac, sleep):
+    def test_run_vault_timeout(self, jhelper, hvac):
         hvac.Client.return_value.sys.is_initialized.side_effect = ConnectionError(
             "No route to host"
         )
         step = vault_plugin.WaitVaultRouteableStep(jhelper)
+        step._retry_run.retry.wait = tenacity.wait_none()
         step.vault_address = "vault.example.com"
         result = step.run()
+        assert hvac.Client.return_value.sys.is_initialized.call_count == 5
         assert result.result_type == ResultType.FAILED
         assert result.message and "Timeout" in result.message
 

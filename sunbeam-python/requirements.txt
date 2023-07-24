@@ -37,3 +37,4 @@ GitPython
 
 # For Vault
 hvac
+tenacity

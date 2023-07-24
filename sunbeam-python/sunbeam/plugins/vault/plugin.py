@@ -25,11 +25,11 @@ Library requirements:
 import logging
 import shutil
 from pathlib import Path
-import time
 from typing import Optional
 
 import click
 import hvac
+import tenacity
 from juju.client.client import ApplicationStatus
 from juju.client.client import FullStatus
 from packaging.version import Version
@@ -230,25 +230,30 @@ class WaitVaultRouteableStep(BaseStep, JujuStepHelper):
 
         return Result(ResultType.SKIPPED)
 
+    @tenacity.retry(
+        wait=tenacity.wait_fixed(5),
+        stop=tenacity.stop_after_delay(30) | tenacity.stop_after_attempt(5),
+        retry=tenacity.retry_if_exception_type(ConnectionError)
+        & tenacity.retry_if_exception_message(match=r".*No route to host"),  # noqa
+    )
+    def _retry_run(self, vault: hvac.Client):
+        vault.sys.is_initialized()
+
     def run(self, status: Optional[Status] = None) -> Result:
         """Block until Vault is routeable"""
-        TIMEOUT = 30
-        wait_time = 0
         vault = hvac.Client(url=self.vault_address)
-        while True:
-            try:
-                vault.sys.is_initialized()
-                break
-            except ConnectionError as e:
-                if "No route to host" not in str(e):
-                    LOG.debug("Failed to reach Vault", exc_info=True)
-                    return Result(ResultType.FAILED, "Failed to reach Vault")
-            wait_time += 5
-            time.sleep(5)
-            if wait_time > TIMEOUT:
-                return Result(
-                    ResultType.FAILED, "Timeout while waiting for Vault to be reachable"
-                )
+
+        try:
+            self._retry_run(vault)
+        except tenacity.RetryError:
+            return Result(
+                ResultType.FAILED,
+                "Timeout while waiting for Vault to be reachable",
+            )
+        except ConnectionError:
+            LOG.debug("Failed to reach Vault", exc_info=True)
+            return Result(ResultType.FAILED, "Failed to reach Vault")
+
         return Result(ResultType.COMPLETED)
 
 
