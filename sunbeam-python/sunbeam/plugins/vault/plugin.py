@@ -172,7 +172,7 @@ class DisableVaultStep(BaseStep, JujuStepHelper):
         try:
             run_sync(
                 self.jhelper.wait_application_gone(
-                    APPLICATION,
+                    [APPLICATION],
                     self.model,
                     timeout=VAULT_DEPLOY_TIMEOUT,
                 )

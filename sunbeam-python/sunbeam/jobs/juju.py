@@ -520,34 +520,29 @@ class JujuHelper:
     @controller
     async def wait_application_gone(
         self,
-        name: str,
+        names: List[str],
         model: str,
         timeout: Optional[int] = None,
     ):
         """Block execution until application is gone
-        The function early exits if the application is missing from the model
 
-        :name: Name of the application to wait for
+        :names: List of application to wait for departure
         :model: Name of the model where the application is located
         :timeout: Waiting timeout in seconds
         """
         model_impl = await self.get_model(model)
 
-        try:
-            application = await self.get_application(name, model)
-        except ApplicationNotFoundException:
-            return
-
-        LOG.debug(f"Application {name!r} is in status: {application.status!r}")
-
+        name_set = set(names)
+        empty_set = set()
         try:
             await model_impl.block_until(
-                lambda: name not in model_impl.applications,
+                lambda: name_set.intersection(model_impl.applications) == empty_set,
                 timeout=timeout,
             )
         except asyncio.TimeoutError as e:
             raise TimeoutException(
-                f"Timed out while waiting for application {name!r} to be gone"
+                "Timed out while waiting for applications "
+                f"{', '.join(name_set)} to be gone"
             ) from e
 
     @controller
