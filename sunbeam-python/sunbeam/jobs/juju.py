@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Awaitable, Dict, List, Optional, TypeVar, cast
 
 import yaml
+from juju import utils as juju_utils
 from juju.application import Application
 from juju.client import client as jujuClient
 from juju.controller import Controller
@@ -543,6 +544,29 @@ class JujuHelper:
             raise TimeoutException(
                 "Timed out while waiting for applications "
                 f"{', '.join(name_set)} to be gone"
+            ) from e
+
+    @controller
+    async def wait_model_gone(
+        self,
+        model: str,
+        timeout: Optional[int] = None,
+    ):
+        """Block execution until model is gone
+
+        :model: Name of the model
+        :timeout: Waiting timeout in seconds
+        """
+
+        async def condition():
+            models = await self.controller.list_models()
+            return model not in models
+
+        try:
+            await juju_utils.block_until_with_coroutine(condition, timeout=timeout)
+        except asyncio.TimeoutError as e:
+            raise TimeoutException(
+                f"Timed out while waiting for model {model} to be gone"
             ) from e
 
     @controller
