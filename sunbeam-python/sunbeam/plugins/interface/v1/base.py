@@ -16,9 +16,11 @@
 
 import logging
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 import click
 from packaging.version import Version
+from snaphelpers import Snap
 
 from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import ConfigItemNotFoundException
@@ -134,6 +136,10 @@ class BasePlugin(ABC):
         info_from_db.update(info)
         info_from_db.update({"version": str(self.version)})
         update_config(self.client, self.plugin_key, info_from_db)
+
+    def get_terraform_plans_base_path(self) -> Path:
+        """Return Terraform plan base location."""
+        return Snap().paths.user_common
 
     def validate_commands(self) -> bool:
         """validate the commands dictionary.

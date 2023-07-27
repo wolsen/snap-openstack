@@ -45,6 +45,7 @@ from sunbeam.jobs.common import (
     BaseStep,
     Result,
     ResultType,
+    delete_config,
     read_config,
     run_plan,
     run_preflight_checks,
@@ -119,6 +120,10 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         :returns: True if plugin deploys openstack control plane, else False.
         """
         return True
+
+    def get_terraform_openstack_plan_path(self) -> Path:
+        """Return Terraform OpenStack plan location."""
+        return self.get_terraform_plans_base_path() / "etc" / "deploy-openstack"
 
     def pre_enable(self) -> None:
         """Handler to perform tasks before enabling the plugin.
@@ -337,17 +342,23 @@ class DisableOpenStackApplicationStep(BaseStep, JujuStepHelper):
             tfvars = read_config(self.client, config_key)
         except ConfigItemNotFoundException:
             tfvars = {}
-        tfvars.update(self.plugin.set_tfvars_on_disable())
-        update_config(self.client, config_key, tfvars)
-        self.tfhelper.write_tfvars(tfvars)
 
         try:
-            self.tfhelper.apply()
+            if self.plugin.tf_plan_location == TerraformPlanLocation.PLUGIN_REPO:
+                # Just destroy the terraform plan
+                self.tfhelper.destroy()
+                delete_config(self.client, config_key)
+            else:
+                # Update terraform variables to disable the application
+                tfvars.update(self.plugin.set_tfvars_on_disable())
+                update_config(self.client, config_key, tfvars)
+                self.tfhelper.write_tfvars(tfvars)
+                self.tfhelper.apply()
         except TerraformException as e:
             return Result(ResultType.FAILED, str(e))
 
         apps = self.plugin.set_application_names()
-        LOG.debug(f"Application monitored for readiness: {apps}")
+        LOG.debug(f"Application monitored for removal: {apps}")
         # TODO(hemanth): Check if apps are removed or not.
 
         return Result(ResultType.COMPLETED)
