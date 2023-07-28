@@ -253,6 +253,12 @@ class RepoPlugin(BasePlugin):
         preflight_checks.append(VerifyBootstrappedCheck())
         run_preflight_checks(preflight_checks, console)
 
+        if name.lower() == "core":
+            click.echo(
+                f"ERROR: {name} is reserved for Core plugins, use different name."
+            )
+            return
+
         external_plugins_dir = PluginManager.get_external_plugins_base_path()
         if not external_plugins_dir.exists():
             external_plugins_dir.mkdir(mode=0o775, exist_ok=True)
