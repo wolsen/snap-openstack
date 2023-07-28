@@ -305,6 +305,12 @@ class ConfigureMicrocephOSDStep(BaseStep):
         preseed.setdefault("microceph_config", {})
         preseed["microceph_config"].setdefault(self.name, {"osd_devices": None})
 
+        # Preseed can have osd_devices as list. If so, change to comma separated str
+        osd_devices = preseed.get("microceph_config").get(self.name).get("osd_devices")
+        if isinstance(osd_devices, list):
+            osd_devices_str = ",".join(osd_devices)
+            preseed["microceph_config"][self.name]["osd_devices"] = osd_devices_str
+
         microceph_config_bank = questions.QuestionBank(
             questions=self.microceph_config_questions(),
             console=console,  # type: ignore
