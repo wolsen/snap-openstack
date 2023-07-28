@@ -325,6 +325,19 @@ class RepoPlugin(BasePlugin):
                 self._print_plugins_table(plugins.get(repo))
 
         elif format == FORMAT_YAML:
+            # Add plugins to the repos list
+            if plugins:
+                plugins = PluginManager.get_plugins()
+                if include_core:
+                    repos.append({"name": "core"})
+
+                for repo in repos:
+                    repo_name = repo.get("name")
+                    repo["plugins"] = [
+                        {"name": plugin[0], "description": plugin[1]}
+                        for plugin in plugins.get(repo_name, {})
+                    ]
+
             click.echo(yaml.dump(repos, sort_keys=True))
 
     @click.command()
