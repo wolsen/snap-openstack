@@ -30,8 +30,7 @@ from typing import Optional
 import click
 import hvac
 import tenacity
-from juju.client.client import ApplicationStatus
-from juju.client.client import FullStatus
+from juju.client.client import ApplicationStatus, FullStatus
 from packaging.version import Version
 from requests.exceptions import ConnectionError
 from rich.console import Console
@@ -40,9 +39,7 @@ from snaphelpers import Snap
 
 from sunbeam.clusterd.service import ClusterServiceUnavailableException
 from sunbeam.commands.juju import JujuStepHelper
-from sunbeam.commands.microk8s import (
-    MICROK8S_CLOUD,
-)
+from sunbeam.commands.microk8s import MICROK8S_CLOUD
 from sunbeam.commands.openstack import OPENSTACK_MODEL, PatchLoadBalancerServicesStep
 from sunbeam.commands.terraform import (
     TerraformException,
