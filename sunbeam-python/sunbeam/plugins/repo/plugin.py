@@ -253,6 +253,12 @@ class RepoPlugin(BasePlugin):
         preflight_checks.append(VerifyBootstrappedCheck())
         run_preflight_checks(preflight_checks, console)
 
+        if name.lower() == "core":
+            click.echo(
+                f"ERROR: {name} is reserved for Core plugins, use different name."
+            )
+            return
+
         external_plugins_dir = PluginManager.get_external_plugins_base_path()
         if not external_plugins_dir.exists():
             external_plugins_dir.mkdir(mode=0o775, exist_ok=True)
@@ -325,6 +331,19 @@ class RepoPlugin(BasePlugin):
                 self._print_plugins_table(plugins.get(repo))
 
         elif format == FORMAT_YAML:
+            # Add plugins to the repos list
+            if plugins:
+                plugins = PluginManager.get_plugins()
+                if include_core:
+                    repos.append({"name": "core"})
+
+                for repo in repos:
+                    repo_name = repo.get("name")
+                    repo["plugins"] = [
+                        {"name": plugin[0], "description": plugin[1]}
+                        for plugin in plugins.get(repo_name, {})
+                    ]
+
             click.echo(yaml.dump(repos, sort_keys=True))
 
     @click.command()
