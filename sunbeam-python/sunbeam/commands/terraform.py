@@ -47,6 +47,7 @@ terraform {
 """
 
 terraform_rc_template = """
+disable_checkpoint = true
 provider_installation {
   filesystem_mirror {
     path    = "$snap_path/usr/share/terraform-providers"
