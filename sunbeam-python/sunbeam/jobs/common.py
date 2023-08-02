@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import asyncio
 import enum
 import json
 import logging
@@ -21,6 +22,7 @@ from typing import List, Optional, Type
 
 import click
 from click import decorators
+from juju.client.client import FullStatus
 from rich.console import Console
 from rich.status import Status
 
@@ -327,3 +329,38 @@ def read_config(client: Client, key: str) -> dict:
 
 def delete_config(client: Client, key: str):
     client.cluster.delete_config(key)
+
+
+async def update_status_background(
+    step, applications: List[str], status: Optional[Status]
+):
+    async def _update_status_background_coro():
+        if status is not None:
+            model = await step.jhelper.get_model(step.model)
+            active_units = {}
+            while True:
+                nb_units = 0
+                full_status: FullStatus = await model.get_status(applications)
+                for app in full_status.applications.values():
+                    if app is None or app.status is None:
+                        continue
+                    nb_units += app.int_ or 0
+                    for unit, unit_status in app.units.items():
+                        if unit_status is None or unit_status.workload_status is None:
+                            continue
+                        if unit_status.workload_status.status == "active":
+                            active_units[unit] = active_units.get(unit, 0) + 1
+                        else:
+                            active_units[unit] = 0
+
+                # Consider unit active if it has been active for at least 2 periods
+                nb_active_units = len(
+                    list(filter(lambda unit: unit >= 2, active_units.values()))
+                )
+                status.update(
+                    step.status + "waiting for services to come online "
+                    f"({nb_active_units}/{nb_units})"
+                )
+                await asyncio.sleep(20)
+
+    return asyncio.create_task(_update_status_background_coro())

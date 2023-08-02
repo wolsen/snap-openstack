@@ -25,3 +25,9 @@ sunbeam-plugins:
       path: sunbeam.plugins.heat.plugin.HeatPlugin
       supported_architectures:
         - amd64
+    - name: "cos"
+      version: "0.0.1"
+      description: "COS Plugin"
+      path: sunbeam.plugins.cos.plugin.CosPlugin
+      supported_architectures:
+        - amd64
