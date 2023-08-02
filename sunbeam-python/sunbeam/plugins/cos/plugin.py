@@ -237,3 +237,57 @@ class CosPlugin(EnableDisablePlugin):
     def disable_plugin(self) -> None:
         """Disable  Observability Stack."""
         super().disable_plugin()
+
+    @click.group()
+    def cos_group(self):
+        """Manage COS."""
+
+    @click.command()
+    def dashboard_url(self) -> None:
+        """Retrieve COS Dashboard URL."""
+        data_location = self.snap.paths.user_data
+        jhelper = JujuHelper(data_location)
+
+        with console.status("Retrieving dashboard URL from Grafana service ... "):
+            # Retrieve config from juju actions
+            model = COS_MODEL
+            app = "grafana"
+            action_cmd = "get-admin-password"
+            unit = run_sync(jhelper.get_leader_unit(app, model))
+            if not unit:
+                _message = f"Unable to get {app} leader"
+                raise click.ClickException(_message)
+
+            action_result = run_sync(jhelper.run_action(unit, model, action_cmd))
+
+            if action_result.get("return-code", 0) > 1:
+                _message = "Unable to retrieve URL from Grafana service"
+                raise click.ClickException(_message)
+
+            url = action_result.get("url")
+            if url:
+                console.print(url)
+            else:
+                _message = "No URL provided by Grafana service"
+                raise click.ClickException(_message)
+
+    def commands(self) -> dict:
+        """Dict of clickgroup along with commands."""
+        commands = super().commands()
+        try:
+            enabled = self.enabled
+        except ClusterServiceUnavailableException:
+            LOG.debug(
+                "Failed to query for plugin status, is cloud bootstrapped ?",
+                exc_info=True,
+            )
+            enabled = False
+
+        if enabled:
+            commands.update(
+                {
+                    "init": [{"name": "cos", "command": self.cos_group}],
+                    "cos": [{"name": "dashboard-url", "command": self.dashboard_url}],
+                }
+            )
+        return commands
