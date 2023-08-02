@@ -164,9 +164,7 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         :return: ResultType.SKIPPED if the Step should be skipped,
                 ResultType.COMPLETED or ResultType.FAILED otherwise
         """
-        if status is not None:
-            status.update(self.status + "determining appropriate configuration")
-
+        self.update_status(status, "determining appropriate configuration")
         try:
             previous_config = read_config(self.client, TOPOLOGY_KEY)
         except ConfigItemNotFoundException:
@@ -216,8 +214,7 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         tfvars.update(self.get_storage_tfvars())
         update_config(self.client, self._CONFIG, tfvars)
         self.tfhelper.write_tfvars(tfvars)
-        if status is not None:
-            status.update(self.status + "deploying services")
+        self.update_status(status, "deploying services")
         try:
             self.tfhelper.apply()
         except TerraformException as e:
@@ -288,8 +285,7 @@ class ResizeControlPlaneStep(BaseStep, JujuStepHelper):
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Execute configuration using terraform."""
-        if status is not None:
-            status.update(self.status + "fetching configuration")
+        self.update_status(status, "fetching configuration")
         client = Client()
         topology_dict = read_config(client, TOPOLOGY_KEY)
         if self.topology == "auto":
@@ -327,8 +323,7 @@ class ResizeControlPlaneStep(BaseStep, JujuStepHelper):
             }
         )
         update_config(client, self._CONFIG, tf_vars)
-        if status is not None:
-            status.update(self.status + "scaling services")
+        self.update_status(status, "scaling services")
         self.tfhelper.write_tfvars(tf_vars)
         try:
             self.tfhelper.apply()

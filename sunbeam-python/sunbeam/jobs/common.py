@@ -204,6 +204,11 @@ class BaseStep:
         """
         return self.description + " ... "
 
+    def update_status(self, status: Optional[Status], msg: str):
+        """Update status if status is provided."""
+        if status is not None:
+            status.update(self.status + msg)
+
 
 def run_preflight_checks(checks: list, console: Console):
     """Run preflight checks sequentially.
