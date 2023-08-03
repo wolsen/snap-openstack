@@ -90,8 +90,7 @@ class EnableCosStep(BaseStep, JujuStepHelper):
         self.update_config(config)
         self.tfhelper.write_tfvars(tfvars)
 
-        if status is not None:
-            status.update(self.status + "deploying services")
+        self.update_status(status, "deploying services")
         try:
             self.tfhelper.apply()
         except TerraformException as e:
