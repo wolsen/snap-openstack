@@ -151,7 +151,8 @@ class TerraformHelper:
         os_env = os.environ.copy()
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         tf_log = str(self.path / f"terraform-init-{timestamp}.log")
-        os_env.update({"TF_LOG": "INFO", "TF_LOG_PATH": tf_log})
+        os_env.update({"TF_LOG_PATH": tf_log})
+        os_env.setdefault("TF_LOG", "INFO")
         if self.env:
             os_env.update(self.env)
         if self.backend:
@@ -184,7 +185,8 @@ class TerraformHelper:
         os_env = os.environ.copy()
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         tf_log = str(self.path / f"terraform-apply-{timestamp}.log")
-        os_env.update({"TF_LOG": "INFO", "TF_LOG_PATH": tf_log})
+        os_env.update({"TF_LOG_PATH": tf_log})
+        os_env.setdefault("TF_LOG", "INFO")
         if self.env:
             os_env.update(self.env)
         if self.data_location:
@@ -216,7 +218,8 @@ class TerraformHelper:
         os_env = os.environ.copy()
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         tf_log = str(self.path / f"terraform-destroy-{timestamp}.log")
-        os_env.update({"TF_LOG": "INFO", "TF_LOG_PATH": tf_log})
+        os_env.update({"TF_LOG_PATH": tf_log})
+        os_env.setdefault("TF_LOG", "INFO")
         if self.env:
             os_env.update(self.env)
         if self.data_location:
