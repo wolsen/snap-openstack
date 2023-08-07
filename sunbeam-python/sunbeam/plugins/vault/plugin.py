@@ -469,6 +469,7 @@ class VaultPlugin(EnableDisablePlugin):
         data_location = self.snap.paths.user_data
         jhelper = JujuHelper(data_location)
         plan = [
+            WaitVaultRouteableStep(jhelper),
             UnsealVaultStep(self, jhelper),
             AuthoriseVaultStep(self, jhelper),
         ]
