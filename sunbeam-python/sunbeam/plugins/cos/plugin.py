@@ -36,6 +36,9 @@ from sunbeam.commands.microk8s import (
     MICROK8S_DEFAULT_STORAGECLASS,
 )
 from sunbeam.commands.openstack import PatchLoadBalancerServicesStep
+from sunbeam.clusterd.service import (
+    ClusterServiceUnavailableException,
+)
 from sunbeam.commands.terraform import (
     TerraformException,
     TerraformHelper,
