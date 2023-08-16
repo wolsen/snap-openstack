@@ -438,6 +438,13 @@ resource "juju_offer" "prometheus-metrics-offer" {
   endpoint         = "metrics-endpoint"
 }
 
+# juju offer prometheus:receive-remote-write
+resource "juju_offer" "prometheus-receive-remote-write-offer" {
+  model            = juju_model.cos.name
+  application_name = juju_application.prometheus.name
+  endpoint         = "receive-remote-write"
+}
+
 # juju offer loki:logging
 resource "juju_offer" "loki-logging-offer" {
   model            = juju_model.cos.name
@@ -450,4 +457,11 @@ resource "juju_offer" "grafana-dashboard-offer" {
   model            = juju_model.cos.name
   application_name = juju_application.grafana.name
   endpoint         = "grafana-dashboard"
+}
+
+# juju offer alertmanager:karma-dashboard
+resource "juju_offer" "alertmanager-karma-dashboard-offer" {
+  model            = juju_model.cos.name
+  application_name = juju_application.alertmanager.name
+  endpoint         = "karma-dashboard"
 }
