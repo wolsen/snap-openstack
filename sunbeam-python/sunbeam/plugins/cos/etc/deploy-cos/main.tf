@@ -433,6 +433,7 @@ resource "juju_integration" "catalogue-to-alertmanager" {
 
 # juju offer prometheus:metrics-endpoint
 resource "juju_offer" "prometheus-metrics-offer" {
+  name             = "prometheus-scrape"
   model            = juju_model.cos.name
   application_name = juju_application.prometheus.name
   endpoint         = "metrics-endpoint"
@@ -440,6 +441,7 @@ resource "juju_offer" "prometheus-metrics-offer" {
 
 # juju offer prometheus:receive-remote-write
 resource "juju_offer" "prometheus-receive-remote-write-offer" {
+  name             = "prometheus-receive-remote-write"
   model            = juju_model.cos.name
   application_name = juju_application.prometheus.name
   endpoint         = "receive-remote-write"
@@ -447,6 +449,7 @@ resource "juju_offer" "prometheus-receive-remote-write-offer" {
 
 # juju offer loki:logging
 resource "juju_offer" "loki-logging-offer" {
+  name             = "loki-logging"
   model            = juju_model.cos.name
   application_name = juju_application.loki.name
   endpoint         = "logging"
@@ -454,6 +457,7 @@ resource "juju_offer" "loki-logging-offer" {
 
 # juju offer grafana:dashboard
 resource "juju_offer" "grafana-dashboard-offer" {
+  name             = "grafana-dashboards"
   model            = juju_model.cos.name
   application_name = juju_application.grafana.name
   endpoint         = "grafana-dashboard"
@@ -461,6 +465,7 @@ resource "juju_offer" "grafana-dashboard-offer" {
 
 # juju offer alertmanager:karma-dashboard
 resource "juju_offer" "alertmanager-karma-dashboard-offer" {
+  name             = "alertmanager-karma-dashboard"
   model            = juju_model.cos.name
   application_name = juju_application.alertmanager.name
   endpoint         = "karma-dashboard"
