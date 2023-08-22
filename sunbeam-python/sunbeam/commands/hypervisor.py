@@ -14,14 +14,17 @@
 # limitations under the License.
 
 import logging
+import traceback
 from typing import Optional
 
+import openstack
 from rich.status import Status
 
 from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import NodeNotExistInClusterException
 from sunbeam.commands.juju import JujuStepHelper
 from sunbeam.commands.openstack import OPENSTACK_MODEL
+from sunbeam.commands.openstack_api import guests_on_hypervisor, remove_hypervisor
 from sunbeam.commands.terraform import TerraformException, TerraformHelper
 from sunbeam.jobs.common import BaseStep, Result, ResultType
 from sunbeam.jobs.juju import (
@@ -179,14 +182,14 @@ class AddHypervisorUnitStep(BaseStep, JujuStepHelper):
 
 
 class RemoveHypervisorUnitStep(BaseStep, JujuStepHelper):
-    def __init__(self, name: str, jhelper: JujuHelper):
+    def __init__(self, name: str, jhelper: JujuHelper, force: bool = False):
         super().__init__(
             "Remove openstack-hypervisor unit",
             "Remove openstack-hypervisor unit from machine",
         )
-
         self.name = name
         self.jhelper = jhelper
+        self.force = force
         self.unit = None
 
     def is_skip(self, status: Optional[Status] = None) -> Result:
@@ -208,7 +211,7 @@ class RemoveHypervisorUnitStep(BaseStep, JujuStepHelper):
         except ApplicationNotFoundException as e:
             LOG.debug(str(e))
             return Result(
-                ResultType.SKIPPED, "MicroK8S application has not been deployed yet"
+                ResultType.SKIPPED, "Hypervisor application has not been deployed yet"
             )
 
         for unit in application.units:
@@ -222,6 +225,22 @@ class RemoveHypervisorUnitStep(BaseStep, JujuStepHelper):
     def run(self, status: Optional[Status] = None) -> Result:
         """Remove unit from openstack-hypervisor application on Juju model."""
         try:
+            self.guests = guests_on_hypervisor(self.name, self.jhelper)
+            LOG.debug(f"Found guests on {self.name}:")
+            LOG.debug(", ".join([g.name for g in self.guests]))
+        except openstack.exceptions.SDKException as e:
+            LOG.error("Encountered error looking up guests on hypervisor.")
+            if self.force:
+                LOG.warning("Force mode set, ignoring exception:")
+                traceback.print_exception(e)
+            else:
+                return Result(ResultType.FAILED, str(e))
+        if not self.force and len(self.guests) > 0:
+            return Result(
+                ResultType.FAILED,
+                f"OpenStack guests are running on {self.name}, aborting",
+            )
+        try:
             run_sync(self.jhelper.remove_unit(APPLICATION, str(self.unit), MODEL))
             run_sync(
                 self.jhelper.wait_application_ready(
@@ -234,5 +253,16 @@ class RemoveHypervisorUnitStep(BaseStep, JujuStepHelper):
         except (ApplicationNotFoundException, TimeoutException) as e:
             LOG.warning(str(e))
             return Result(ResultType.FAILED, str(e))
+        try:
+            remove_hypervisor(self.name, self.jhelper)
+        except openstack.exceptions.SDKException as e:
+            LOG.error(
+                "Encountered error removing hypervisor references from control plane."
+            )
+            if self.force:
+                LOG.warning("Force mode set, ignoring exception:")
+                traceback.print_exception(e)
+            else:
+                return Result(ResultType.FAILED, str(e))
 
         return Result(ResultType.COMPLETED)

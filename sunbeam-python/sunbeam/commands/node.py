@@ -37,6 +37,7 @@ from sunbeam.commands.configure import SetLocalHypervisorOptions
 from sunbeam.commands.hypervisor import (
     AddHypervisorUnitStep,
     DeployHypervisorApplicationStep,
+    RemoveHypervisorUnitStep,
 )
 from sunbeam.commands.juju import (
     AddJujuMachineStep,
@@ -54,7 +55,10 @@ from sunbeam.commands.microceph import (
 )
 from sunbeam.commands.microk8s import AddMicrok8sUnitStep, RemoveMicrok8sUnitStep
 from sunbeam.commands.openstack import OPENSTACK_MODEL
-from sunbeam.commands.sunbeam_machine import AddSunbeamMachineUnitStep
+from sunbeam.commands.sunbeam_machine import (
+    AddSunbeamMachineUnitStep,
+    RemoveSunbeamMachineStep,
+)
 from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
 from sunbeam.jobs.checks import (
     DaemonGroupCheck,
@@ -321,8 +325,14 @@ def list(format: str) -> None:
 
 
 @click.command()
+@click.option(
+    "--force",
+    type=bool,
+    help=("Skip safety checks and ignore cleanup errors for some tasks"),
+    is_flag=True,
+)
 @click.option("--name", type=str, prompt=True, help="Fully qualified node name")
-def remove(name: str) -> None:
+def remove(name: str, force: bool) -> None:
     """Remove a node from the cluster."""
     data_location = snap.paths.user_data
     jhelper = JujuHelper(data_location)
@@ -331,8 +341,10 @@ def remove(name: str) -> None:
     run_preflight_checks(preflight_checks, console)
 
     plan = [
+        RemoveSunbeamMachineStep(name, jhelper),
         RemoveMicrok8sUnitStep(name, jhelper),
         RemoveMicrocephUnitStep(name, jhelper),
+        RemoveHypervisorUnitStep(name, jhelper, force),
         RemoveJujuMachineStep(name),
         # Cannot remove user as the same user name cannot be resued,
         # so commenting the RemoveJujuUserStep
@@ -340,7 +352,6 @@ def remove(name: str) -> None:
         ClusterRemoveNodeStep(name),
     ]
     run_plan(plan, console)
-
     click.echo(f"Removed node {name} from the cluster")
     # Removing machine does not clean up all deployed juju components. This is
     # deliberate, see https://bugs.launchpad.net/juju/+bug/1851489.
