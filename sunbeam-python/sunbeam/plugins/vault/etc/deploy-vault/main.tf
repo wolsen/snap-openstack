@@ -32,9 +32,10 @@ resource "juju_application" "vault" {
   trust = true
 
   charm {
-    name    = "vault-k8s"
-    channel = var.channel
-    series  = "jammy"
+    name     = "vault-k8s"
+    channel  = var.channel
+    revision = 11
+    series   = "jammy"
   }
 
   units = 1
