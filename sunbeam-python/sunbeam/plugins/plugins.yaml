@@ -31,3 +31,9 @@ sunbeam-plugins:
       path: sunbeam.plugins.cos.plugin.CosPlugin
       supported_architectures:
         - amd64
+    - name: "telemetry"
+      version: "0.0.1"
+      description: "Plugin for OpenStack Telemetry"
+      path: sunbeam.plugins.telemetry.plugin.TelemetryPlugin
+      supported_architectures:
+        - amd64

@@ -29,6 +29,7 @@ from rich.console import Console
 from rich.status import Status
 from snaphelpers import Snap
 
+from sunbeam.clusterd.service import ClusterServiceUnavailableException
 from sunbeam.commands.juju import JujuStepHelper
 from sunbeam.commands.microk8s import (
     CREDENTIAL_SUFFIX,
@@ -36,9 +37,6 @@ from sunbeam.commands.microk8s import (
     MICROK8S_DEFAULT_STORAGECLASS,
 )
 from sunbeam.commands.openstack import PatchLoadBalancerServicesStep
-from sunbeam.clusterd.service import (
-    ClusterServiceUnavailableException,
-)
 from sunbeam.commands.terraform import (
     TerraformException,
     TerraformHelper,
