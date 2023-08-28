@@ -14,16 +14,29 @@
 # limitations under the License.
 
 import logging
+from typing import Optional
 
 import click
 from packaging.version import Version
+from rich.console import Console
 
+from sunbeam.commands.openstack import OPENSTACK_MODEL
+from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
+from sunbeam.jobs.common import BaseStep, Result, ResultType, Status, run_plan
+from sunbeam.jobs.juju import (
+    JujuException,
+    JujuHelper,
+    ModelNotFoundException,
+    run_sync,
+)
 from sunbeam.plugins.interface.v1.openstack import (
+    EnableOpenStackApplicationStep,
     OpenStackControlPlanePlugin,
     TerraformPlanLocation,
 )
 
 LOG = logging.getLogger(__name__)
+console = Console()
 
 
 class TelemetryPlugin(OpenStackControlPlanePlugin):
@@ -34,6 +47,25 @@ class TelemetryPlugin(OpenStackControlPlanePlugin):
             name="telemetry",
             tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO,
         )
+
+    def run_enable_plans(self) -> None:
+        """Run plans to enable plugin."""
+        data_location = self.snap.paths.user_data
+        tfhelper = TerraformHelper(
+            path=self.snap.paths.user_common / "etc" / f"deploy-{self.tfplan}",
+            plan=self._get_plan_name(),
+            backend="http",
+            data_location=data_location,
+        )
+        jhelper = JujuHelper(data_location)
+        plan = [
+            TerraformInitStep(tfhelper),
+            EnableOpenStackApplicationStep(tfhelper, jhelper, self),
+            UpgradeCeilometerStep(jhelper),
+        ]
+
+        run_plan(plan, console)
+        click.echo(f"OpenStack {self.name} application enabled.")
 
     def set_application_names(self) -> list:
         """Application names handled by the terraform plan."""
@@ -74,3 +106,56 @@ class TelemetryPlugin(OpenStackControlPlanePlugin):
     def disable_plugin(self) -> None:
         """Disable OpenStack Telemetry applications."""
         super().disable_plugin()
+
+
+class UpgradeCeilometerStep(BaseStep):
+    """Step to upgrade ceilometer."""
+
+    def __init__(self, jhelper: JujuHelper):
+        super().__init__("Ceilometer dbsync", "Ceilometer syncing the database")
+        self.jhelper = jhelper
+
+    def is_skip(self, status: Optional[Status] = None) -> Result:
+        """Determines if the step should be skipped or not.
+
+        :return: ResultType.SKIPPED if the Step should be skipped,
+                ResultType.COMPLETED or ResultType.FAILED otherwise
+        """
+
+        try:
+            run_sync(self.jhelper.get_model(OPENSTACK_MODEL))
+        except ModelNotFoundException:
+            return Result(ResultType.FAILED, "Openstack model must be deployed.")
+
+        try:
+            apps = run_sync(self.jhelper.get_application_names(OPENSTACK_MODEL))
+            if "ceilometer" not in apps or "gnocchi" not in apps:
+                return Result(
+                    ResultType.SKIPPED, "Ceilometer/Gnocchi applications missing"
+                )
+        except JujuException as e:
+            return Result(ResultType.FAILED, str(e))
+
+        return Result(ResultType.COMPLETED)
+
+    def run(self, status: Optional[Status] = None) -> Result:
+        """Runs the step.
+
+        :return: ResultType.COMPLETED or ResultType.FAILED
+        """
+        app = "ceilometer"
+        action_cmd = "ceilometer-upgrade"
+
+        unit = run_sync(self.jhelper.get_leader_unit(app, OPENSTACK_MODEL))
+        if not unit:
+            _message = f"Unable to get {app} leader"
+            return Result(ResultType.FAILED, _message)
+
+        action_result = run_sync(
+            self.jhelper.run_action(unit, OPENSTACK_MODEL, action_cmd)
+        )
+        if action_result.get("return-code", 0) > 1:
+            _message = "Unable to run ceilometer-upgrade on Ceilometer service"
+            return Result(ResultType.FAILED, _message)
+
+        return Result(ResultType.COMPLETED)
