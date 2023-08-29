@@ -1,4 +1,4 @@
-# Terraform manifest for deployment of COS Lite
+# Terraform manifest for deployment of Monitoring stack
 #
 # Copyright (c) 2023 Canonical Ltd.
 #

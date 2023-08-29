@@ -25,10 +25,10 @@ sunbeam-plugins:
       path: sunbeam.plugins.heat.plugin.HeatPlugin
       supported_architectures:
         - amd64
-    - name: "cos"
+    - name: "monitoring"
       version: "0.0.1"
-      description: "COS Plugin"
-      path: sunbeam.plugins.cos.plugin.CosPlugin
+      description: "Monitoring Plugin"
+      path: sunbeam.plugins.monitoring.plugin.MonitoringPlugin
       supported_architectures:
         - amd64
     - name: "telemetry"

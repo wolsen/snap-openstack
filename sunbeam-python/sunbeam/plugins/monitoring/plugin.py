@@ -13,9 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Observability Stack plugin.
+"""Monitoring plugin.
 
-Plugin to deploy and manage Observability stack COS Lite.
+Plugin to deploy and manage monitoring, powered by COS Lite.
 """
 
 import logging
@@ -49,7 +49,13 @@ from sunbeam.jobs.common import (
     run_plan,
     update_status_background,
 )
-from sunbeam.jobs.juju import JujuHelper, JujuWaitException, TimeoutException, run_sync
+from sunbeam.jobs.juju import (
+    CONTROLLER_MODEL,
+    JujuHelper,
+    JujuWaitException,
+    TimeoutException,
+    run_sync,
+)
 from sunbeam.plugins.interface.v1.base import EnableDisablePlugin
 
 LOG = logging.getLogger(__name__)
@@ -57,22 +63,24 @@ console = Console()
 
 COS_MODEL = "cos"
 COS_DEPLOY_TIMEOUT = 1200  # 20 minutes
+CONTROLLER_MODEL = CONTROLLER_MODEL.split("/")[-1]
 
 
-class EnableCosStep(BaseStep, JujuStepHelper):
-    """Deploy COS using Terraform"""
+class EnableMonitoringStep(BaseStep, JujuStepHelper):
+    """Deploy monitoring stack using Terraform"""
 
     def __init__(
         self,
-        plugin: "CosPlugin",
+        plugin: "MonitoringPlugin",
         tfhelper: TerraformHelper,
         jhelper: JujuHelper,
     ):
-        super().__init__("Deploying COS", "Deploying COS")
+        super().__init__("Deploying monitoring stack", "Deploying monitoring stack")
         self.tfhelper = tfhelper
         self.jhelper = jhelper
         self.model = COS_MODEL
         self.cloud = MICROK8S_CLOUD
+        self.controller_model = CONTROLLER_MODEL
         self.read_config = lambda: plugin.get_plugin_info().get("config", {})
         self.update_config = lambda c: plugin.update_plugin_info({"config": c})
 
@@ -84,6 +92,7 @@ class EnableCosStep(BaseStep, JujuStepHelper):
             "model": self.model,
             "cos-channel": "1.0/candidate",
             "cloud": self.cloud,
+            "controller-model": self.controller_model,
             "credential": f"{self.cloud}{CREDENTIAL_SUFFIX}",
             "config": {"workload-storage": MICROK8S_DEFAULT_STORAGECLASS},
         }
@@ -95,7 +104,7 @@ class EnableCosStep(BaseStep, JujuStepHelper):
         try:
             self.tfhelper.apply()
         except TerraformException as e:
-            LOG.exception("Error deploying COS")
+            LOG.exception("Error deploying monitoring stack")
             return Result(ResultType.FAILED, str(e))
 
         apps = run_sync(self.jhelper.get_application_names(self.model))
@@ -110,7 +119,7 @@ class EnableCosStep(BaseStep, JujuStepHelper):
                 )
             )
         except (JujuWaitException, TimeoutException) as e:
-            LOG.debug("Failed to deploy cos", exc_info=True)
+            LOG.debug("Failed to deploy monitoring stack", exc_info=True)
             return Result(ResultType.FAILED, str(e))
         finally:
             if not task.done():
@@ -119,20 +128,21 @@ class EnableCosStep(BaseStep, JujuStepHelper):
         return Result(ResultType.COMPLETED)
 
 
-class DisableCosStep(BaseStep, JujuStepHelper):
-    """Remove COS using Terraform"""
+class DisableMonitoringStep(BaseStep, JujuStepHelper):
+    """Remove monitoring stack using Terraform"""
 
     def __init__(
         self,
-        plugin: "CosPlugin",
+        plugin: "MonitoringPlugin",
         tfhelper: TerraformHelper,
         jhelper: JujuHelper,
     ):
-        super().__init__("Removing COS", "Removing COS")
+        super().__init__("Removing monitoring stack", "Removing monitoring stack")
         self.tfhelper = tfhelper
         self.jhelper = jhelper
         self.model = COS_MODEL
         self.cloud = MICROK8S_CLOUD
+        self.controller_model = CONTROLLER_MODEL
         self.read_config = lambda: plugin.get_plugin_info().get("config", {})
         self.update_config = lambda c: plugin.update_plugin_info({"config": c})
 
@@ -144,6 +154,7 @@ class DisableCosStep(BaseStep, JujuStepHelper):
             "model": self.model,
             "cos-channel": "1.0/candidate",
             "cloud": self.cloud,
+            "controller-model": self.controller_model,
             "credential": f"{self.cloud}{CREDENTIAL_SUFFIX}",
             "config": {"workload-storage": MICROK8S_DEFAULT_STORAGECLASS},
         }
@@ -153,7 +164,7 @@ class DisableCosStep(BaseStep, JujuStepHelper):
         try:
             self.tfhelper.destroy()
         except TerraformException as e:
-            LOG.exception("Error destroying cos")
+            LOG.exception("Error destroying monitoring stack")
             return Result(ResultType.FAILED, str(e))
 
         try:
@@ -164,7 +175,7 @@ class DisableCosStep(BaseStep, JujuStepHelper):
                 )
             )
         except TimeoutException as e:
-            LOG.debug("Failed to destroy cos", exc_info=True)
+            LOG.debug("Failed to destroy monitoring stack", exc_info=True)
             return Result(ResultType.FAILED, str(e))
 
         return Result(ResultType.COMPLETED)
@@ -175,11 +186,11 @@ class PatchCosLoadBalancerStep(PatchLoadBalancerServicesStep):
     MODEL = COS_MODEL
 
 
-class CosPlugin(EnableDisablePlugin):
+class MonitoringPlugin(EnableDisablePlugin):
     version = Version("0.0.1")
 
     def __init__(self) -> None:
-        super().__init__(name="cos")
+        super().__init__(name="monitoring")
         self.snap = Snap()
         self.tfplan = f"deploy-{self.name}"
 
@@ -193,20 +204,20 @@ class CosPlugin(EnableDisablePlugin):
         data_location = self.snap.paths.user_data
         tfhelper = TerraformHelper(
             path=self.snap.paths.user_common / "etc" / self.tfplan,
-            plan="cos-plan",
+            plan="monitoring-plan",
             backend="http",
             data_location=data_location,
         )
         jhelper = JujuHelper(data_location)
         plan = [
             TerraformInitStep(tfhelper),
-            EnableCosStep(self, tfhelper, jhelper),
+            EnableMonitoringStep(self, tfhelper, jhelper),
             PatchCosLoadBalancerStep(),
         ]
 
         run_plan(plan, console)
 
-        click.echo("Observability Stack enabled.")
+        click.echo("Monitoring enabled.")
 
     def pre_disable(self):
         self.pre_enable()
@@ -215,32 +226,32 @@ class CosPlugin(EnableDisablePlugin):
         data_location = self.snap.paths.user_data
         tfhelper = TerraformHelper(
             path=self.snap.paths.user_common / "etc" / self.tfplan,
-            plan="cos-plan",
+            plan="monitoring-plan",
             backend="http",
             data_location=data_location,
         )
         jhelper = JujuHelper(data_location)
         plan = [
             TerraformInitStep(tfhelper),
-            DisableCosStep(self, tfhelper, jhelper),
+            DisableMonitoringStep(self, tfhelper, jhelper),
         ]
 
         run_plan(plan, console)
-        click.echo("Observability Stack disabled.")
+        click.echo("Monitoring disabled.")
 
     @click.command()
     def enable_plugin(self) -> None:
-        """Enable  Observability Stack."""
+        """Enable Monitoring."""
         super().enable_plugin()
 
     @click.command()
     def disable_plugin(self) -> None:
-        """Disable  Observability Stack."""
+        """Disable  Monitoring."""
         super().disable_plugin()
 
     @click.group()
-    def cos_group(self):
-        """Manage COS."""
+    def monitoring_group(self):
+        """Manage Monitoring."""
 
     @click.command()
     def dashboard_url(self) -> None:
@@ -286,8 +297,10 @@ class CosPlugin(EnableDisablePlugin):
         if enabled:
             commands.update(
                 {
-                    "init": [{"name": "cos", "command": self.cos_group}],
-                    "cos": [{"name": "dashboard-url", "command": self.dashboard_url}],
+                    "init": [{"name": "monitoring", "command": self.monitoring_group}],
+                    "monitoring": [
+                        {"name": "dashboard-url", "command": self.dashboard_url}
+                    ],
                 }
             )
         return commands

@@ -1,4 +1,4 @@
-# Terraform manifest for deployment of COS Lite
+# Terraform manifest for deployment of Monitoring stack
 #
 # Copyright (c) 2023 Canonical Ltd.
 #
@@ -20,6 +20,15 @@ variable "model" {
   default     = "cos"
 }
 
+variable "controller-model" {
+  description = "Name of the sunbeam controller model"
+}
+
+variable "openstack-hypervisor-name" {
+  description = "Name of the deployed openstack-hypervisor application"
+  default = "openstack-hypervisor"
+}
+
 variable "cloud" {
   description = "Name of K8S cloud to use for deployment"
   default     = "microk8s"
@@ -39,6 +48,11 @@ variable "config" {
 variable "cos-channel" {
   description = "Operator channel for COS Lite deployment"
   default     = "1.0/stable"
+}
+
+variable "grafana-agent-channel" {
+  description = "Channel to use when deploying grafana agent machine charm"
+  default = "latest/candidate"
 }
 
 variable "ingress-scale" {

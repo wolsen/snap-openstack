@@ -21,7 +21,7 @@ import pytest
 from sunbeam.commands.terraform import TerraformException
 from sunbeam.jobs.common import ResultType
 from sunbeam.jobs.juju import TimeoutException
-from sunbeam.plugins.cos import plugin as cos_plugin
+from sunbeam.plugins.monitoring import plugin as monitoring_plugin
 
 
 @pytest.fixture(autouse=True)
@@ -34,7 +34,7 @@ def mock_run_sync(mocker):
     def run_sync(coro):
         return loop.run_until_complete(coro)
 
-    mocker.patch("sunbeam.plugins.cos.plugin.run_sync", run_sync)
+    mocker.patch("sunbeam.plugins.monitoring.plugin.run_sync", run_sync)
     yield
     loop.close()
 
@@ -56,14 +56,16 @@ def tfhelper():
 
 
 @pytest.fixture()
-def cosplugin():
-    with patch("sunbeam.plugins.cos.plugin.CosPlugin") as p:
+def monitoringplugin():
+    with patch("sunbeam.plugins.monitoring.plugin.MonitoringPlugin") as p:
         yield p
 
 
-class TestEnableCosStep:
-    def test_run(self, cclient, jhelper, tfhelper, cosplugin):
-        step = cos_plugin.EnableCosStep(cosplugin, tfhelper, jhelper)
+class TestEnableMonitoringStep:
+    def test_run(self, cclient, jhelper, tfhelper, monitoringplugin):
+        step = monitoring_plugin.EnableMonitoringStep(
+            monitoringplugin, tfhelper, jhelper
+        )
         result = step.run()
 
         tfhelper.write_tfvars.assert_called_once()
@@ -71,10 +73,12 @@ class TestEnableCosStep:
         jhelper.wait_until_active.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
 
-    def test_run_tf_apply_failed(self, cclient, jhelper, tfhelper, cosplugin):
+    def test_run_tf_apply_failed(self, cclient, jhelper, tfhelper, monitoringplugin):
         tfhelper.apply.side_effect = TerraformException("apply failed...")
 
-        step = cos_plugin.EnableCosStep(cosplugin, tfhelper, jhelper)
+        step = monitoring_plugin.EnableMonitoringStep(
+            monitoringplugin, tfhelper, jhelper
+        )
         result = step.run()
 
         tfhelper.write_tfvars.assert_called_once()
@@ -83,10 +87,12 @@ class TestEnableCosStep:
         assert result.result_type == ResultType.FAILED
         assert result.message == "apply failed..."
 
-    def test_run_waiting_timed_out(self, cclient, jhelper, tfhelper, cosplugin):
+    def test_run_waiting_timed_out(self, cclient, jhelper, tfhelper, monitoringplugin):
         jhelper.wait_until_active.side_effect = TimeoutException("timed out")
 
-        step = cos_plugin.EnableCosStep(cosplugin, tfhelper, jhelper)
+        step = monitoring_plugin.EnableMonitoringStep(
+            monitoringplugin, tfhelper, jhelper
+        )
         result = step.run()
 
         tfhelper.write_tfvars.assert_called_once()
@@ -96,9 +102,11 @@ class TestEnableCosStep:
         assert result.message == "timed out"
 
 
-class TestDisableCosStep:
-    def test_run(self, cclient, jhelper, tfhelper, cosplugin):
-        step = cos_plugin.DisableCosStep(cosplugin, tfhelper, jhelper)
+class TestDisableMonitoringStep:
+    def test_run(self, cclient, jhelper, tfhelper, monitoringplugin):
+        step = monitoring_plugin.DisableMonitoringStep(
+            monitoringplugin, tfhelper, jhelper
+        )
         result = step.run()
 
         tfhelper.write_tfvars.assert_called_once()
@@ -106,10 +114,12 @@ class TestDisableCosStep:
         jhelper.wait_model_gone.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
 
-    def test_run_tf_destroy_failed(self, cclient, jhelper, tfhelper, cosplugin):
+    def test_run_tf_destroy_failed(self, cclient, jhelper, tfhelper, monitoringplugin):
         tfhelper.destroy.side_effect = TerraformException("destroy failed...")
 
-        step = cos_plugin.DisableCosStep(cosplugin, tfhelper, jhelper)
+        step = monitoring_plugin.DisableMonitoringStep(
+            monitoringplugin, tfhelper, jhelper
+        )
         result = step.run()
 
         tfhelper.write_tfvars.assert_called_once()
@@ -118,10 +128,12 @@ class TestDisableCosStep:
         assert result.result_type == ResultType.FAILED
         assert result.message == "destroy failed..."
 
-    def test_run_waiting_timed_out(self, cclient, jhelper, tfhelper, cosplugin):
+    def test_run_waiting_timed_out(self, cclient, jhelper, tfhelper, monitoringplugin):
         jhelper.wait_model_gone.side_effect = TimeoutException("timed out")
 
-        step = cos_plugin.DisableCosStep(cosplugin, tfhelper, jhelper)
+        step = monitoring_plugin.DisableMonitoringStep(
+            monitoringplugin, tfhelper, jhelper
+        )
         result = step.run()
 
         tfhelper.write_tfvars.assert_called_once()

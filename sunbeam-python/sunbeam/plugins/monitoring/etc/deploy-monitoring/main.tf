@@ -1,4 +1,4 @@
-# Terraform manifest for deployment of COS Lite
+# Terraform manifest for deployment of Monitoring stack
 # Based on https://github.com/canonical/cos-lite-bundle/blob/a39ee6b04b6833f44cfe913ee00e2853cb36428b/bundle.yaml.j2
 #
 # Copyright (c) 2023 Canonical Ltd.
@@ -431,6 +431,34 @@ resource "juju_integration" "catalogue-to-alertmanager" {
   }
 }
 
+resource "juju_application" "grafana-agent" {
+  name = "grafana-agent"
+  trust = false
+  model = var.controller-model
+  units = 0
+
+  charm {
+    name = "grafana-agent"
+    channel = var.grafana-agent-channel
+    series = "jammy"
+  }
+}
+
+# juju integrate openstack-hypervisor:cos-agent grafana-agent:cos-agent
+resource "juju_integration" "openstack-hypervisor-to-grafana-agent" {
+  model    = var.controller-model
+
+  application {
+    name     = juju_application.grafana-agent.name
+    endpoint = "cos-agent"
+  }
+
+  application {
+    name     = var.openstack-hypervisor-name
+    endpoint = "cos-agent"
+  }
+}
+
 # juju offer prometheus:metrics-endpoint
 resource "juju_offer" "prometheus-metrics-offer" {
   name             = "prometheus-scrape"
@@ -469,4 +497,43 @@ resource "juju_offer" "alertmanager-karma-dashboard-offer" {
   model            = juju_model.cos.name
   application_name = juju_application.alertmanager.name
   endpoint         = "karma-dashboard"
+}
+
+# juju integrate grafana-agent cos.prometheus-receive-remote-write
+resource "juju_integration" "grafana-agent-to-cos-prometheus" {
+  model = var.controller-model
+
+  application {
+    name     = juju_application.grafana-agent.name
+  }
+
+  application {
+    offer_url = juju_offer.prometheus-receive-remote-write-offer.url
+  }
+}
+
+# juju integrate grafana-agent cos.loki-logging
+resource "juju_integration" "grafana-agent-to-cos-loki" {
+  model = var.controller-model
+
+  application {
+    name     = juju_application.grafana-agent.name
+  }
+
+  application {
+    offer_url = juju_offer.loki-logging-offer.url
+  }
+}
+
+# juju integrate grafana-agent cos.grafana-dashboards
+resource "juju_integration" "grafana-agent-to-cos-grafana" {
+  model = var.controller-model
+
+  application {
+    name     = juju_application.grafana-agent.name
+  }
+
+  application {
+    offer_url = juju_offer.grafana-dashboard-offer.url
+  }
 }
