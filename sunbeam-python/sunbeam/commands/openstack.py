@@ -381,7 +381,7 @@ class PatchLoadBalancerServicesStep(BaseStep):
 
         kubeconfig = KubeConfig.from_dict(self.kubeconfig)
         try:
-            self.kube = KubeClient(kubeconfig, self.MODEL)
+            self.kube = KubeClient(kubeconfig, self.MODEL, trust_env=False)
         except exceptions.ConfigError as e:
             LOG.debug("Error creating k8s client", exc_info=True)
             return Result(ResultType.FAILED, str(e))

@@ -26,3 +26,34 @@ jobs:
         with:
           name: local-${{ steps.snapcraft.outputs.snap }}
           path: ${{ steps.snapcraft.outputs.snap }}
+
+  functional-test:
+    needs: build
+    name: Functional test
+    runs-on: [self-hosted, xlarge]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Download snap artifact
+        id: download
+        uses: actions/download-artifact@v3
+        with:
+          name: local-${{ needs.build.outputs.snap }}
+      - name: test
+        run: |
+          export COLUMNS=256
+          sudo snap install  ${{ needs.build.outputs.snap }} --dangerous
+          openstack.sunbeam prepare-node-script | bash -x
+          sudo snap connect openstack:juju-bin juju:juju-bin
+          sudo snap connect openstack:dot-local-share-juju
+          sudo snap connect openstack:dot-config-openstack
+          sg snap_daemon "openstack.sunbeam -v cluster bootstrap --accept-defaults"
+          sg snap_daemon "openstack.sunbeam cluster list"
+          sg snap_daemon "openstack.sunbeam -v configure -a"
+          sg snap_daemon "openstack.sunbeam -v launch"
+      - name: Collect juju status
+        if: always()
+        run: |
+          juju status
+          juju status -m openstack
+          juju debug-log -m openstack --replay
