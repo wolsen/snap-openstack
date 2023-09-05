@@ -21,12 +21,15 @@ import openstack
 from rich.status import Status
 
 from sunbeam.clusterd.client import Client
-from sunbeam.clusterd.service import NodeNotExistInClusterException
+from sunbeam.clusterd.service import (
+    ConfigItemNotFoundException,
+    NodeNotExistInClusterException,
+)
 from sunbeam.commands.juju import JujuStepHelper
 from sunbeam.commands.openstack import OPENSTACK_MODEL
 from sunbeam.commands.openstack_api import guests_on_hypervisor, remove_hypervisor
 from sunbeam.commands.terraform import TerraformException, TerraformHelper
-from sunbeam.jobs.common import BaseStep, Result, ResultType
+from sunbeam.jobs.common import BaseStep, Result, ResultType, read_config, update_config
 from sunbeam.jobs.juju import (
     CONTROLLER_MODEL,
     MODEL,
@@ -37,6 +40,7 @@ from sunbeam.jobs.juju import (
 )
 
 LOG = logging.getLogger(__name__)
+CONFIG_KEY = "TerraformVarsHypervisor"
 APPLICATION = "openstack-hypervisor"
 HYPERVISOR_APP_TIMEOUT = 180  # 3 minutes, managing the application should be fast
 HYPERVISOR_UNIT_TIMEOUT = (
@@ -86,8 +90,13 @@ class DeployHypervisorApplicationStep(BaseStep, JujuStepHelper):
         except ApplicationNotFoundException as e:
             LOG.debug(str(e))
 
+        try:
+            tfvars = read_config(self.client, CONFIG_KEY)
+        except ConfigItemNotFoundException:
+            tfvars = {}
+
         openstack_backend_config = self.tfhelper_openstack.backend_config()
-        self.tfhelper.write_tfvars(
+        tfvars.update(
             {
                 "hypervisor_model": self.hypervisor_model,
                 "openstack_model": self.openstack_model,
@@ -96,6 +105,9 @@ class DeployHypervisorApplicationStep(BaseStep, JujuStepHelper):
                 "openstack-state-config": openstack_backend_config,
             }
         )
+        update_config(self.client, CONFIG_KEY, tfvars)
+        self.tfhelper.write_tfvars(tfvars)
+
         try:
             self.tfhelper.apply()
         except TerraformException as e:
@@ -129,6 +141,7 @@ class AddHypervisorUnitStep(BaseStep, JujuStepHelper):
         self.name = name
         self.jhelper = jhelper
         self.machine_id = ""
+        self.client = Client()
 
     def is_skip(self, status: Optional[Status] = None) -> Result:
         """Determines if the step should be skipped or not.
@@ -136,9 +149,8 @@ class AddHypervisorUnitStep(BaseStep, JujuStepHelper):
         :return: ResultType.SKIPPED if the Step should be skipped,
                 ResultType.COMPLETED or ResultType.FAILED otherwise
         """
-        client = Client()
         try:
-            node = client.cluster.get_node_info(self.name)
+            node = self.client.cluster.get_node_info(self.name)
             self.machine_id = str(node.get("machineid"))
         except NodeNotExistInClusterException as e:
             return Result(ResultType.FAILED, str(e))
@@ -163,12 +175,31 @@ class AddHypervisorUnitStep(BaseStep, JujuStepHelper):
 
         return Result(ResultType.COMPLETED)
 
+    def add_machine_id_to_tfvar(self) -> None:
+        """Add machine id to terraform vars saved in cluster db."""
+        try:
+            tfvars = read_config(self.client, CONFIG_KEY)
+        except ConfigItemNotFoundException:
+            tfvars = {}
+
+        if not self.machine_id:
+            return
+
+        machine_ids = tfvars.get("machine_ids", [])
+        if self.machine_id in machine_ids:
+            return
+
+        machine_ids.append(self.machine_id)
+        tfvars.update({"machine_ids": machine_ids})
+        update_config(self.client, CONFIG_KEY, tfvars)
+
     def run(self, status: Optional[Status] = None) -> Result:
         """Add unit to openstack-hypervisor application on Juju model."""
         try:
             unit = run_sync(
                 self.jhelper.add_unit(APPLICATION, MODEL, str(self.machine_id))
             )
+            self.add_machine_id_to_tfvar()
             run_sync(
                 self.jhelper.wait_unit_ready(
                     unit.name, MODEL, timeout=HYPERVISOR_UNIT_TIMEOUT
@@ -191,6 +222,8 @@ class RemoveHypervisorUnitStep(BaseStep, JujuStepHelper):
         self.jhelper = jhelper
         self.force = force
         self.unit = None
+        self.machine_id = ""
+        self.client = Client()
 
     def is_skip(self, status: Optional[Status] = None) -> Result:
         """Determines if the step should be skipped or not.
@@ -198,10 +231,9 @@ class RemoveHypervisorUnitStep(BaseStep, JujuStepHelper):
         :return: ResultType.SKIPPED if the Step should be skipped,
                 ResultType.COMPLETED or ResultType.FAILED otherwise
         """
-        client = Client()
         try:
-            node = client.cluster.get_node_info(self.name)
-            machine_id = str(node.get("machineid"))
+            node = self.client.cluster.get_node_info(self.name)
+            self.machine_id = str(node.get("machineid"))
         except NodeNotExistInClusterException:
             LOG.debug(f"Machine {self.name} does not exist, skipping.")
             return Result(ResultType.SKIPPED)
@@ -215,12 +247,25 @@ class RemoveHypervisorUnitStep(BaseStep, JujuStepHelper):
             )
 
         for unit in application.units:
-            if unit.machine.id == machine_id:
-                LOG.debug(f"Unit {unit.name} is deployed on machine: {machine_id}")
+            if unit.machine.id == self.machine_id:
+                LOG.debug(f"Unit {unit.name} is deployed on machine: {self.machine_id}")
                 self.unit = unit.name
                 return Result(ResultType.COMPLETED)
 
         return Result(ResultType.SKIPPED)
+
+    def remove_machine_id_from_tfvar(self) -> None:
+        """Remove machine if from terraform vars saved in cluster db."""
+        try:
+            tfvars = read_config(self.client, CONFIG_KEY)
+        except ConfigItemNotFoundException:
+            tfvars = {}
+
+        machine_ids = tfvars.get("machine_ids", [])
+        if self.machine_id in machine_ids:
+            machine_ids.remove(self.machine_id)
+            tfvars.update({"machine_ids": machine_ids})
+            update_config(self.client, CONFIG_KEY, tfvars)
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Remove unit from openstack-hypervisor application on Juju model."""
@@ -242,6 +287,7 @@ class RemoveHypervisorUnitStep(BaseStep, JujuStepHelper):
             )
         try:
             run_sync(self.jhelper.remove_unit(APPLICATION, str(self.unit), MODEL))
+            self.remove_machine_id_from_tfvar()
             run_sync(
                 self.jhelper.wait_application_ready(
                     APPLICATION,
@@ -264,5 +310,66 @@ class RemoveHypervisorUnitStep(BaseStep, JujuStepHelper):
                 traceback.print_exception(e)
             else:
                 return Result(ResultType.FAILED, str(e))
+
+        return Result(ResultType.COMPLETED)
+
+
+class ReapplyHypervisorTerraformPlanStep(BaseStep):
+    """Reapply openstack-hyervisor terraform plan"""
+
+    def __init__(
+        self,
+        tfhelper: TerraformHelper,
+        jhelper: JujuHelper,
+        extra_tfvars: dict = {},
+    ):
+        super().__init__(
+            "Reapply OpenStack Hypervisor Terraform plan",
+            "Reapply OpenStack Hypervisor Terraform plan",
+        )
+        self.tfhelper = tfhelper
+        self.jhelper = jhelper
+        self.extra_tfvars = extra_tfvars
+        self.client = Client()
+
+    def is_skip(self, status: Optional[Status] = None) -> Result:
+        """Determines if the step should be skipped or not.
+
+        :return: ResultType.SKIPPED if the Step should be skipped,
+                ResultType.COMPLETED or ResultType.FAILED otherwise
+        """
+        if self.client.cluster.list_nodes_by_role("compute"):
+            return Result(ResultType.COMPLETED)
+
+        return Result(ResultType.SKIPPED)
+
+    def run(self, status: Optional[Status] = None) -> Result:
+        """Apply terraform configuration to deploy hypervisor"""
+        try:
+            tfvars = read_config(self.client, CONFIG_KEY)
+        except ConfigItemNotFoundException:
+            tfvars = {}
+
+        tfvars.update(self.extra_tfvars)
+        update_config(self.client, CONFIG_KEY, tfvars)
+        self.tfhelper.write_tfvars(tfvars)
+
+        try:
+            self.tfhelper.apply()
+        except TerraformException as e:
+            return Result(ResultType.FAILED, str(e))
+
+        try:
+            run_sync(
+                self.jhelper.wait_application_ready(
+                    APPLICATION,
+                    MODEL,
+                    accepted_status=["active", "unknown"],
+                    timeout=HYPERVISOR_APP_TIMEOUT,
+                )
+            )
+        except TimeoutException as e:
+            LOG.warning(str(e))
+            return Result(ResultType.FAILED, str(e))
 
         return Result(ResultType.COMPLETED)

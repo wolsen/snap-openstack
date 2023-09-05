@@ -68,7 +68,11 @@ class TestDeployControlPlaneStep(unittest.TestCase):
         )
 
         step = DeployControlPlaneStep(self.tfhelper, self.jhelper, TOPOLOGY, DATABASE)
-        result = step.run()
+        with patch(
+            "sunbeam.commands.openstack.read_config",
+            Mock(return_value={}),
+        ):
+            result = step.run()
 
         self.tfhelper.write_tfvars.assert_called_once()
         self.tfhelper.apply.assert_called_once()
@@ -79,7 +83,11 @@ class TestDeployControlPlaneStep(unittest.TestCase):
         self.tfhelper.apply.side_effect = TerraformException("apply failed...")
 
         step = DeployControlPlaneStep(self.tfhelper, self.jhelper, TOPOLOGY, DATABASE)
-        result = step.run()
+        with patch(
+            "sunbeam.commands.openstack.read_config",
+            Mock(return_value={}),
+        ):
+            result = step.run()
 
         self.tfhelper.apply.assert_called_once()
         assert result.result_type == ResultType.FAILED
@@ -90,7 +98,11 @@ class TestDeployControlPlaneStep(unittest.TestCase):
         self.jhelper.wait_until_active.side_effect = TimeoutException("timed out")
 
         step = DeployControlPlaneStep(self.tfhelper, self.jhelper, TOPOLOGY, DATABASE)
-        result = step.run()
+        with patch(
+            "sunbeam.commands.openstack.read_config",
+            Mock(return_value={}),
+        ):
+            result = step.run()
 
         self.jhelper.wait_until_active.assert_called_once()
         assert result.result_type == ResultType.FAILED
@@ -103,7 +115,11 @@ class TestDeployControlPlaneStep(unittest.TestCase):
         )
 
         step = DeployControlPlaneStep(self.tfhelper, self.jhelper, TOPOLOGY, DATABASE)
-        result = step.run()
+        with patch(
+            "sunbeam.commands.openstack.read_config",
+            Mock(return_value={}),
+        ):
+            result = step.run()
 
         self.jhelper.wait_until_active.assert_called_once()
         assert result.result_type == ResultType.FAILED

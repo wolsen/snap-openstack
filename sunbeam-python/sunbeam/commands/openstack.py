@@ -201,16 +201,27 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
             TOPOLOGY_KEY,
             {"topology": self.topology, "database": self.database},
         )
-        tfvars = {
-            "model": self.model,
-            # Make these channel options configurable by the user
-            "openstack-channel": "2023.1/edge",
-            "ovn-channel": "23.03/edge",
-            "cloud": self.cloud,
-            "credential": f"{self.cloud}{CREDENTIAL_SUFFIX}",
-            "config": {"workload-storage": MICROK8S_DEFAULT_STORAGECLASS},
-            "many-mysql": self.database == "multi",
-        }
+
+        # Always get terraform variables from cluster database and
+        # update them. This is to ensure not to skip the terraform
+        # variables updated by plugins.
+        try:
+            tfvars = read_config(self.client, self._CONFIG)
+        except ConfigItemNotFoundException:
+            tfvars = {}
+
+        tfvars.update(
+            {
+                "model": self.model,
+                # Make these channel options configurable by the user
+                "openstack-channel": "2023.1/edge",
+                "ovn-channel": "23.03/edge",
+                "cloud": self.cloud,
+                "credential": f"{self.cloud}{CREDENTIAL_SUFFIX}",
+                "config": {"workload-storage": MICROK8S_DEFAULT_STORAGECLASS},
+                "many-mysql": self.database == "multi",
+            }
+        )
         tfvars.update(self.get_storage_tfvars())
         update_config(self.client, self._CONFIG, tfvars)
         self.tfhelper.write_tfvars(tfvars)
