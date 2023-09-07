@@ -66,8 +66,8 @@ COS_DEPLOY_TIMEOUT = 1200  # 20 minutes
 CONTROLLER_MODEL = CONTROLLER_MODEL.split("/")[-1]
 
 
-class EnableMonitoringStep(BaseStep, JujuStepHelper):
-    """Deploy monitoring stack using Terraform"""
+class DeployCosStep(BaseStep, JujuStepHelper):
+    """Deploy COS Lite using Terraform"""
 
     def __init__(
         self,
@@ -75,12 +75,11 @@ class EnableMonitoringStep(BaseStep, JujuStepHelper):
         tfhelper: TerraformHelper,
         jhelper: JujuHelper,
     ):
-        super().__init__("Deploying monitoring stack", "Deploying monitoring stack")
+        super().__init__("Deploying COS Lite", "Deploying COS Lite")
         self.tfhelper = tfhelper
         self.jhelper = jhelper
         self.model = COS_MODEL
         self.cloud = MICROK8S_CLOUD
-        self.controller_model = CONTROLLER_MODEL
         self.read_config = lambda: plugin.get_plugin_info().get("config", {})
         self.update_config = lambda c: plugin.update_plugin_info({"config": c})
 
@@ -92,7 +91,6 @@ class EnableMonitoringStep(BaseStep, JujuStepHelper):
             "model": self.model,
             "cos-channel": "1.0/candidate",
             "cloud": self.cloud,
-            "controller-model": self.controller_model,
             "credential": f"{self.cloud}{CREDENTIAL_SUFFIX}",
             "config": {"workload-storage": MICROK8S_DEFAULT_STORAGECLASS},
         }
@@ -104,7 +102,7 @@ class EnableMonitoringStep(BaseStep, JujuStepHelper):
         try:
             self.tfhelper.apply()
         except TerraformException as e:
-            LOG.exception("Error deploying monitoring stack")
+            LOG.exception("Error deploying COS Lite")
             return Result(ResultType.FAILED, str(e))
 
         apps = run_sync(self.jhelper.get_application_names(self.model))
@@ -119,7 +117,7 @@ class EnableMonitoringStep(BaseStep, JujuStepHelper):
                 )
             )
         except (JujuWaitException, TimeoutException) as e:
-            LOG.debug("Failed to deploy monitoring stack", exc_info=True)
+            LOG.debug("Failed to deploy COS Lite", exc_info=True)
             return Result(ResultType.FAILED, str(e))
         finally:
             if not task.done():
@@ -128,8 +126,66 @@ class EnableMonitoringStep(BaseStep, JujuStepHelper):
         return Result(ResultType.COMPLETED)
 
 
-class DisableMonitoringStep(BaseStep, JujuStepHelper):
-    """Remove monitoring stack using Terraform"""
+class DeployGrafanaAgentStep(BaseStep, JujuStepHelper):
+    """Deploy Grafana Agent using Terraform"""
+
+    def __init__(
+        self,
+        plugin: "MonitoringPlugin",
+        tfhelper: TerraformHelper,
+        tfhelper_cos: TerraformHelper,
+        jhelper: JujuHelper,
+    ):
+        super().__init__("Deploying Grafana Agent", "Deploying Grafana Agent")
+        self.tfhelper = tfhelper
+        self.tfhelper_cos = tfhelper_cos
+        self.jhelper = jhelper
+        self.model = CONTROLLER_MODEL
+        self.read_config = lambda: plugin.get_plugin_info().get("config", {})
+        self.update_config = lambda c: plugin.update_plugin_info({"config": c})
+
+    def run(self, status: Optional[Status] = None) -> Result:
+        """Execute configuration using terraform."""
+
+        cos_backend = self.tfhelper_cos.backend
+        cos_backend_config = self.tfhelper_cos.backend_config()
+        config = self.read_config()
+        tfvars = {
+            "grafana-agent-channel": "latest/edge",
+            "controller-model": self.model,
+            "cos-state-backend": cos_backend,
+            "cos-state-config": cos_backend_config,
+        }
+        config.update(tfvars)
+        self.update_config(config)
+        self.tfhelper.write_tfvars(tfvars)
+
+        self.update_status(status, "deploying application")
+        try:
+            self.tfhelper.apply()
+        except TerraformException as e:
+            LOG.exception("Error deploying grafana agent")
+            return Result(ResultType.FAILED, str(e))
+
+        app = "grafana-agent"
+        LOG.debug(f"Application monitored for readiness: {app}")
+        try:
+            run_sync(
+                self.jhelper.wait_application_ready(
+                    app,
+                    self.model,
+                    timeout=COS_DEPLOY_TIMEOUT,
+                )
+            )
+        except (JujuWaitException, TimeoutException) as e:
+            LOG.debug("Failed to deploy grafana agent", exc_info=True)
+            return Result(ResultType.FAILED, str(e))
+
+        return Result(ResultType.COMPLETED)
+
+
+class RemoveCosStep(BaseStep, JujuStepHelper):
+    """Remove COS Lite using Terraform"""
 
     def __init__(
         self,
@@ -137,12 +193,11 @@ class DisableMonitoringStep(BaseStep, JujuStepHelper):
         tfhelper: TerraformHelper,
         jhelper: JujuHelper,
     ):
-        super().__init__("Removing monitoring stack", "Removing monitoring stack")
+        super().__init__("Removing COS Lite", "Removing COS Lite")
         self.tfhelper = tfhelper
         self.jhelper = jhelper
         self.model = COS_MODEL
         self.cloud = MICROK8S_CLOUD
-        self.controller_model = CONTROLLER_MODEL
         self.read_config = lambda: plugin.get_plugin_info().get("config", {})
         self.update_config = lambda c: plugin.update_plugin_info({"config": c})
 
@@ -154,7 +209,6 @@ class DisableMonitoringStep(BaseStep, JujuStepHelper):
             "model": self.model,
             "cos-channel": "1.0/candidate",
             "cloud": self.cloud,
-            "controller-model": self.controller_model,
             "credential": f"{self.cloud}{CREDENTIAL_SUFFIX}",
             "config": {"workload-storage": MICROK8S_DEFAULT_STORAGECLASS},
         }
@@ -164,7 +218,7 @@ class DisableMonitoringStep(BaseStep, JujuStepHelper):
         try:
             self.tfhelper.destroy()
         except TerraformException as e:
-            LOG.exception("Error destroying monitoring stack")
+            LOG.exception("Error destroying COS Lite")
             return Result(ResultType.FAILED, str(e))
 
         try:
@@ -175,7 +229,62 @@ class DisableMonitoringStep(BaseStep, JujuStepHelper):
                 )
             )
         except TimeoutException as e:
-            LOG.debug("Failed to destroy monitoring stack", exc_info=True)
+            LOG.debug("Failed to destroy COS Lite", exc_info=True)
+            return Result(ResultType.FAILED, str(e))
+
+        return Result(ResultType.COMPLETED)
+
+
+class RemoveGrafanaAgentStep(BaseStep, JujuStepHelper):
+    """Remove Grafana Agent using Terraform"""
+
+    def __init__(
+        self,
+        plugin: "MonitoringPlugin",
+        tfhelper: TerraformHelper,
+        tfhelper_cos: TerraformHelper,
+        jhelper: JujuHelper,
+    ):
+        super().__init__("Removing Grafana Agent", "Removing Grafana Agent")
+        self.tfhelper = tfhelper
+        self.tfhelper_cos = tfhelper_cos
+        self.jhelper = jhelper
+        self.model = CONTROLLER_MODEL
+        self.read_config = lambda: plugin.get_plugin_info().get("config", {})
+        self.update_config = lambda c: plugin.update_plugin_info({"config": c})
+
+    def run(self, status: Optional[Status] = None) -> Result:
+        """Execute configuration using terraform."""
+
+        cos_backend = self.tfhelper_cos.backend
+        cos_backend_config = self.tfhelper_cos.backend_config()
+        config = self.read_config()
+        tfvars = {
+            "grafana-agent-channel": "latest/edge",
+            "controller-model": self.model,
+            "cos-state-backend": cos_backend,
+            "cos-state-config": cos_backend_config,
+        }
+        config.update(tfvars)
+        self.update_config(config)
+        self.tfhelper.write_tfvars(tfvars)
+        try:
+            self.tfhelper.destroy()
+        except TerraformException as e:
+            LOG.exception("Error destroying grafana agent")
+            return Result(ResultType.FAILED, str(e))
+
+        apps = ["grafana-agent"]
+        try:
+            run_sync(
+                self.jhelper.wait_application_gone(
+                    apps,
+                    self.model,
+                    timeout=COS_DEPLOY_TIMEOUT,
+                )
+            )
+        except TimeoutException as e:
+            LOG.debug("Failed to destroy grafana agent", exc_info=True)
             return Result(ResultType.FAILED, str(e))
 
         return Result(ResultType.COMPLETED)
@@ -192,30 +301,50 @@ class MonitoringPlugin(EnableDisablePlugin):
     def __init__(self) -> None:
         super().__init__(name="monitoring")
         self.snap = Snap()
-        self.tfplan = f"deploy-{self.name}"
+        self.tfplan_cos = "deploy-cos"
+        self.tfplan_grafana_agent = "deploy-grafana-agent"
 
     def pre_enable(self):
-        src = Path(__file__).parent / "etc" / self.tfplan
-        dst = self.snap.paths.user_common / "etc" / self.tfplan
+        src = Path(__file__).parent / "etc" / self.tfplan_cos
+        dst = self.snap.paths.user_common / "etc" / self.tfplan_cos
+        LOG.debug(f"Updating {dst} from {src}...")
+        shutil.copytree(src, dst, dirs_exist_ok=True)
+
+        src = Path(__file__).parent / "etc" / self.tfplan_grafana_agent
+        dst = self.snap.paths.user_common / "etc" / self.tfplan_grafana_agent
         LOG.debug(f"Updating {dst} from {src}...")
         shutil.copytree(src, dst, dirs_exist_ok=True)
 
     def run_enable_plans(self):
         data_location = self.snap.paths.user_data
-        tfhelper = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / self.tfplan,
-            plan="monitoring-plan",
+        tfhelper_cos = TerraformHelper(
+            path=self.snap.paths.user_common / "etc" / self.tfplan_cos,
+            plan="cos-plan",
             backend="http",
             data_location=data_location,
         )
+        tfhelper_grafana_agent = TerraformHelper(
+            path=self.snap.paths.user_common / "etc" / self.tfplan_grafana_agent,
+            plan="grafana-agent-plan",
+            backend="http",
+            data_location=data_location,
+        )
+
         jhelper = JujuHelper(data_location)
-        plan = [
-            TerraformInitStep(tfhelper),
-            EnableMonitoringStep(self, tfhelper, jhelper),
+
+        cos_plan = [
+            TerraformInitStep(tfhelper_cos),
+            DeployCosStep(self, tfhelper_cos, jhelper),
             PatchCosLoadBalancerStep(),
         ]
 
-        run_plan(plan, console)
+        grafana_agent_plan = [
+            TerraformInitStep(tfhelper_grafana_agent),
+            DeployGrafanaAgentStep(self, tfhelper_grafana_agent, tfhelper_cos, jhelper),
+        ]
+
+        run_plan(cos_plan, console)
+        run_plan(grafana_agent_plan, console)
 
         click.echo("Monitoring enabled.")
 
@@ -224,19 +353,33 @@ class MonitoringPlugin(EnableDisablePlugin):
 
     def run_disable_plans(self):
         data_location = self.snap.paths.user_data
-        tfhelper = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / self.tfplan,
-            plan="monitoring-plan",
+        tfhelper_cos = TerraformHelper(
+            path=self.snap.paths.user_common / "etc" / self.tfplan_cos,
+            plan="cos-plan",
             backend="http",
             data_location=data_location,
         )
+        tfhelper_grafana_agent = TerraformHelper(
+            path=self.snap.paths.user_common / "etc" / self.tfplan_grafana_agent,
+            plan="grafana-agent-plan",
+            backend="http",
+            data_location=data_location,
+        )
+
         jhelper = JujuHelper(data_location)
-        plan = [
-            TerraformInitStep(tfhelper),
-            DisableMonitoringStep(self, tfhelper, jhelper),
+
+        cos_plan = [
+            TerraformInitStep(tfhelper_cos),
+            RemoveCosStep(self, tfhelper_cos, jhelper),
         ]
 
-        run_plan(plan, console)
+        grafana_agent_plan = [
+            TerraformInitStep(tfhelper_grafana_agent),
+            RemoveGrafanaAgentStep(self, tfhelper_grafana_agent, tfhelper_cos, jhelper),
+        ]
+
+        run_plan(grafana_agent_plan, console)
+        run_plan(cos_plan, console)
         click.echo("Monitoring disabled.")
 
     @click.command()
