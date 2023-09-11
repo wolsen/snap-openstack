@@ -43,3 +43,9 @@ sunbeam-plugins:
       path: sunbeam.plugins.octavia.plugin.OctaviaPlugin
       supported_architectures:
         - amd64
+    - name: "designate"
+      version: "0.0.1"
+      description: "Plugin for OpenStack Designate"
+      path: sunbeam.plugins.designate.plugin.DesignatePlugin
+      supported_architectures:
+        - amd64
