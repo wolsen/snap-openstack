@@ -21,7 +21,7 @@ import pytest
 from sunbeam.commands.terraform import TerraformException
 from sunbeam.jobs.common import ResultType
 from sunbeam.jobs.juju import TimeoutException
-from sunbeam.plugins.monitoring import plugin as monitoring_plugin
+from sunbeam.plugins.observability import plugin as observability_plugin
 
 
 @pytest.fixture(autouse=True)
@@ -34,7 +34,7 @@ def mock_run_sync(mocker):
     def run_sync(coro):
         return loop.run_until_complete(coro)
 
-    mocker.patch("sunbeam.plugins.monitoring.plugin.run_sync", run_sync)
+    mocker.patch("sunbeam.plugins.observability.plugin.run_sync", run_sync)
     yield
     loop.close()
 
@@ -56,14 +56,16 @@ def tfhelper():
 
 
 @pytest.fixture()
-def monitoringplugin():
-    with patch("sunbeam.plugins.monitoring.plugin.MonitoringPlugin") as p:
+def observabilityplugin():
+    with patch("sunbeam.plugins.observability.plugin.ObservabilityPlugin") as p:
         yield p
 
 
 class TestDeployCosStep:
-    def test_run(self, cclient, jhelper, tfhelper, monitoringplugin):
-        step = monitoring_plugin.DeployCosStep(monitoringplugin, tfhelper, jhelper)
+    def test_run(self, cclient, jhelper, tfhelper, observabilityplugin):
+        step = observability_plugin.DeployCosStep(
+            observabilityplugin, tfhelper, jhelper
+        )
         result = step.run()
 
         tfhelper.write_tfvars.assert_called_once()
@@ -71,10 +73,12 @@ class TestDeployCosStep:
         jhelper.wait_until_active.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
 
-    def test_run_tf_apply_failed(self, cclient, jhelper, tfhelper, monitoringplugin):
+    def test_run_tf_apply_failed(self, cclient, jhelper, tfhelper, observabilityplugin):
         tfhelper.apply.side_effect = TerraformException("apply failed...")
 
-        step = monitoring_plugin.DeployCosStep(monitoringplugin, tfhelper, jhelper)
+        step = observability_plugin.DeployCosStep(
+            observabilityplugin, tfhelper, jhelper
+        )
         result = step.run()
 
         tfhelper.write_tfvars.assert_called_once()
@@ -83,10 +87,14 @@ class TestDeployCosStep:
         assert result.result_type == ResultType.FAILED
         assert result.message == "apply failed..."
 
-    def test_run_waiting_timed_out(self, cclient, jhelper, tfhelper, monitoringplugin):
+    def test_run_waiting_timed_out(
+        self, cclient, jhelper, tfhelper, observabilityplugin
+    ):
         jhelper.wait_until_active.side_effect = TimeoutException("timed out")
 
-        step = monitoring_plugin.DeployCosStep(monitoringplugin, tfhelper, jhelper)
+        step = observability_plugin.DeployCosStep(
+            observabilityplugin, tfhelper, jhelper
+        )
         result = step.run()
 
         tfhelper.write_tfvars.assert_called_once()
@@ -97,8 +105,10 @@ class TestDeployCosStep:
 
 
 class TestRemoveCosStep:
-    def test_run(self, cclient, jhelper, tfhelper, monitoringplugin):
-        step = monitoring_plugin.RemoveCosStep(monitoringplugin, tfhelper, jhelper)
+    def test_run(self, cclient, jhelper, tfhelper, observabilityplugin):
+        step = observability_plugin.RemoveCosStep(
+            observabilityplugin, tfhelper, jhelper
+        )
         result = step.run()
 
         tfhelper.write_tfvars.assert_called_once()
@@ -106,10 +116,14 @@ class TestRemoveCosStep:
         jhelper.wait_model_gone.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
 
-    def test_run_tf_destroy_failed(self, cclient, jhelper, tfhelper, monitoringplugin):
+    def test_run_tf_destroy_failed(
+        self, cclient, jhelper, tfhelper, observabilityplugin
+    ):
         tfhelper.destroy.side_effect = TerraformException("destroy failed...")
 
-        step = monitoring_plugin.RemoveCosStep(monitoringplugin, tfhelper, jhelper)
+        step = observability_plugin.RemoveCosStep(
+            observabilityplugin, tfhelper, jhelper
+        )
         result = step.run()
 
         tfhelper.write_tfvars.assert_called_once()
@@ -118,10 +132,14 @@ class TestRemoveCosStep:
         assert result.result_type == ResultType.FAILED
         assert result.message == "destroy failed..."
 
-    def test_run_waiting_timed_out(self, cclient, jhelper, tfhelper, monitoringplugin):
+    def test_run_waiting_timed_out(
+        self, cclient, jhelper, tfhelper, observabilityplugin
+    ):
         jhelper.wait_model_gone.side_effect = TimeoutException("timed out")
 
-        step = monitoring_plugin.RemoveCosStep(monitoringplugin, tfhelper, jhelper)
+        step = observability_plugin.RemoveCosStep(
+            observabilityplugin, tfhelper, jhelper
+        )
         result = step.run()
 
         tfhelper.write_tfvars.assert_called_once()
@@ -132,9 +150,9 @@ class TestRemoveCosStep:
 
 
 class TestDeployGrafanaAgentStep:
-    def test_run(self, cclient, jhelper, tfhelper, monitoringplugin):
-        step = monitoring_plugin.DeployGrafanaAgentStep(
-            monitoringplugin, tfhelper, tfhelper, jhelper
+    def test_run(self, cclient, jhelper, tfhelper, observabilityplugin):
+        step = observability_plugin.DeployGrafanaAgentStep(
+            observabilityplugin, tfhelper, tfhelper, jhelper
         )
         result = step.run()
 
@@ -143,11 +161,11 @@ class TestDeployGrafanaAgentStep:
         jhelper.wait_application_ready.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
 
-    def test_run_tf_apply_failed(self, cclient, jhelper, tfhelper, monitoringplugin):
+    def test_run_tf_apply_failed(self, cclient, jhelper, tfhelper, observabilityplugin):
         tfhelper.apply.side_effect = TerraformException("apply failed...")
 
-        step = monitoring_plugin.DeployGrafanaAgentStep(
-            monitoringplugin, tfhelper, tfhelper, jhelper
+        step = observability_plugin.DeployGrafanaAgentStep(
+            observabilityplugin, tfhelper, tfhelper, jhelper
         )
         result = step.run()
 
@@ -157,11 +175,13 @@ class TestDeployGrafanaAgentStep:
         assert result.result_type == ResultType.FAILED
         assert result.message == "apply failed..."
 
-    def test_run_waiting_timed_out(self, cclient, jhelper, tfhelper, monitoringplugin):
+    def test_run_waiting_timed_out(
+        self, cclient, jhelper, tfhelper, observabilityplugin
+    ):
         jhelper.wait_application_ready.side_effect = TimeoutException("timed out")
 
-        step = monitoring_plugin.DeployGrafanaAgentStep(
-            monitoringplugin, tfhelper, tfhelper, jhelper
+        step = observability_plugin.DeployGrafanaAgentStep(
+            observabilityplugin, tfhelper, tfhelper, jhelper
         )
         result = step.run()
 
@@ -173,9 +193,9 @@ class TestDeployGrafanaAgentStep:
 
 
 class TestRemoveGrafanaAgentStep:
-    def test_run(self, cclient, jhelper, tfhelper, monitoringplugin):
-        step = monitoring_plugin.RemoveGrafanaAgentStep(
-            monitoringplugin, tfhelper, tfhelper, jhelper
+    def test_run(self, cclient, jhelper, tfhelper, observabilityplugin):
+        step = observability_plugin.RemoveGrafanaAgentStep(
+            observabilityplugin, tfhelper, tfhelper, jhelper
         )
         result = step.run()
 
@@ -184,11 +204,13 @@ class TestRemoveGrafanaAgentStep:
         jhelper.wait_application_gone.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
 
-    def test_run_tf_destroy_failed(self, cclient, jhelper, tfhelper, monitoringplugin):
+    def test_run_tf_destroy_failed(
+        self, cclient, jhelper, tfhelper, observabilityplugin
+    ):
         tfhelper.destroy.side_effect = TerraformException("destroy failed...")
 
-        step = monitoring_plugin.RemoveGrafanaAgentStep(
-            monitoringplugin, tfhelper, tfhelper, jhelper
+        step = observability_plugin.RemoveGrafanaAgentStep(
+            observabilityplugin, tfhelper, tfhelper, jhelper
         )
         result = step.run()
 
@@ -198,11 +220,13 @@ class TestRemoveGrafanaAgentStep:
         assert result.result_type == ResultType.FAILED
         assert result.message == "destroy failed..."
 
-    def test_run_waiting_timed_out(self, cclient, jhelper, tfhelper, monitoringplugin):
+    def test_run_waiting_timed_out(
+        self, cclient, jhelper, tfhelper, observabilityplugin
+    ):
         jhelper.wait_application_gone.side_effect = TimeoutException("timed out")
 
-        step = monitoring_plugin.RemoveGrafanaAgentStep(
-            monitoringplugin, tfhelper, tfhelper, jhelper
+        step = observability_plugin.RemoveGrafanaAgentStep(
+            observabilityplugin, tfhelper, tfhelper, jhelper
         )
         result = step.run()
 

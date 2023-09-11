@@ -13,9 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Monitoring plugin.
+"""Observability plugin.
 
-Plugin to deploy and manage monitoring, powered by COS Lite.
+Plugin to deploy and manage observability, powered by COS Lite.
 """
 
 import logging
@@ -71,7 +71,7 @@ class DeployCosStep(BaseStep, JujuStepHelper):
 
     def __init__(
         self,
-        plugin: "MonitoringPlugin",
+        plugin: "ObservabilityPlugin",
         tfhelper: TerraformHelper,
         jhelper: JujuHelper,
     ):
@@ -131,7 +131,7 @@ class DeployGrafanaAgentStep(BaseStep, JujuStepHelper):
 
     def __init__(
         self,
-        plugin: "MonitoringPlugin",
+        plugin: "ObservabilityPlugin",
         tfhelper: TerraformHelper,
         tfhelper_cos: TerraformHelper,
         jhelper: JujuHelper,
@@ -189,7 +189,7 @@ class RemoveCosStep(BaseStep, JujuStepHelper):
 
     def __init__(
         self,
-        plugin: "MonitoringPlugin",
+        plugin: "ObservabilityPlugin",
         tfhelper: TerraformHelper,
         jhelper: JujuHelper,
     ):
@@ -240,7 +240,7 @@ class RemoveGrafanaAgentStep(BaseStep, JujuStepHelper):
 
     def __init__(
         self,
-        plugin: "MonitoringPlugin",
+        plugin: "ObservabilityPlugin",
         tfhelper: TerraformHelper,
         tfhelper_cos: TerraformHelper,
         jhelper: JujuHelper,
@@ -295,11 +295,11 @@ class PatchCosLoadBalancerStep(PatchLoadBalancerServicesStep):
     MODEL = COS_MODEL
 
 
-class MonitoringPlugin(EnableDisablePlugin):
+class ObservabilityPlugin(EnableDisablePlugin):
     version = Version("0.0.1")
 
     def __init__(self) -> None:
-        super().__init__(name="monitoring")
+        super().__init__(name="observability")
         self.snap = Snap()
         self.tfplan_cos = "deploy-cos"
         self.tfplan_grafana_agent = "deploy-grafana-agent"
@@ -346,7 +346,7 @@ class MonitoringPlugin(EnableDisablePlugin):
         run_plan(cos_plan, console)
         run_plan(grafana_agent_plan, console)
 
-        click.echo("Monitoring enabled.")
+        click.echo("Observability enabled.")
 
     def pre_disable(self):
         self.pre_enable()
@@ -380,21 +380,21 @@ class MonitoringPlugin(EnableDisablePlugin):
 
         run_plan(grafana_agent_plan, console)
         run_plan(cos_plan, console)
-        click.echo("Monitoring disabled.")
+        click.echo("Observability disabled.")
 
     @click.command()
     def enable_plugin(self) -> None:
-        """Enable Monitoring."""
+        """Enable Observability."""
         super().enable_plugin()
 
     @click.command()
     def disable_plugin(self) -> None:
-        """Disable  Monitoring."""
+        """Disable  Observability."""
         super().disable_plugin()
 
     @click.group()
-    def monitoring_group(self):
-        """Manage Monitoring."""
+    def observability_group(self):
+        """Manage Observability."""
 
     @click.command()
     def dashboard_url(self) -> None:
@@ -440,8 +440,10 @@ class MonitoringPlugin(EnableDisablePlugin):
         if enabled:
             commands.update(
                 {
-                    "init": [{"name": "monitoring", "command": self.monitoring_group}],
-                    "monitoring": [
+                    "init": [
+                        {"name": "observability", "command": self.observability_group}
+                    ],
+                    "observability": [
                         {"name": "dashboard-url", "command": self.dashboard_url}
                     ],
                 }

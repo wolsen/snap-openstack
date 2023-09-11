@@ -25,10 +25,10 @@ sunbeam-plugins:
       path: sunbeam.plugins.heat.plugin.HeatPlugin
       supported_architectures:
         - amd64
-    - name: "monitoring"
+    - name: "observability"
       version: "0.0.1"
-      description: "Monitoring Plugin"
-      path: sunbeam.plugins.monitoring.plugin.MonitoringPlugin
+      description: "Observability Plugin"
+      path: sunbeam.plugins.observability.plugin.ObservabilityPlugin
       supported_architectures:
         - amd64
     - name: "telemetry"
