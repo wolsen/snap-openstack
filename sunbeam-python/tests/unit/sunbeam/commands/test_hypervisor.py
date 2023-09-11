@@ -218,6 +218,9 @@ class TestRemoveHypervisorUnitStep(unittest.TestCase):
         self.client = patch(
             "sunbeam.commands.hypervisor.Client", return_value=self.clientMock
         )
+        guest = Mock()
+        type(guest).name = "my-guest"
+        self.guests = [guest]
 
     def setUp(self):
         self.client.start()
@@ -275,13 +278,37 @@ class TestRemoveHypervisorUnitStep(unittest.TestCase):
         self.jhelper.get_application.assert_called_once()
         assert result.result_type == ResultType.SKIPPED
 
-    def test_run(self):
+    @patch("sunbeam.commands.hypervisor.remove_hypervisor")
+    @patch("sunbeam.commands.hypervisor.guests_on_hypervisor")
+    def test_run(self, guests_on_hypervisor, remove_hypervisor):
+        guests_on_hypervisor.return_value = []
         step = RemoveHypervisorUnitStep(self.name, self.jhelper)
         result = step.run()
-
         assert result.result_type == ResultType.COMPLETED
+        remove_hypervisor.assert_called_once_with("test-0", self.jhelper)
 
-    def test_run_application_not_found(self):
+    @patch("sunbeam.commands.hypervisor.remove_hypervisor")
+    @patch("sunbeam.commands.hypervisor.guests_on_hypervisor")
+    def test_run_guests(self, guests_on_hypervisor, remove_hypervisor):
+        guests_on_hypervisor.return_value = self.guests
+        step = RemoveHypervisorUnitStep(self.name, self.jhelper)
+        result = step.run()
+        assert result.result_type == ResultType.FAILED
+        assert not remove_hypervisor.called
+
+    @patch("sunbeam.commands.hypervisor.remove_hypervisor")
+    @patch("sunbeam.commands.hypervisor.guests_on_hypervisor")
+    def test_run_guests_force(self, guests_on_hypervisor, remove_hypervisor):
+        guests_on_hypervisor.return_value = self.guests
+        step = RemoveHypervisorUnitStep(self.name, self.jhelper, True)
+        result = step.run()
+        assert result.result_type == ResultType.COMPLETED
+        remove_hypervisor.assert_called_once_with("test-0", self.jhelper)
+
+    @patch("sunbeam.commands.hypervisor.remove_hypervisor")
+    @patch("sunbeam.commands.hypervisor.guests_on_hypervisor")
+    def test_run_application_not_found(self, guests_on_hypervisor, remove_hypervisor):
+        guests_on_hypervisor.return_value = []
         self.jhelper.remove_unit.side_effect = ApplicationNotFoundException(
             "Application missing..."
         )
@@ -293,7 +320,10 @@ class TestRemoveHypervisorUnitStep(unittest.TestCase):
         assert result.result_type == ResultType.FAILED
         assert result.message == "Application missing..."
 
-    def test_run_timeout(self):
+    @patch("sunbeam.commands.hypervisor.remove_hypervisor")
+    @patch("sunbeam.commands.hypervisor.guests_on_hypervisor")
+    def test_run_timeout(self, guests_on_hypervisor, remove_hypervisor):
+        guests_on_hypervisor.return_value = []
         self.jhelper.wait_application_ready.side_effect = TimeoutException("timed out")
 
         step = RemoveHypervisorUnitStep(self.name, self.jhelper)
