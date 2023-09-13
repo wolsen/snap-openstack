@@ -100,3 +100,17 @@ resource "juju_integration" "hypervisor-ovn" {
     offer_url = data.terraform_remote_state.openstack.outputs.ovn-relay-offer-url
   }
 }
+
+resource "juju_integration" "hypervisor-ceilometer" {
+  count = try(data.terraform_remote_state.openstack.outputs.ceilometer-offer-url, null) != null ? 1 : 0
+  model = var.hypervisor_model
+
+  application {
+    name     = juju_application.openstack-hypervisor.name
+    endpoint = "ceilometer-service"
+  }
+
+  application {
+    offer_url = data.terraform_remote_state.openstack.outputs.ceilometer-offer-url
+  }
+}

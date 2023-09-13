@@ -23,6 +23,7 @@ from sunbeam.clusterd.service import NodeNotExistInClusterException
 from sunbeam.commands.hypervisor import (
     AddHypervisorUnitStep,
     DeployHypervisorApplicationStep,
+    ReapplyHypervisorTerraformPlanStep,
     RemoveHypervisorUnitStep,
 )
 from sunbeam.commands.terraform import TerraformException
@@ -49,15 +50,27 @@ class TestDeployHypervisorStep(unittest.TestCase):
     def __init__(self, methodName: str = "runTest") -> None:
         super().__init__(methodName)
         self.client = patch("sunbeam.commands.hypervisor.Client")
+        self.read_config = patch(
+            "sunbeam.commands.hypervisor.read_config",
+            Mock(
+                return_value={
+                    "openstack_model": "openstack",
+                }
+            ),
+        )
 
     def setUp(self):
         self.client.start()
+        self.read_config.start()
         self.jhelper = AsyncMock()
         self.tfhelper = Mock(path=Path())
         self.tfhelper_openstack = Mock(output=Mock(return_value={}))
+        self.tfhelper_openstack.backend = "http"
+        self.tfhelper_openstack.backend_config.return_value = {}
 
     def tearDown(self):
         self.client.stop()
+        self.read_config.stop()
 
     def test_is_skip(self):
         self.jhelper.get_application.side_effect = ApplicationNotFoundException(
@@ -127,14 +140,24 @@ class TestAddHypervisorUnitStep(unittest.TestCase):
         self.client = patch(
             "sunbeam.commands.hypervisor.Client", return_value=self.clientMock
         )
+        self.read_config = patch(
+            "sunbeam.commands.hypervisor.read_config",
+            Mock(
+                return_value={
+                    "openstack_model": "openstack",
+                }
+            ),
+        )
 
     def setUp(self):
         self.client.start()
+        self.read_config.start()
         self.jhelper = AsyncMock()
         self.name = "test-0"
 
     def tearDown(self):
         self.client.stop()
+        self.read_config.stop()
         self.clientMock.reset_mock()
 
     def test_is_skip(self):
@@ -218,17 +241,27 @@ class TestRemoveHypervisorUnitStep(unittest.TestCase):
         self.client = patch(
             "sunbeam.commands.hypervisor.Client", return_value=self.clientMock
         )
+        self.read_config = patch(
+            "sunbeam.commands.hypervisor.read_config",
+            Mock(
+                return_value={
+                    "openstack_model": "openstack",
+                }
+            ),
+        )
         guest = Mock()
         type(guest).name = "my-guest"
         self.guests = [guest]
 
     def setUp(self):
         self.client.start()
+        self.read_config.start()
         self.jhelper = AsyncMock()
         self.name = "test-0"
 
     def tearDown(self):
         self.client.stop()
+        self.read_config.stop()
         self.clientMock.reset_mock()
 
     def test_is_skip(self):
@@ -327,6 +360,71 @@ class TestRemoveHypervisorUnitStep(unittest.TestCase):
         self.jhelper.wait_application_ready.side_effect = TimeoutException("timed out")
 
         step = RemoveHypervisorUnitStep(self.name, self.jhelper)
+        result = step.run()
+
+        self.jhelper.wait_application_ready.assert_called_once()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == "timed out"
+
+
+class TestReapplyHypervisorTerraformPlanStep(unittest.TestCase):
+    def __init__(self, methodName: str = "runTest") -> None:
+        super().__init__(methodName)
+        self.client = patch("sunbeam.commands.hypervisor.Client", Mock())
+        self.read_config = patch(
+            "sunbeam.commands.hypervisor.read_config",
+            Mock(
+                return_value={
+                    "openstack_model": "openstack",
+                }
+            ),
+        )
+
+    def setUp(self):
+        self.client.start()
+        self.read_config.start()
+        self.jhelper = AsyncMock()
+        self.tfhelper = Mock(path=Path())
+        self.tfhelper_openstack = Mock(output=Mock(return_value={}))
+        self.tfhelper_openstack.backend = "http"
+        self.tfhelper_openstack.backend_config.return_value = {}
+
+    def tearDown(self):
+        self.client.stop()
+        self.read_config.stop()
+
+    def test_is_skip(self):
+        step = ReapplyHypervisorTerraformPlanStep(self.tfhelper, self.jhelper)
+        result = step.is_skip()
+
+        assert result.result_type == ResultType.COMPLETED
+
+    def test_run_pristine_installation(self):
+        self.jhelper.get_application.side_effect = ApplicationNotFoundException(
+            "not found"
+        )
+
+        step = ReapplyHypervisorTerraformPlanStep(self.tfhelper, self.jhelper)
+        result = step.run()
+
+        self.tfhelper.write_tfvars.assert_called_once()
+        self.tfhelper.apply.assert_called_once()
+        assert result.result_type == ResultType.COMPLETED
+
+    def test_run_tf_apply_failed(self):
+        self.tfhelper.apply.side_effect = TerraformException("apply failed...")
+
+        step = ReapplyHypervisorTerraformPlanStep(self.tfhelper, self.jhelper)
+        result = step.run()
+
+        self.tfhelper.apply.assert_called_once()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == "apply failed..."
+
+    def test_run_waiting_timed_out(self):
+        self.jhelper.wait_application_ready.side_effect = TimeoutException("timed out")
+
+        step = ReapplyHypervisorTerraformPlanStep(self.tfhelper, self.jhelper)
         result = step.run()
 
         self.jhelper.wait_application_ready.assert_called_once()

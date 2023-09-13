@@ -20,6 +20,7 @@ import click
 from packaging.version import Version
 from rich.console import Console
 
+from sunbeam.commands.hypervisor import ReapplyHypervisorTerraformPlanStep
 from sunbeam.commands.openstack import OPENSTACK_MODEL
 from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
 from sunbeam.jobs.common import BaseStep, Result, ResultType, Status, run_plan
@@ -30,6 +31,7 @@ from sunbeam.jobs.juju import (
     run_sync,
 )
 from sunbeam.plugins.interface.v1.openstack import (
+    DisableOpenStackApplicationStep,
     EnableOpenStackApplicationStep,
     OpenStackControlPlanePlugin,
     TerraformPlanLocation,
@@ -57,15 +59,48 @@ class TelemetryPlugin(OpenStackControlPlanePlugin):
             backend="http",
             data_location=data_location,
         )
+        tfhelper_hypervisor_deploy = TerraformHelper(
+            path=self.snap.paths.user_common / "etc" / "deploy-openstack-hypervisor",
+            plan="hypervisor-plan",
+            backend="http",
+            data_location=data_location,
+        )
         jhelper = JujuHelper(data_location)
         plan = [
             TerraformInitStep(tfhelper),
             EnableOpenStackApplicationStep(tfhelper, jhelper, self),
             UpgradeCeilometerStep(jhelper),
+            # No need to pass any extra terraform vars for this plugin
+            ReapplyHypervisorTerraformPlanStep(tfhelper_hypervisor_deploy, jhelper),
         ]
 
         run_plan(plan, console)
         click.echo(f"OpenStack {self.name} application enabled.")
+
+    def run_disable_plans(self) -> None:
+        """Run plans to disable the plugin."""
+        data_location = self.snap.paths.user_data
+        tfhelper = TerraformHelper(
+            path=self.snap.paths.user_common / "etc" / f"deploy-{self.tfplan}",
+            plan=self._get_plan_name(),
+            backend="http",
+            data_location=data_location,
+        )
+        tfhelper_hypervisor_deploy = TerraformHelper(
+            path=self.snap.paths.user_common / "etc" / "deploy-openstack-hypervisor",
+            plan="hypervisor-plan",
+            backend="http",
+            data_location=data_location,
+        )
+        jhelper = JujuHelper(data_location)
+        plan = [
+            TerraformInitStep(tfhelper),
+            DisableOpenStackApplicationStep(tfhelper, jhelper, self),
+            ReapplyHypervisorTerraformPlanStep(tfhelper_hypervisor_deploy, jhelper),
+        ]
+
+        run_plan(plan, console)
+        click.echo(f"OpenStack {self.name} application disabled.")
 
     def set_application_names(self) -> list:
         """Application names handled by the terraform plan."""
