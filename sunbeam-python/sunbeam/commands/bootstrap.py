@@ -99,12 +99,11 @@ snap = Snap()
     "--role",
     "roles",
     multiple=True,
-    default=["control", "compute"],
-    type=click.Choice(["control", "compute", "storage"], case_sensitive=False),
+    default=["compute"],
+    type=click.Choice(["compute", "storage"], case_sensitive=False),
     callback=validate_roles,
-    help="Specify whether the node will be a control node, a "
-    "compute node or a storage node. Defaults to control and "
-    "compute roles.",
+    help="Specify additional roles, compute or storage, for the "
+    "bootstrap node. Defaults to the compute role.",
 )
 @click_option_topology
 @click.option(
@@ -136,6 +135,8 @@ def bootstrap(
 
     Initialize the sunbeam cluster.
     """
+    # The bootstrap node must always be a control node.
+    roles.append(Role.CONTROL)
     is_control_node = any(role.is_control_node() for role in roles)
     is_compute_node = any(role.is_compute_node() for role in roles)
     is_storage_node = any(role.is_storage_node() for role in roles)
