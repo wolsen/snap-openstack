@@ -61,9 +61,9 @@ def observabilityplugin():
         yield p
 
 
-class TestDeployCosStep:
+class TestDeployObservabilityStackStep:
     def test_run(self, cclient, jhelper, tfhelper, observabilityplugin):
-        step = observability_plugin.DeployCosStep(
+        step = observability_plugin.DeployObservabilityStackStep(
             observabilityplugin, tfhelper, jhelper
         )
         result = step.run()
@@ -76,7 +76,7 @@ class TestDeployCosStep:
     def test_run_tf_apply_failed(self, cclient, jhelper, tfhelper, observabilityplugin):
         tfhelper.apply.side_effect = TerraformException("apply failed...")
 
-        step = observability_plugin.DeployCosStep(
+        step = observability_plugin.DeployObservabilityStackStep(
             observabilityplugin, tfhelper, jhelper
         )
         result = step.run()
@@ -92,7 +92,7 @@ class TestDeployCosStep:
     ):
         jhelper.wait_until_active.side_effect = TimeoutException("timed out")
 
-        step = observability_plugin.DeployCosStep(
+        step = observability_plugin.DeployObservabilityStackStep(
             observabilityplugin, tfhelper, jhelper
         )
         result = step.run()
@@ -104,9 +104,9 @@ class TestDeployCosStep:
         assert result.message == "timed out"
 
 
-class TestRemoveCosStep:
+class TestRemoveObservabilityStackStep:
     def test_run(self, cclient, jhelper, tfhelper, observabilityplugin):
-        step = observability_plugin.RemoveCosStep(
+        step = observability_plugin.RemoveObservabilityStackStep(
             observabilityplugin, tfhelper, jhelper
         )
         result = step.run()
@@ -121,7 +121,7 @@ class TestRemoveCosStep:
     ):
         tfhelper.destroy.side_effect = TerraformException("destroy failed...")
 
-        step = observability_plugin.RemoveCosStep(
+        step = observability_plugin.RemoveObservabilityStackStep(
             observabilityplugin, tfhelper, jhelper
         )
         result = step.run()
@@ -137,7 +137,7 @@ class TestRemoveCosStep:
     ):
         jhelper.wait_model_gone.side_effect = TimeoutException("timed out")
 
-        step = observability_plugin.RemoveCosStep(
+        step = observability_plugin.RemoveObservabilityStackStep(
             observabilityplugin, tfhelper, jhelper
         )
         result = step.run()

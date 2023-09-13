@@ -15,9 +15,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-variable "openstack-hypervisor-name" {
-  description = "Name of the deployed openstack-hypervisor application"
-  default = "openstack-hypervisor"
+variable "principal-application" {
+  description = "Name of the deployed principal application that integrates with grafana-agent"
 }
 
 variable "controller-model" {

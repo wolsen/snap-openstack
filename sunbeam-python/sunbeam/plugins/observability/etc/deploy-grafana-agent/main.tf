@@ -19,7 +19,7 @@ terraform {
   required_providers {
     juju = {
       source  = "juju/juju"
-      version = ">= 0.7.0"
+      version = "= 0.8.0"
     }
   }
 }
@@ -42,8 +42,8 @@ resource "juju_application" "grafana-agent" {
   }
 }
 
-# juju integrate openstack-hypervisor:cos-agent grafana-agent:cos-agent
-resource "juju_integration" "openstack-hypervisor-to-grafana-agent" {
+# juju integrate <principal-application>:cos-agent grafana-agent:cos-agent
+resource "juju_integration" "principal-application-to-grafana-agent" {
   model    = var.controller-model
 
   application {
@@ -52,7 +52,7 @@ resource "juju_integration" "openstack-hypervisor-to-grafana-agent" {
   }
 
   application {
-    name     = var.openstack-hypervisor-name
+    name     = var.principal-application
     endpoint = "cos-agent"
   }
 }

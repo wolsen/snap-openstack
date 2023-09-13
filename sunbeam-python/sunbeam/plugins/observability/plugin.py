@@ -61,13 +61,13 @@ from sunbeam.plugins.interface.v1.base import EnableDisablePlugin
 LOG = logging.getLogger(__name__)
 console = Console()
 
-COS_MODEL = "cos"
-COS_DEPLOY_TIMEOUT = 1200  # 20 minutes
+OBSERVABILITY_MODEL = "observability"
+OBSERVABILITY_DEPLOY_TIMEOUT = 1200  # 20 minutes
 CONTROLLER_MODEL = CONTROLLER_MODEL.split("/")[-1]
 
 
-class DeployCosStep(BaseStep, JujuStepHelper):
-    """Deploy COS Lite using Terraform"""
+class DeployObservabilityStackStep(BaseStep, JujuStepHelper):
+    """Deploy Observability Stack using Terraform"""
 
     def __init__(
         self,
@@ -75,10 +75,12 @@ class DeployCosStep(BaseStep, JujuStepHelper):
         tfhelper: TerraformHelper,
         jhelper: JujuHelper,
     ):
-        super().__init__("Deploying COS Lite", "Deploying COS Lite")
+        super().__init__(
+            "Deploying Observability Stack", "Deploying Observability Stack"
+        )
         self.tfhelper = tfhelper
         self.jhelper = jhelper
-        self.model = COS_MODEL
+        self.model = OBSERVABILITY_MODEL
         self.cloud = MICROK8S_CLOUD
         self.read_config = lambda: plugin.get_plugin_info().get("config", {})
         self.update_config = lambda c: plugin.update_plugin_info({"config": c})
@@ -102,7 +104,7 @@ class DeployCosStep(BaseStep, JujuStepHelper):
         try:
             self.tfhelper.apply()
         except TerraformException as e:
-            LOG.exception("Error deploying COS Lite")
+            LOG.exception("Error deploying Observability Stack")
             return Result(ResultType.FAILED, str(e))
 
         apps = run_sync(self.jhelper.get_application_names(self.model))
@@ -113,11 +115,11 @@ class DeployCosStep(BaseStep, JujuStepHelper):
                 self.jhelper.wait_until_active(
                     self.model,
                     apps,
-                    timeout=COS_DEPLOY_TIMEOUT,
+                    timeout=OBSERVABILITY_DEPLOY_TIMEOUT,
                 )
             )
         except (JujuWaitException, TimeoutException) as e:
-            LOG.debug("Failed to deploy COS Lite", exc_info=True)
+            LOG.debug("Failed to deploy Observability Stack", exc_info=True)
             return Result(ResultType.FAILED, str(e))
         finally:
             if not task.done():
@@ -155,6 +157,7 @@ class DeployGrafanaAgentStep(BaseStep, JujuStepHelper):
             "controller-model": self.model,
             "cos-state-backend": cos_backend,
             "cos-state-config": cos_backend_config,
+            "principal-application": "openstack-hypervisor",
         }
         config.update(tfvars)
         self.update_config(config)
@@ -174,7 +177,7 @@ class DeployGrafanaAgentStep(BaseStep, JujuStepHelper):
                 self.jhelper.wait_application_ready(
                     app,
                     self.model,
-                    timeout=COS_DEPLOY_TIMEOUT,
+                    timeout=OBSERVABILITY_DEPLOY_TIMEOUT,
                 )
             )
         except (JujuWaitException, TimeoutException) as e:
@@ -184,8 +187,8 @@ class DeployGrafanaAgentStep(BaseStep, JujuStepHelper):
         return Result(ResultType.COMPLETED)
 
 
-class RemoveCosStep(BaseStep, JujuStepHelper):
-    """Remove COS Lite using Terraform"""
+class RemoveObservabilityStackStep(BaseStep, JujuStepHelper):
+    """Remove Observability Stack using Terraform"""
 
     def __init__(
         self,
@@ -193,10 +196,10 @@ class RemoveCosStep(BaseStep, JujuStepHelper):
         tfhelper: TerraformHelper,
         jhelper: JujuHelper,
     ):
-        super().__init__("Removing COS Lite", "Removing COS Lite")
+        super().__init__("Removing Observability Stack", "Removing Observability Stack")
         self.tfhelper = tfhelper
         self.jhelper = jhelper
-        self.model = COS_MODEL
+        self.model = OBSERVABILITY_MODEL
         self.cloud = MICROK8S_CLOUD
         self.read_config = lambda: plugin.get_plugin_info().get("config", {})
         self.update_config = lambda c: plugin.update_plugin_info({"config": c})
@@ -218,18 +221,18 @@ class RemoveCosStep(BaseStep, JujuStepHelper):
         try:
             self.tfhelper.destroy()
         except TerraformException as e:
-            LOG.exception("Error destroying COS Lite")
+            LOG.exception("Error destroying Observability Stack")
             return Result(ResultType.FAILED, str(e))
 
         try:
             run_sync(
                 self.jhelper.wait_model_gone(
                     self.model,
-                    timeout=COS_DEPLOY_TIMEOUT,
+                    timeout=OBSERVABILITY_DEPLOY_TIMEOUT,
                 )
             )
         except TimeoutException as e:
-            LOG.debug("Failed to destroy COS Lite", exc_info=True)
+            LOG.debug("Failed to destroy Observability Stack", exc_info=True)
             return Result(ResultType.FAILED, str(e))
 
         return Result(ResultType.COMPLETED)
@@ -264,6 +267,7 @@ class RemoveGrafanaAgentStep(BaseStep, JujuStepHelper):
             "controller-model": self.model,
             "cos-state-backend": cos_backend,
             "cos-state-config": cos_backend_config,
+            "principal-application": "openstack-hypervisor",
         }
         config.update(tfvars)
         self.update_config(config)
@@ -280,7 +284,7 @@ class RemoveGrafanaAgentStep(BaseStep, JujuStepHelper):
                 self.jhelper.wait_application_gone(
                     apps,
                     self.model,
-                    timeout=COS_DEPLOY_TIMEOUT,
+                    timeout=OBSERVABILITY_DEPLOY_TIMEOUT,
                 )
             )
         except TimeoutException as e:
@@ -292,7 +296,7 @@ class RemoveGrafanaAgentStep(BaseStep, JujuStepHelper):
 
 class PatchCosLoadBalancerStep(PatchLoadBalancerServicesStep):
     SERVICES = ["traefik"]
-    MODEL = COS_MODEL
+    MODEL = OBSERVABILITY_MODEL
 
 
 class ObservabilityPlugin(EnableDisablePlugin):
@@ -334,7 +338,7 @@ class ObservabilityPlugin(EnableDisablePlugin):
 
         cos_plan = [
             TerraformInitStep(tfhelper_cos),
-            DeployCosStep(self, tfhelper_cos, jhelper),
+            DeployObservabilityStackStep(self, tfhelper_cos, jhelper),
             PatchCosLoadBalancerStep(),
         ]
 
@@ -370,7 +374,7 @@ class ObservabilityPlugin(EnableDisablePlugin):
 
         cos_plan = [
             TerraformInitStep(tfhelper_cos),
-            RemoveCosStep(self, tfhelper_cos, jhelper),
+            RemoveObservabilityStackStep(self, tfhelper_cos, jhelper),
         ]
 
         grafana_agent_plan = [
@@ -404,7 +408,7 @@ class ObservabilityPlugin(EnableDisablePlugin):
 
         with console.status("Retrieving dashboard URL from Grafana service ... "):
             # Retrieve config from juju actions
-            model = COS_MODEL
+            model = OBSERVABILITY_MODEL
             app = "grafana"
             action_cmd = "get-admin-password"
             unit = run_sync(jhelper.get_leader_unit(app, model))
