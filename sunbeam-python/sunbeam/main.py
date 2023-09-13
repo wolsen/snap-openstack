@@ -30,6 +30,7 @@ from sunbeam.commands import node as node_cmds
 from sunbeam.commands import openrc as openrc_cmds
 from sunbeam.commands import prepare_node as prepare_node_cmds
 from sunbeam.commands import resize as resize_cmds
+from sunbeam.commands import utils as utils_cmds
 from sunbeam.jobs.plugin import PluginManager
 from sunbeam.utils import CatchGroup
 
@@ -74,6 +75,12 @@ def disable(ctx):
     """Disable plugins"""
 
 
+@click.group("utils", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
+@click.pass_context
+def utils(ctx):
+    """Utilities for debugging and managing sunbeam."""
+
+
 def main():
     snap = Snap()
     logfile = log.prepare_logfile(snap.paths.user_common / "logs", "sunbeam")
@@ -101,6 +108,9 @@ def main():
 
     # Register the plugins
     PluginManager.register(cli)
+
+    cli.add_command(utils)
+    utils.add_command(utils_cmds.juju_login)
 
     cli()
 
