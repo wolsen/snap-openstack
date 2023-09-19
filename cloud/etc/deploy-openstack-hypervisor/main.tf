@@ -114,3 +114,16 @@ resource "juju_integration" "hypervisor-ceilometer" {
     offer_url = data.terraform_remote_state.openstack.outputs.ceilometer-offer-url
   }
 }
+
+resource "juju_integration" "hypervisor-cinder-ceph" {
+  model = var.hypervisor_model
+
+  application {
+    name     = juju_application.openstack-hypervisor.name
+    endpoint = "ceph-access"
+  }
+
+  application {
+    offer_url = data.terraform_remote_state.openstack.outputs.cinder-ceph-offer-url
+  }
+}
