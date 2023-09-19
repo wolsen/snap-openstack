@@ -29,7 +29,10 @@ from rich.console import Console
 from rich.status import Status
 from snaphelpers import Snap
 
-from sunbeam.clusterd.service import ClusterServiceUnavailableException
+from sunbeam.clusterd.service import (
+    ClusterServiceUnavailableException,
+    ConfigItemNotFoundException,
+)
 from sunbeam.commands.juju import JujuStepHelper
 from sunbeam.commands.microk8s import (
     CREDENTIAL_SUFFIX,
@@ -75,20 +78,27 @@ class DeployObservabilityStackStep(BaseStep, JujuStepHelper):
         tfhelper: TerraformHelper,
         jhelper: JujuHelper,
     ):
-        super().__init__(
-            "Deploying Observability Stack", "Deploying Observability Stack"
-        )
+        super().__init__("Deploy Observability Stack", "Deploying Observability Stack")
         self.tfhelper = tfhelper
         self.jhelper = jhelper
         self.model = OBSERVABILITY_MODEL
         self.cloud = MICROK8S_CLOUD
-        self.read_config = lambda: plugin.get_plugin_info().get("config", {})
-        self.update_config = lambda c: plugin.update_plugin_info({"config": c})
+        self.read_config = lambda: plugin.get_plugin_info().get(
+            "observability-stack-config", {}
+        )
+        self.update_config = lambda c: plugin.update_plugin_info(
+            {"observability-stack-config": c}
+        )
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Execute configuration using terraform."""
 
-        config = self.read_config()
+        try:
+            config = self.read_config()
+        except ConfigItemNotFoundException as e:
+            LOG.exception("Failed deploying Observability Stack: unable to read config")
+            return Result(ResultType.FAILED, str(e))
+
         tfvars = {
             "model": self.model,
             "cos-channel": "1.0/candidate",
@@ -138,23 +148,32 @@ class DeployGrafanaAgentStep(BaseStep, JujuStepHelper):
         tfhelper_cos: TerraformHelper,
         jhelper: JujuHelper,
     ):
-        super().__init__("Deploying Grafana Agent", "Deploying Grafana Agent")
+        super().__init__("Deploy Grafana Agent", "Deploying Grafana Agent")
         self.tfhelper = tfhelper
         self.tfhelper_cos = tfhelper_cos
         self.jhelper = jhelper
         self.model = CONTROLLER_MODEL
-        self.read_config = lambda: plugin.get_plugin_info().get("config", {})
-        self.update_config = lambda c: plugin.update_plugin_info({"config": c})
+        self.read_config = lambda: plugin.get_plugin_info().get(
+            "grafana-agent-config", {}
+        )
+        self.update_config = lambda c: plugin.update_plugin_info(
+            {"grafana-agent-config": c}
+        )
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Execute configuration using terraform."""
 
         cos_backend = self.tfhelper_cos.backend
         cos_backend_config = self.tfhelper_cos.backend_config()
-        config = self.read_config()
+        try:
+            config = self.read_config()
+        except ConfigItemNotFoundException as e:
+            LOG.exception("Failed deploying grafana agent: unable to read config")
+            return Result(ResultType.FAILED, str(e))
+
         tfvars = {
             "grafana-agent-channel": "latest/edge",
-            "controller-model": self.model,
+            "principal-application-model": self.model,
             "cos-state-backend": cos_backend,
             "cos-state-config": cos_backend_config,
             "principal-application": "openstack-hypervisor",
@@ -196,18 +215,27 @@ class RemoveObservabilityStackStep(BaseStep, JujuStepHelper):
         tfhelper: TerraformHelper,
         jhelper: JujuHelper,
     ):
-        super().__init__("Removing Observability Stack", "Removing Observability Stack")
+        super().__init__("Remove Observability Stack", "Removing Observability Stack")
         self.tfhelper = tfhelper
         self.jhelper = jhelper
         self.model = OBSERVABILITY_MODEL
         self.cloud = MICROK8S_CLOUD
-        self.read_config = lambda: plugin.get_plugin_info().get("config", {})
-        self.update_config = lambda c: plugin.update_plugin_info({"config": c})
+        self.read_config = lambda: plugin.get_plugin_info().get(
+            "observability-stack-config", {}
+        )
+        self.update_config = lambda c: plugin.update_plugin_info(
+            {"observability-stack-config": c}
+        )
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Execute configuration using terraform."""
 
-        config = self.read_config()
+        try:
+            config = self.read_config()
+        except ConfigItemNotFoundException as e:
+            LOG.exception("Failed removing Observability Stack: unable to read config")
+            return Result(ResultType.FAILED, str(e))
+
         tfvars = {
             "model": self.model,
             "cos-channel": "1.0/candidate",
@@ -248,23 +276,32 @@ class RemoveGrafanaAgentStep(BaseStep, JujuStepHelper):
         tfhelper_cos: TerraformHelper,
         jhelper: JujuHelper,
     ):
-        super().__init__("Removing Grafana Agent", "Removing Grafana Agent")
+        super().__init__("Remove Grafana Agent", "Removing Grafana Agent")
         self.tfhelper = tfhelper
         self.tfhelper_cos = tfhelper_cos
         self.jhelper = jhelper
         self.model = CONTROLLER_MODEL
-        self.read_config = lambda: plugin.get_plugin_info().get("config", {})
-        self.update_config = lambda c: plugin.update_plugin_info({"config": c})
+        self.read_config = lambda: plugin.get_plugin_info().get(
+            "grafana-agent-config", {}
+        )
+        self.update_config = lambda c: plugin.update_plugin_info(
+            {"grafana-agent-config": c}
+        )
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Execute configuration using terraform."""
 
         cos_backend = self.tfhelper_cos.backend
         cos_backend_config = self.tfhelper_cos.backend_config()
-        config = self.read_config()
+        try:
+            config = self.read_config()
+        except ConfigItemNotFoundException as e:
+            LOG.exception("Failed removing grafana agent: unable to read config")
+            return Result(ResultType.FAILED, str(e))
+
         tfvars = {
             "grafana-agent-channel": "latest/edge",
-            "controller-model": self.model,
+            "principal-application-model": self.model,
             "cos-state-backend": cos_backend,
             "cos-state-config": cos_backend_config,
             "principal-application": "openstack-hypervisor",

@@ -32,7 +32,7 @@ data "terraform_remote_state" "cos" {
 resource "juju_application" "grafana-agent" {
   name = "grafana-agent"
   trust = false
-  model = var.controller-model
+  model = var.principal-application-model
   units = 0
 
   charm {
@@ -44,7 +44,7 @@ resource "juju_application" "grafana-agent" {
 
 # juju integrate <principal-application>:cos-agent grafana-agent:cos-agent
 resource "juju_integration" "principal-application-to-grafana-agent" {
-  model    = var.controller-model
+  model    = var.principal-application-model
 
   application {
     name     = juju_application.grafana-agent.name
@@ -59,7 +59,7 @@ resource "juju_integration" "principal-application-to-grafana-agent" {
 
 # juju integrate grafana-agent cos.prometheus-receive-remote-write
 resource "juju_integration" "grafana-agent-to-cos-prometheus" {
-  model = var.controller-model
+  model = var.principal-application-model
 
   application {
     name     = juju_application.grafana-agent.name
@@ -72,7 +72,7 @@ resource "juju_integration" "grafana-agent-to-cos-prometheus" {
 
 # juju integrate grafana-agent cos.loki-logging
 resource "juju_integration" "grafana-agent-to-cos-loki" {
-  model = var.controller-model
+  model = var.principal-application-model
 
   application {
     name     = juju_application.grafana-agent.name
@@ -85,7 +85,7 @@ resource "juju_integration" "grafana-agent-to-cos-loki" {
 
 # juju integrate grafana-agent cos.grafana-dashboards
 resource "juju_integration" "grafana-agent-to-cos-grafana" {
-  model = var.controller-model
+  model = var.principal-application-model
 
   application {
     name     = juju_application.grafana-agent.name

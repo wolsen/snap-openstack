@@ -19,13 +19,15 @@ variable "principal-application" {
   description = "Name of the deployed principal application that integrates with grafana-agent"
 }
 
-variable "controller-model" {
-  description = "Name of the sunbeam controller model"
+variable "principal-application-model" {
+  description = "Name of the model principal application is deployed in"
   default = "controller"
 }
 
 variable "grafana-agent-channel" {
   description = "Channel to use when deploying grafana agent machine charm"
+  # Note: Currently, latest/stable is not available for grafana-agent. So,
+  # defaulting to latest/candidate.
   default = "latest/candidate"
 }
 
