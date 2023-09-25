@@ -20,13 +20,14 @@ import click
 from packaging.version import Version
 from rich.console import Console
 
-from sunbeam.commands.openstack import PatchLoadBalancerServicesStep
+from sunbeam.clusterd.service import ClusterServiceUnavailableException
+from sunbeam.commands.openstack import OPENSTACK_MODEL, PatchLoadBalancerServicesStep
 from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
 from sunbeam.jobs.common import run_plan
-from sunbeam.jobs.juju import JujuHelper
+from sunbeam.jobs.juju import JujuHelper, run_sync
 from sunbeam.plugins.interface.v1.openstack import (
-    OpenStackControlPlanePlugin,
     EnableOpenStackApplicationStep,
+    OpenStackControlPlanePlugin,
     TerraformPlanLocation,
 )
 
@@ -34,17 +35,17 @@ LOG = logging.getLogger(__name__)
 console = Console()
 
 
-class PatchBind9LoadBalancerStep(PatchLoadBalancerServicesStep):
-    SERVICES = ["bind9"]
+class PatchBindLoadBalancerStep(PatchLoadBalancerServicesStep):
+    SERVICES = ["bind"]
 
 
-class DesignatePlugin(OpenStackControlPlanePlugin):
+class DnsPlugin(OpenStackControlPlanePlugin):
     version = Version("0.0.1")
     nameservers: Optional[str]
 
     def __init__(self) -> None:
         super().__init__(
-            name="designate",
+            name="dns",
             tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO,
         )
         self.nameservers = None
@@ -62,7 +63,7 @@ class DesignatePlugin(OpenStackControlPlanePlugin):
         plan = [
             TerraformInitStep(tfhelper),
             EnableOpenStackApplicationStep(tfhelper, jhelper, self),
-            PatchBind9LoadBalancerStep(),
+            PatchBindLoadBalancerStep(),
         ]
 
         run_plan(plan, console)
@@ -72,7 +73,7 @@ class DesignatePlugin(OpenStackControlPlanePlugin):
         """Application names handled by the terraform plan."""
         database_topology = self.get_database_topology()
 
-        apps = ["bind9", "designate", "designate-mysql-router"]
+        apps = ["bind", "designate", "designate-mysql-router"]
         if database_topology == "multi":
             apps.append("designate-mysql")
 
@@ -81,7 +82,7 @@ class DesignatePlugin(OpenStackControlPlanePlugin):
     def set_tfvars_on_enable(self) -> dict:
         """Set terraform variables to enable the application."""
         return {
-            "designate-channel": "latest/edge",
+            "designate-channel": "2023.1/edge",
             "enable-designate": True,
             "nameservers": self.nameservers,
         }
@@ -101,15 +102,72 @@ class DesignatePlugin(OpenStackControlPlanePlugin):
         help="""
         Space delimited list of nameservers. These are the nameservers that
         have been provided to the domain registrar in order to delegate
-        the domain to Designate.  e.g. "ns1.example.com. ns2.example.com."
+        the domain to DNS service. e.g. "ns1.example.com. ns2.example.com."
         """,
     )
     def enable_plugin(self, nameservers: str) -> None:
-        """Enable OpenStack Designate application."""
+        """Enable dns service."""
+        nameservers_split = nameservers.split()
+        for nameserver in nameservers_split:
+            if nameserver[-1] != ".":
+                raise click.ClickException(
+                    "Nameservers must be fully qualified domain names ending with a dot"
+                    f". {nameserver!r} is not valid."
+                )
         self.nameservers = nameservers
         super().enable_plugin()
 
     @click.command()
     def disable_plugin(self) -> None:
-        """Disable OpenStack Designate applications."""
+        """Disable dns service."""
         super().disable_plugin()
+
+    @click.group()
+    def dns_groups(self):
+        """Manage dns."""
+
+    async def bind_address(self) -> Optional[str]:
+        """Fetch bind address from juju."""
+        model = OPENSTACK_MODEL
+        application = "bind"
+        data_location = self.snap.paths.user_data
+        jhelper = JujuHelper(data_location)
+        model_impl = await jhelper.get_model(model)
+        status = await model_impl.get_status([application])
+        if application not in status["applications"]:
+            return None
+        return status["applications"][application].public_address
+
+    @click.command()
+    def dns_address(self) -> None:
+        """Retrieve DNS service address."""
+
+        with console.status("Retrieving IP address from DNS service ... "):
+            bind_address = run_sync(self.bind_address())
+
+            if bind_address:
+                console.print(bind_address)
+            else:
+                _message = "No address found for DNS service."
+                raise click.ClickException(_message)
+
+    def commands(self) -> dict:
+        """Dict of clickgroup along with commands."""
+        commands = super().commands()
+        try:
+            enabled = self.enabled
+        except ClusterServiceUnavailableException:
+            LOG.debug(
+                "Failed to query for plugin status, is cloud bootstrapped ?",
+                exc_info=True,
+            )
+            enabled = False
+
+        if enabled:
+            commands.update(
+                {
+                    "init": [{"name": "dns", "command": self.dns_groups}],
+                    "dns": [{"name": "address", "command": self.dns_address}],
+                }
+            )
+        return commands

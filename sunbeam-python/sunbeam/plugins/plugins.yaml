@@ -43,9 +43,9 @@ sunbeam-plugins:
       path: sunbeam.plugins.octavia.plugin.OctaviaPlugin
       supported_architectures:
         - amd64
-    - name: "designate"
+    - name: "dns"
       version: "0.0.1"
-      description: "Plugin for OpenStack Designate"
-      path: sunbeam.plugins.designate.plugin.DesignatePlugin
+      description: "Plugin for OpenStack DNS"
+      path: sunbeam.plugins.dns.plugin.DnsPlugin
       supported_architectures:
         - amd64
