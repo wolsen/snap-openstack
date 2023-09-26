@@ -13,10 +13,12 @@ sunbeam enable dns --nameservers="<ns records>"
 ## Contents
 
 This plugin will install the following services:
-- Bind: a DNS server
-- Designate: a DNS service for OpenStack
-- MySQL Router for Designate
-- MySQL Instance in the case of a multi-mysql installation (for large deployments)
+- Bind: a DNS server [charm](https://opendev.org/openstack/charm-bind-k8s) [ROCK](https://git.launchpad.net/~ubuntu-docker-images/ubuntu-docker-images/+git/bind9)
+- Designate: a DNS service for OpenStack [charm](https://opendev.org/openstack/charm-designate-k8s) [ROCK](https://github.com/canonical/ubuntu-openstack-rocks/tree/main/rocks/designate-consolidated)
+- MySQL Router for Designate [charm](https://github.com/canonical/mysql-router-k8s-operator) [ROCK](https://github.com/canonical/charmed-mysql-rock)
+- MySQL Instance in the case of a multi-mysql installation (for large deployments) [charm](https://github.com/canonical/mysql-k8s-operator) [ROCK](https://github.com/canonical/charmed-mysql-rock)
+
+Services are constituted of charms, i.e. operator code, and ROCKs, the corresponding OCI images.
 
 ## Configuration
 
