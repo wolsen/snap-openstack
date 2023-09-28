@@ -26,12 +26,12 @@ from sunbeam.plugins.interface.v1.openstack import (
 LOG = logging.getLogger(__name__)
 
 
-class OctaviaPlugin(OpenStackControlPlanePlugin):
+class LoadbalancerPlugin(OpenStackControlPlanePlugin):
     version = Version("0.0.1")
 
     def __init__(self) -> None:
         super().__init__(
-            name="octavia",
+            name="loadbalancer",
             tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO,
         )
 
@@ -60,10 +60,10 @@ class OctaviaPlugin(OpenStackControlPlanePlugin):
 
     @click.command()
     def enable_plugin(self) -> None:
-        """Enable OpenStack Octavia application."""
+        """Enable Loadbalancer service."""
         super().enable_plugin()
 
     @click.command()
     def disable_plugin(self) -> None:
-        """Disable OpenStack Octavia application."""
+        """Disable Loadbalancer service."""
         super().disable_plugin()

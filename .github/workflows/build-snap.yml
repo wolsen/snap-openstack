@@ -49,6 +49,7 @@ jobs:
           sudo snap connect openstack:dot-config-openstack
           sg snap_daemon "openstack.sunbeam -v cluster bootstrap --accept-defaults"
           sg snap_daemon "openstack.sunbeam cluster list"
+          sg snap_daemon "openstack.sunbeam enable loadbalancer"
           sg snap_daemon "openstack.sunbeam -v configure -a"
           sg snap_daemon "openstack.sunbeam -v launch"
       - name: Collect juju status
