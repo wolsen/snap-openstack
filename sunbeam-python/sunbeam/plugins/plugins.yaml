@@ -19,10 +19,10 @@ sunbeam-plugins:
       path: sunbeam.plugins.vault.plugin.VaultPlugin
       supported_architectures:
         - amd64
-    - name: "heat"
+    - name: "orchestration"
       version: "0.0.1"
       description: "Plugin for OpenStack Heat"
-      path: sunbeam.plugins.heat.plugin.HeatPlugin
+      path: sunbeam.plugins.orchestration.plugin.OrchestrationPlugin
       supported_architectures:
         - amd64
     - name: "observability"

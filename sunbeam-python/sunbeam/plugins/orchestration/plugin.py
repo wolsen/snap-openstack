@@ -26,12 +26,13 @@ from sunbeam.plugins.interface.v1.openstack import (
 LOG = logging.getLogger(__name__)
 
 
-class HeatPlugin(OpenStackControlPlanePlugin):
+class OrchestrationPlugin(OpenStackControlPlanePlugin):
     version = Version("0.0.1")
 
     def __init__(self) -> None:
         super().__init__(
-            name="heat", tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO
+            name="orchestration",
+            tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO,
         )
 
     def set_application_names(self) -> list:
@@ -59,10 +60,10 @@ class HeatPlugin(OpenStackControlPlanePlugin):
 
     @click.command()
     def enable_plugin(self) -> None:
-        """Enable OpenStack Heat application."""
+        """Enable Orchestration service."""
         super().enable_plugin()
 
     @click.command()
     def disable_plugin(self) -> None:
-        """Disable OpenStack Heat application."""
+        """Disable Orchestration service."""
         super().disable_plugin()
