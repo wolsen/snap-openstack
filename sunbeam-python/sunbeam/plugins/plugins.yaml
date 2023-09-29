@@ -37,9 +37,9 @@ sunbeam-plugins:
       path: sunbeam.plugins.telemetry.plugin.TelemetryPlugin
       supported_architectures:
         - amd64
-    - name: "octavia"
+    - name: "loadbalancer"
       version: "0.0.1"
       description: "Plugin for OpenStack Octavia"
-      path: sunbeam.plugins.octavia.plugin.OctaviaPlugin
+      path: sunbeam.plugins.loadbalancer.plugin.LoadbalancerPlugin
       supported_architectures:
         - amd64
