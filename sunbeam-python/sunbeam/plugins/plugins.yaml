@@ -43,3 +43,9 @@ sunbeam-plugins:
       path: sunbeam.plugins.loadbalancer.plugin.LoadbalancerPlugin
       supported_architectures:
         - amd64
+    - name: "dns"
+      version: "0.0.1"
+      description: "Plugin for OpenStack DNS"
+      path: sunbeam.plugins.dns.plugin.DnsPlugin
+      supported_architectures:
+        - amd64
