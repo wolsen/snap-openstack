@@ -157,9 +157,14 @@ def bootstrap(
     # NOTE: install to user writable location
     tfplan_dirs = ["deploy-sunbeam-machine"]
     if is_control_node:
-        tfplan_dirs.extend(["deploy-microk8s", "deploy-microceph", "deploy-openstack"])
-    if is_compute_node:
-        tfplan_dirs.extend(["deploy-openstack-hypervisor"])
+        tfplan_dirs.extend(
+            [
+                "deploy-microk8s",
+                "deploy-microceph",
+                "deploy-openstack",
+                "deploy-openstack-hypervisor",
+            ]
+        )
     for tfplan_dir in tfplan_dirs:
         src = snap.paths.snap / "etc" / tfplan_dir
         dst = snap.paths.user_common / "etc" / tfplan_dir
@@ -283,13 +288,16 @@ def bootstrap(
         plan5.append(ConfigureMySQLStep(jhelper))
         plan5.append(PatchLoadBalancerServicesStep())
 
-    if is_compute_node:
-        plan5.append(TerraformInitStep(tfhelper_hypervisor_deploy))
-        plan5.append(
-            DeployHypervisorApplicationStep(
-                tfhelper_hypervisor_deploy, tfhelper_openstack_deploy, jhelper
-            )
+    # NOTE(jamespage):
+    # As with MicroCeph, always deploy the openstack-hypervisor charm
+    # and add a unit to the bootstrap node if required.
+    plan5.append(TerraformInitStep(tfhelper_hypervisor_deploy))
+    plan5.append(
+        DeployHypervisorApplicationStep(
+            tfhelper_hypervisor_deploy, tfhelper_openstack_deploy, jhelper
         )
+    )
+    if is_compute_node:
         plan5.append(AddHypervisorUnitStep(fqdn, jhelper))
 
     plan5.append(SetBootstrapped())
