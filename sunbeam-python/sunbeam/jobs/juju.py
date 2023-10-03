@@ -130,6 +130,12 @@ class JujuWaitException(JujuException):
     pass
 
 
+class UnsupportedKubeconfigException(JujuException):
+    """Raised when kubeconfig have unsupported config."""
+
+    pass
+
+
 @dataclass
 class JujuAccount:
     user: str
@@ -459,7 +465,7 @@ class JujuHelper:
 
         try:
             cloud = jujuClient.Cloud(
-                auth_types=["oauth2"],
+                auth_types=["oauth2", "clientcertificate"],
                 ca_certificates=[caCert],
                 endpoint=ep,
                 host_cloud_region="microk8s/localhost",
@@ -471,9 +477,29 @@ class JujuHelper:
             if "already exists" not in str(e):
                 raise e
 
-        cred = jujuClient.CloudCredential(
-            auth_type="oauth2", attrs={"Token": user["token"]}
-        )
+        if "token" in user:
+            cred = jujuClient.CloudCredential(
+                auth_type="oauth2", attrs={"Token": user["token"]}
+            )
+        elif "client-certificate-data" in user and "client-key-data" in user:
+            clientCertificateData = base64.b64decode(
+                user["client-certificate-data"]
+            ).decode("utf-8")
+            clientKeyData = base64.b64decode(user["client-key-data"]).decode("utf-8")
+            cred = jujuClient.CloudCredential(
+                auth_type="clientcertificate",
+                attrs={
+                    "ClientCertificateData": clientCertificateData,
+                    "ClientKeyData": clientKeyData,
+                },
+            )
+        else:
+            LOG.error("No credentials found for user in config")
+            raise UnsupportedKubeconfigException(
+                "Unsupported user credentials, only OAuth token and ClientCertificate "
+                "are supported"
+            )
+
         await self.controller.add_credential(
             credential_name, credential=cred, cloud=cloud_name
         )

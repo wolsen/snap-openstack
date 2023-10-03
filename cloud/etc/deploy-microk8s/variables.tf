@@ -20,7 +20,7 @@ variable "charm_microk8s_channel" {
 
 variable "microk8s_channel" {
   description = "K8S channel to deploy, not the operator channel"
-  default     = "1.26-strict/stable"
+  default     = "1.28-strict/stable"
 }
 
 variable "machine_ids" {
