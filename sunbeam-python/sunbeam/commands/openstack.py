@@ -26,11 +26,11 @@ from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import ConfigItemNotFoundException
 from sunbeam.commands.juju import JujuStepHelper
 from sunbeam.commands.microceph import APPLICATION as MICROCEPH_APPLICATION
-from sunbeam.commands.microk8s import CONFIG_KEY as MICROK8S_CONFIG_KEY
 from sunbeam.commands.microk8s import (
     CREDENTIAL_SUFFIX,
     MICROK8S_CLOUD,
     MICROK8S_DEFAULT_STORAGECLASS,
+    MICROK8S_KUBECONFIG_KEY,
 )
 from sunbeam.commands.terraform import TerraformException, TerraformHelper
 from sunbeam.jobs.common import (
@@ -386,7 +386,7 @@ class PatchLoadBalancerServicesStep(BaseStep):
         """
         client = Client()
         try:
-            self.kubeconfig = read_config(client, MICROK8S_CONFIG_KEY)
+            self.kubeconfig = read_config(client, MICROK8S_KUBECONFIG_KEY)
         except ConfigItemNotFoundException:
             LOG.debug("MicroK8S config not found", exc_info=True)
             return Result(ResultType.FAILED, "MicroK8S config not found")

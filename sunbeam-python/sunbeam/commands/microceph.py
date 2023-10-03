@@ -23,21 +23,25 @@ from rich.console import Console
 from rich.status import Status
 
 from sunbeam.clusterd.client import Client
-from sunbeam.clusterd.service import NodeNotExistInClusterException
-from sunbeam.commands.terraform import TerraformException, TerraformHelper
+from sunbeam.commands.terraform import TerraformHelper
 from sunbeam.jobs import questions
 from sunbeam.jobs.common import BaseStep, Result, ResultType
 from sunbeam.jobs.juju import (
     MODEL,
     ActionFailedException,
-    ApplicationNotFoundException,
     JujuHelper,
-    TimeoutException,
     UnitNotFoundException,
     run_sync,
 )
+from sunbeam.jobs.steps import (
+    AddMachineUnitStep,
+    DeployMachineApplicationStep,
+    RemoveMachineUnitStep,
+)
 
 LOG = logging.getLogger(__name__)
+CONFIG_KEY = "TerraformVarsMicrocephPlan"
+CONFIG_DISKS_KEY = "TerraformVarsMicroceph"
 APPLICATION = "microceph"
 MICROCEPH_APP_TIMEOUT = 180  # 3 minutes, managing the application should be fast
 MICROCEPH_UNIT_TIMEOUT = (
@@ -54,7 +58,7 @@ def microceph_questions():
     }
 
 
-class DeployMicrocephApplicationStep(BaseStep):
+class DeployMicrocephApplicationStep(DeployMachineApplicationStep):
     """Deploy Microceph application using Terraform"""
 
     def __init__(
@@ -62,172 +66,60 @@ class DeployMicrocephApplicationStep(BaseStep):
         tfhelper: TerraformHelper,
         jhelper: JujuHelper,
     ):
-        super().__init__("Deploy MicroCeph", "Deploying MicroCeph")
-        self.tfhelper = tfhelper
-        self.jhelper = jhelper
-        self.client = Client()
-
-    def is_skip(self, status: Optional[Status] = None) -> Result:
-        """Determines if the step should be skipped or not.
-
-        :return: ResultType.SKIPPED if the Step should be skipped,
-                ResultType.COMPLETED or ResultType.FAILED otherwise
-        """
-        try:
-            run_sync(self.jhelper.get_application(APPLICATION, MODEL))
-        except ApplicationNotFoundException:
-            return Result(ResultType.COMPLETED)
-
-        return Result(ResultType.SKIPPED)
-
-    def run(self, status: Optional[Status] = None) -> Result:
-        """Apply terraform configuration to deploy microceph"""
-        machine_ids = []
-        try:
-            application = run_sync(self.jhelper.get_application(APPLICATION, MODEL))
-            machine_ids.extend(unit.machine.id for unit in application.units)
-        except ApplicationNotFoundException as e:
-            LOG.debug(str(e))
-
-        self.tfhelper.write_tfvars({"machine_ids": machine_ids})
-        try:
-            self.tfhelper.apply()
-        except TerraformException as e:
-            return Result(ResultType.FAILED, str(e))
-
-        try:
-            run_sync(
-                self.jhelper.wait_application_ready(
-                    APPLICATION,
-                    MODEL,
-                    accepted_status=["active", "unknown"],
-                    timeout=MICROCEPH_APP_TIMEOUT,
-                )
-            )
-        except TimeoutException as e:
-            LOG.warning(str(e))
-            return Result(ResultType.FAILED, str(e))
-
-        return Result(ResultType.COMPLETED)
-
-
-class AddMicrocephUnitStep(BaseStep):
-    def __init__(self, name: str, jhelper: JujuHelper):
-        super().__init__("Add MicroCeph unit", "Adding MicroCeph unit to machine")
-
-        self.name = name
-        self.jhelper = jhelper
-        self.machine_id = ""
-
-    def is_skip(self, status: Optional[Status] = None) -> Result:
-        """Determines if the step should be skipped or not.
-
-        :return: ResultType.SKIPPED if the Step should be skipped,
-                ResultType.COMPLETED or ResultType.FAILED otherwise
-        """
-        client = Client()
-        try:
-            node = client.cluster.get_node_info(self.name)
-            self.machine_id = str(node.get("machineid"))
-        except NodeNotExistInClusterException as e:
-            return Result(ResultType.FAILED, str(e))
-
-        try:
-            application = run_sync(self.jhelper.get_application(APPLICATION, MODEL))
-        except ApplicationNotFoundException:
-            return Result(ResultType.FAILED, "Microceph has not been deployed")
-
-        for unit in application.units:
-            if unit.machine.id == self.machine_id:
-                LOG.debug(
-                    (
-                        f"Unit {unit.name} is already deployed"
-                        f" on machine: {self.machine_id}"
-                    )
-                )
-                return Result(ResultType.SKIPPED)
-
-        return Result(ResultType.COMPLETED)
-
-    def run(self, status: Optional[Status] = None) -> Result:
-        """Add unit to microceph application on Juju model."""
-        try:
-            unit = run_sync(
-                self.jhelper.add_unit(APPLICATION, MODEL, str(self.machine_id))
-            )
-            run_sync(
-                self.jhelper.wait_unit_ready(
-                    unit.name, MODEL, timeout=MICROCEPH_UNIT_TIMEOUT
-                )
-            )
-        except (ApplicationNotFoundException, TimeoutException) as e:
-            LOG.warning(str(e))
-            return Result(ResultType.FAILED, str(e))
-
-        return Result(ResultType.COMPLETED)
-
-
-class RemoveMicrocephUnitStep(BaseStep):
-    def __init__(self, name: str, jhelper: JujuHelper):
         super().__init__(
-            "Remove MicroCeph unit", "Removing MicroCeph unit from machine"
+            tfhelper,
+            jhelper,
+            CONFIG_KEY,
+            APPLICATION,
+            MODEL,
+            "Deploy MicroCeph",
+            "Deploying MicroCeph",
         )
 
-        self.name = name
-        self.jhelper = jhelper
-        self.unit = None
+    def get_application_timeout(self) -> int:
+        return MICROCEPH_APP_TIMEOUT
 
-    def is_skip(self, status: Optional[Status] = None) -> Result:
-        """Determines if the step should be skipped or not.
 
-        :return: ResultType.SKIPPED if the Step should be skipped,
-                ResultType.COMPLETED or ResultType.FAILED otherwise
-        """
-        client = Client()
-        try:
-            node = client.cluster.get_node_info(self.name)
-            machine_id = str(node.get("machineid"))
-        except NodeNotExistInClusterException:
-            LOG.debug(f"Machine {self.name} does not exist, skipping.")
-            return Result(ResultType.SKIPPED)
+class AddMicrocephUnitStep(AddMachineUnitStep):
+    """Add Microceph Unit."""
 
-        try:
-            application = run_sync(self.jhelper.get_application(APPLICATION, MODEL))
-        except ApplicationNotFoundException as e:
-            LOG.debug(str(e))
-            return Result(ResultType.SKIPPED, "MicroCeph has not been deployed yet")
+    def __init__(self, name: str, jhelper: JujuHelper):
+        super().__init__(
+            name,
+            jhelper,
+            CONFIG_KEY,
+            APPLICATION,
+            MODEL,
+            "Add MicroCeph unit",
+            "Adding MicroCeph unit to machine",
+        )
 
-        for unit in application.units:
-            if unit.machine.id == machine_id:
-                LOG.debug(f"Unit {unit.name} is deployed on machine: {machine_id}")
-                self.unit = unit.name
-                return Result(ResultType.COMPLETED)
+    def get_unit_timeout(self) -> int:
+        return MICROCEPH_UNIT_TIMEOUT
 
-        return Result(ResultType.SKIPPED)
 
-    def run(self, status: Optional[Status] = None) -> Result:
-        """Remove unit from microk8s application on Juju model."""
-        try:
-            run_sync(self.jhelper.remove_unit(APPLICATION, str(self.unit), MODEL))
-            run_sync(
-                self.jhelper.wait_application_ready(
-                    APPLICATION,
-                    MODEL,
-                    accepted_status=["active", "unknown"],
-                    timeout=MICROCEPH_UNIT_TIMEOUT,
-                )
-            )
-        except (ApplicationNotFoundException, TimeoutException) as e:
-            LOG.warning(str(e))
-            return Result(ResultType.FAILED, str(e))
+class RemoveMicrocephUnitStep(RemoveMachineUnitStep):
+    """Remove Microceph Unit."""
 
-        return Result(ResultType.COMPLETED)
+    def __init__(self, name: str, jhelper: JujuHelper):
+        super().__init__(
+            name,
+            jhelper,
+            CONFIG_KEY,
+            APPLICATION,
+            MODEL,
+            "Remove MicroCeph unit",
+            "Removing MicroCeph unit from machine",
+        )
+
+    def get_unit_timeout(self) -> int:
+        return MICROCEPH_UNIT_TIMEOUT
 
 
 class ConfigureMicrocephOSDStep(BaseStep):
     """Configure Microceph OSD disks"""
 
-    _CONFIG = "TerraformVarsMicroceph"
+    _CONFIG = CONFIG_DISKS_KEY
 
     def __init__(
         self,
