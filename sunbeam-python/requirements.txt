@@ -34,7 +34,3 @@ lightkube-models
 # For plugin repo
 jsonschema
 GitPython
-
-# For Vault
-hvac
-tenacity
