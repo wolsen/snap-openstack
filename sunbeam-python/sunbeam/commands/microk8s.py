@@ -38,6 +38,7 @@ from sunbeam.jobs.juju import (
     JujuHelper,
     LeaderNotFoundException,
     TimeoutException,
+    UnsupportedKubeconfigException,
     run_sync,
 )
 
@@ -327,7 +328,7 @@ class AddMicrok8sCloudStep(BaseStep, JujuStepHelper):
             run_sync(
                 self.jhelper.add_k8s_cloud(self.name, self.credential_name, kubeconfig)
             )
-        except ConfigItemNotFoundException as e:
+        except (ConfigItemNotFoundException, UnsupportedKubeconfigException) as e:
             LOG.debug("Failed to add k8s cloud to Juju controller", exc_info=True)
             return Result(ResultType.FAILED, str(e))
 
