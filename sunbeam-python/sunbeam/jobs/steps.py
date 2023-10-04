@@ -96,7 +96,6 @@ class DeployMachineApplicationStep(BaseStep):
 
         try:
             self.tfhelper.apply()
-            print("seems like no exception raised")
         except TerraformException as e:
             return Result(ResultType.FAILED, str(e))
 
