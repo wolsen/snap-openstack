@@ -23,12 +23,9 @@ from rich.console import Console
 from rich.status import Status
 
 from sunbeam.clusterd.client import Client
-from sunbeam.clusterd.service import (
-    ConfigItemNotFoundException,
-    NodeNotExistInClusterException,
-)
+from sunbeam.clusterd.service import ConfigItemNotFoundException
 from sunbeam.commands.juju import JujuStepHelper
-from sunbeam.commands.terraform import TerraformException, TerraformHelper
+from sunbeam.commands.terraform import TerraformHelper
 from sunbeam.jobs import questions
 from sunbeam.jobs.common import BaseStep, Result, ResultType, read_config, update_config
 from sunbeam.jobs.juju import (
@@ -37,9 +34,13 @@ from sunbeam.jobs.juju import (
     ApplicationNotFoundException,
     JujuHelper,
     LeaderNotFoundException,
-    TimeoutException,
     UnsupportedKubeconfigException,
     run_sync,
+)
+from sunbeam.jobs.steps import (
+    AddMachineUnitStep,
+    DeployMachineApplicationStep,
+    RemoveMachineUnitStep,
 )
 
 LOG = logging.getLogger(__name__)
@@ -49,7 +50,8 @@ MICROK8S_APP_TIMEOUT = 180  # 3 minutes, managing the application should be fast
 MICROK8S_UNIT_TIMEOUT = 1200  # 20 minutes, adding / removing units can take a long time
 CREDENTIAL_SUFFIX = "-creds"
 MICROK8S_DEFAULT_STORAGECLASS = "microk8s-hostpath"
-CONFIG_KEY = "Microk8sConfig"
+MICROK8S_KUBECONFIG_KEY = "Microk8sConfig"
+MICROK8S_CONFIG_KEY = "TerraformVarsMicrok8s"
 MICROK8S_ADDONS_CONFIG_KEY = "TerraformVarsMicrok8sAddons"
 
 
@@ -82,10 +84,10 @@ def microk8s_addons_questions():
     }
 
 
-class DeployMicrok8sApplicationStep(BaseStep, JujuStepHelper):
+class DeployMicrok8sApplicationStep(DeployMachineApplicationStep):
     """Deploy Microk8s application using Terraform"""
 
-    _CONFIG = MICROK8S_ADDONS_CONFIG_KEY
+    _ADDONS_CONFIG = MICROK8S_ADDONS_CONFIG_KEY
 
     def __init__(
         self,
@@ -94,14 +96,23 @@ class DeployMicrok8sApplicationStep(BaseStep, JujuStepHelper):
         preseed_file: Optional[Path] = None,
         accept_defaults: bool = False,
     ):
-        super().__init__("Deploy MicroK8S", "Deploying MicroK8S")
-        self.tfhelper = tfhelper
-        self.jhelper = jhelper
+        super().__init__(
+            tfhelper,
+            jhelper,
+            MICROK8S_CONFIG_KEY,
+            APPLICATION,
+            MODEL,
+            "Deploy MicroK8S",
+            "Deploying MicroK8S",
+        )
+
         self.preseed_file = preseed_file
         self.accept_defaults = accept_defaults
-        self.client = Client()
         self.answer_file = self.tfhelper.path / "addons.auto.tfvars.json"
         self.variables = {}
+
+    def get_application_timeout(self) -> int:
+        return MICROK8S_APP_TIMEOUT
 
     def prompt(self, console: Optional[Console] = None) -> None:
         """Determines if the step can take input from the user.
@@ -110,7 +121,7 @@ class DeployMicrok8sApplicationStep(BaseStep, JujuStepHelper):
         running the step. Steps should not expect that the prompt will be
         available and should provide a reasonable default where possible.
         """
-        self.variables = questions.load_answers(self.client, self._CONFIG)
+        self.variables = questions.load_answers(self.client, self._ADDONS_CONFIG)
         self.variables.setdefault("addons", {})
 
         if self.preseed_file:
@@ -131,7 +142,7 @@ class DeployMicrok8sApplicationStep(BaseStep, JujuStepHelper):
         self.variables["addons"]["hostpath-storage"] = ""
 
         LOG.debug(self.variables)
-        questions.write_answers(self.client, self._CONFIG, self.variables)
+        questions.write_answers(self.client, self._ADDONS_CONFIG, self.variables)
         # Write answers to terraform location as a separate variables file
         self.tfhelper.write_tfvars(self.variables, self.answer_file)
 
@@ -143,160 +154,45 @@ class DeployMicrok8sApplicationStep(BaseStep, JujuStepHelper):
         """
         return True
 
-    def is_skip(self, status: Optional[Status] = None) -> Result:
-        """Determines if the step should be skipped or not.
 
-        :return: ResultType.SKIPPED if the Step should be skipped,
-                ResultType.COMPLETED or ResultType.FAILED otherwise
-        """
-        return Result(ResultType.COMPLETED)
+class AddMicrok8sUnitStep(AddMachineUnitStep):
+    """Add Microk8s Unit."""
 
-    def run(self, status: Optional[Status] = None) -> Result:
-        """Apply terraform configuration to deploy microk8s"""
-        machine_ids = []
-        try:
-            application = run_sync(self.jhelper.get_application(APPLICATION, MODEL))
-            machine_ids.extend(unit.machine.id for unit in application.units)
-        except ApplicationNotFoundException as e:
-            LOG.debug(str(e))
-
-        self.tfhelper.write_tfvars({"machine_ids": machine_ids})
-        try:
-            self.tfhelper.apply()
-        except TerraformException as e:
-            return Result(ResultType.FAILED, str(e))
-
-        # Note(gboutry): application is in state unknown when it's deployed
-        # without units
-        try:
-            run_sync(
-                self.jhelper.wait_application_ready(
-                    APPLICATION,
-                    MODEL,
-                    accepted_status=["active", "unknown"],
-                    timeout=MICROK8S_APP_TIMEOUT,
-                )
-            )
-        except TimeoutException as e:
-            LOG.warning(str(e))
-            return Result(ResultType.FAILED, str(e))
-
-        return Result(ResultType.COMPLETED)
-
-
-class AddMicrok8sUnitStep(BaseStep, JujuStepHelper):
     def __init__(self, name: str, jhelper: JujuHelper):
-        super().__init__("Add MicroK8S unit", "Adding MicroK8S unit to machine")
+        super().__init__(
+            name,
+            jhelper,
+            MICROK8S_CONFIG_KEY,
+            APPLICATION,
+            MODEL,
+            "Add MicroK8S unit",
+            "Adding MicroK8S unit to machine",
+        )
 
-        self.name = name
-        self.jhelper = jhelper
-        self.machine_id = ""
-
-    def is_skip(self, status: Optional[Status] = None) -> Result:
-        """Determines if the step should be skipped or not.
-
-        :return: ResultType.SKIPPED if the Step should be skipped,
-                ResultType.COMPLETED or ResultType.FAILED otherwise
-        """
-        client = Client()
-        try:
-            node = client.cluster.get_node_info(self.name)
-            self.machine_id = str(node.get("machineid"))
-        except NodeNotExistInClusterException as e:
-            return Result(ResultType.FAILED, str(e))
-
-        try:
-            application = run_sync(self.jhelper.get_application(APPLICATION, MODEL))
-        except ApplicationNotFoundException:
-            return Result(ResultType.FAILED, "MicroK8S has not been deployed")
-
-        for unit in application.units:
-            if unit.machine.id == self.machine_id:
-                LOG.debug(
-                    (
-                        f"Unit {unit.name} is already deployed"
-                        f" on machine: {self.machine_id}"
-                    )
-                )
-                return Result(ResultType.SKIPPED)
-
-        return Result(ResultType.COMPLETED)
-
-    def run(self, status: Optional[Status] = None) -> Result:
-        """Add unit to microk8s application on Juju model."""
-        try:
-            unit = run_sync(
-                self.jhelper.add_unit(APPLICATION, MODEL, str(self.machine_id))
-            )
-            run_sync(
-                self.jhelper.wait_unit_ready(
-                    unit.name, MODEL, timeout=MICROK8S_UNIT_TIMEOUT
-                )
-            )
-        except (ApplicationNotFoundException, TimeoutException) as e:
-            LOG.warning(str(e))
-            return Result(ResultType.FAILED, str(e))
-
-        return Result(ResultType.COMPLETED)
+    def get_unit_timeout(self) -> int:
+        return MICROK8S_UNIT_TIMEOUT
 
 
-class RemoveMicrok8sUnitStep(BaseStep, JujuStepHelper):
+class RemoveMicrok8sUnitStep(RemoveMachineUnitStep):
+    """Remove Microk8s Unit."""
+
     def __init__(self, name: str, jhelper: JujuHelper):
-        super().__init__("Remove MicroK8S unit", "Removing MicroK8S unit from machine")
+        super().__init__(
+            name,
+            jhelper,
+            MICROK8S_CONFIG_KEY,
+            APPLICATION,
+            MODEL,
+            "Remove MicroK8S unit",
+            "Removing MicroK8S unit from machine",
+        )
 
-        self.name = name
-        self.jhelper = jhelper
-        self.unit = None
-
-    def is_skip(self, status: Optional[Status] = None) -> Result:
-        """Determines if the step should be skipped or not.
-
-        :return: ResultType.SKIPPED if the Step should be skipped,
-                ResultType.COMPLETED or ResultType.FAILED otherwise
-        """
-        client = Client()
-        try:
-            node = client.cluster.get_node_info(self.name)
-            machine_id = str(node.get("machineid"))
-        except NodeNotExistInClusterException:
-            LOG.debug(f"Machine {self.name} does not exist, skipping.")
-            return Result(ResultType.SKIPPED)
-
-        try:
-            application = run_sync(self.jhelper.get_application(APPLICATION, MODEL))
-        except ApplicationNotFoundException as e:
-            LOG.debug(str(e))
-            return Result(ResultType.SKIPPED, "MicroK8S has not been deployed yet")
-
-        for unit in application.units:
-            if unit.machine.id == machine_id:
-                LOG.debug(f"Unit {unit.name} is deployed on machine: {machine_id}")
-                self.unit = unit.name
-                return Result(ResultType.COMPLETED)
-
-        return Result(ResultType.SKIPPED)
-
-    def run(self, status: Optional[Status] = None) -> Result:
-        """Remove unit from microk8s application on Juju model."""
-        try:
-            run_sync(self.jhelper.remove_unit(APPLICATION, str(self.unit), MODEL))
-            run_sync(
-                self.jhelper.wait_application_ready(
-                    APPLICATION,
-                    MODEL,
-                    accepted_status=["active", "unknown"],
-                    timeout=MICROK8S_UNIT_TIMEOUT,
-                )
-            )
-        except (ApplicationNotFoundException, TimeoutException) as e:
-            LOG.warning(str(e))
-            return Result(ResultType.FAILED, str(e))
-
-        return Result(ResultType.COMPLETED)
+    def get_unit_timeout(self) -> int:
+        return SUNBEAM_MACHINE_UNIT_TIMEOUT
 
 
 class AddMicrok8sCloudStep(BaseStep, JujuStepHelper):
-    _CONFIG = CONFIG_KEY
+    _CONFIG = MICROK8S_KUBECONFIG_KEY
 
     def __init__(self, jhelper: JujuHelper):
         super().__init__(
@@ -336,7 +232,7 @@ class AddMicrok8sCloudStep(BaseStep, JujuStepHelper):
 
 
 class StoreMicrok8sConfigStep(BaseStep, JujuStepHelper):
-    _CONFIG = CONFIG_KEY
+    _CONFIG = MICROK8S_KUBECONFIG_KEY
 
     def __init__(self, jhelper: JujuHelper):
         super().__init__(
