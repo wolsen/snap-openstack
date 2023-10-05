@@ -192,6 +192,11 @@ def ext_net_questions():
         "segmentation_id": sunbeam.jobs.questions.PromptQuestion(
             "VLAN ID to use for external network", default_value=0
         ),
+    }
+
+
+def local_hypervisor_questions():
+    return {
         "nic": NicQuestion(
             "Free network interface that will be configured for external traffic"
         ),
@@ -499,9 +504,34 @@ class UserQuestions(BaseStep):
             self.variables["external_network"]["gateway"] = ext_net_bank.gateway.ask(
                 new_default=default_gateway
             )
+
+        default_allocation_range_start = self.variables["external_network"].get(
+            "start"
+        ) or str(external_network_hosts[1])
+        self.variables["external_network"]["start"] = ext_net_bank.start.ask(
+            new_default=default_allocation_range_start
+        )
+        default_allocation_range_end = self.variables["external_network"].get(
+            "end"
+        ) or str(external_network_hosts[-1])
+        self.variables["external_network"]["end"] = ext_net_bank.end.ask(
+            new_default=default_allocation_range_end
+        )
+
         self.variables["external_network"]["physical_network"] = VARIABLE_DEFAULTS[
             "external_network"
         ]["physical_network"]
+
+        self.variables["external_network"][
+            "network_type"
+        ] = ext_net_bank.network_type.ask()
+        if self.variables["external_network"]["network_type"] == "vlan":
+            self.variables["external_network"][
+                "segmentation_id"
+            ] = ext_net_bank.segmentation_id.ask()
+        else:
+            self.variables["external_network"]["segmentation_id"] = 0
+
         self.variables["user"]["run_demo_setup"] = user_bank.run_demo_setup.ask()
         if self.variables["user"]["run_demo_setup"]:
             # User configuration
@@ -514,28 +544,6 @@ class UserQuestions(BaseStep):
             self.variables["user"][
                 "security_group_rules"
             ] = user_bank.security_group_rules.ask()
-            default_allocation_range_start = self.variables["external_network"].get(
-                "start"
-            ) or str(external_network_hosts[1])
-            self.variables["external_network"]["start"] = ext_net_bank.start.ask(
-                new_default=default_allocation_range_start
-            )
-            default_allocation_range_end = self.variables["external_network"].get(
-                "end"
-            ) or str(external_network_hosts[-1])
-            self.variables["external_network"]["end"] = ext_net_bank.end.ask(
-                new_default=default_allocation_range_end
-            )
-
-            self.variables["external_network"][
-                "network_type"
-            ] = ext_net_bank.network_type.ask()
-            if self.variables["external_network"]["network_type"] == "vlan":
-                self.variables["external_network"][
-                    "segmentation_id"
-                ] = ext_net_bank.segmentation_id.ask()
-            else:
-                self.variables["external_network"]["segmentation_id"] = 0
 
         sunbeam.jobs.questions.write_answers(
             self.client, CLOUD_CONFIG_SECTION, self.variables
@@ -632,14 +640,14 @@ class SetLocalHypervisorOptions(BaseStep):
 
     def prompt_for_nic(self) -> None:
         """Prompt user for nic to use and do some validation."""
-        ext_net_bank = sunbeam.jobs.questions.QuestionBank(
-            questions=ext_net_questions(),
+        local_hypervisor_bank = sunbeam.jobs.questions.QuestionBank(
+            questions=local_hypervisor_questions(),
             console=console,
             accept_defaults=False,
         )
         nic = None
         while True:
-            nic = ext_net_bank.nic.ask()
+            nic = local_hypervisor_bank.nic.ask()
             if utils.is_configured(nic):
                 agree_nic_up = sunbeam.jobs.questions.ConfirmQuestion(
                     f"WARNING: Interface {nic} is configured. Any "
@@ -780,13 +788,19 @@ def configure(
             openrc=openrc,
         ),
         SetHypervisorCharmConfigStep(jhelper, ext_network=answer_file),
-        SetLocalHypervisorOptions(
-            name,
-            jhelper,
-            # Accept preseed file but do not allow 'accept_defaults' as nic
-            # selection may vary from machine to machine and is potentially
-            # destructive if it takes over an unintended nic.
-            preseed_file=preseed,
-        ),
     ]
+    compute_nodenames = [
+        node["name"] for node in Client().cluster.list_nodes_by_role("compute")
+    ]
+    if name in compute_nodenames:
+        plan.append(
+            SetLocalHypervisorOptions(
+                name,
+                jhelper,
+                # Accept preseed file but do not allow 'accept_defaults' as nic
+                # selection may vary from machine to machine and is potentially
+                # destructive if it takes over an unintended nic.
+                preseed_file=preseed,
+            )
+        )
     run_plan(plan, console)

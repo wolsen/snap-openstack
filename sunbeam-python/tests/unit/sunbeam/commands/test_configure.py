@@ -171,19 +171,12 @@ class TestUserQuestions:
         assert user_bank_mock.password.ask.called
         assert user_bank_mock.cidr.ask.called
         assert user_bank_mock.security_group_rules.ask.called
-        assert net_bank_mock.start.ask.called
-        assert net_bank_mock.end.ask.called
-        assert net_bank_mock.network_type.ask.called
-        assert net_bank_mock.segmentation_id.ask.called
 
     def check_not_demo_questions(self, user_bank_mock, net_bank_mock):
         assert not user_bank_mock.username.ask.called
         assert not user_bank_mock.password.ask.called
         assert not user_bank_mock.cidr.ask.called
         assert not user_bank_mock.security_group_rules.ask.called
-        assert not net_bank_mock.start.ask.called
-        assert not net_bank_mock.end.ask.called
-        assert not net_bank_mock.network_type.ask.called
 
     def check_remote_questions(self, net_bank_mock):
         assert net_bank_mock.gateway.ask.called
@@ -363,9 +356,9 @@ class TestSetLocalHypervisorOptions:
     ):
         get_free_nics.return_value = ["eth2"]
         load_answers.return_value = {"user": {"remote_access_location": "remote"}}
-        ext_net_bank_mock = Mock()
-        question_bank.return_value = ext_net_bank_mock
-        ext_net_bank_mock.nic.ask.return_value = "eth2"
+        local_hypervisor_bank_mock = Mock()
+        question_bank.return_value = local_hypervisor_bank_mock
+        local_hypervisor_bank_mock.nic.ask.return_value = "eth2"
         step = configure.SetLocalHypervisorOptions("maas0.local", jhelper)
         step.prompt()
         assert step.nic == "eth2"
@@ -383,9 +376,9 @@ class TestSetLocalHypervisorOptions:
         is_nic_connected,
     ):
         load_answers.return_value = {"user": {"remote_access_location": "remote"}}
-        ext_net_bank_mock = Mock()
-        question_bank.return_value = ext_net_bank_mock
-        ext_net_bank_mock.nic.ask.return_value = "eth2"
+        local_hypervisor_bank_mock = Mock()
+        question_bank.return_value = local_hypervisor_bank_mock
+        local_hypervisor_bank_mock.nic.ask.return_value = "eth2"
         step = configure.SetLocalHypervisorOptions(
             "maas0.local", jhelper, join_mode=True
         )
@@ -394,9 +387,9 @@ class TestSetLocalHypervisorOptions:
 
     def test_prompt_local(self, cclient, jhelper, load_answers, question_bank):
         load_answers.return_value = {"user": {"remote_access_location": "local"}}
-        ext_net_bank_mock = Mock()
-        question_bank.return_value = ext_net_bank_mock
-        ext_net_bank_mock.nic.ask.return_value = "eth12"
+        local_hypervisor_bank_mock = Mock()
+        question_bank.return_value = local_hypervisor_bank_mock
+        local_hypervisor_bank_mock.nic.ask.return_value = "eth12"
         step = configure.SetLocalHypervisorOptions("maas0.local", jhelper)
         step.prompt()
         assert step.nic is None
@@ -414,9 +407,9 @@ class TestSetLocalHypervisorOptions:
         is_nic_connected,
     ):
         load_answers.return_value = {"user": {"remote_access_location": "local"}}
-        ext_net_bank_mock = Mock()
-        question_bank.return_value = ext_net_bank_mock
-        ext_net_bank_mock.nic.ask.return_value = "eth2"
+        local_hypervisor_bank_mock = Mock()
+        question_bank.return_value = local_hypervisor_bank_mock
+        local_hypervisor_bank_mock.nic.ask.return_value = "eth2"
         step = configure.SetLocalHypervisorOptions(
             "maas0.local", jhelper, join_mode=True
         )
