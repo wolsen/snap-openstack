@@ -85,7 +85,11 @@ class PluginManager:
                 module = importlib.import_module(module_class_[0])
                 plugin_class = getattr(module, module_class_[1])
                 plugin_classes.append(plugin_class)
-            except (ModuleNotFoundError, AttributeError) as e:
+            # Catching Exception instead of specific errors as plugins
+            # can raise any exception based on implementation.
+            except Exception as e:
+                # Exceptions observed so far
+                # ModuleNotFoundError, AttributeError, NameError
                 LOG.debug(str(e))
                 LOG.warning(f"Ignored loading plugin: {plugin_class}")
                 if raise_exception:
