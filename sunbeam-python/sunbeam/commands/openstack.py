@@ -54,7 +54,7 @@ from sunbeam.jobs.juju import (
 
 LOG = logging.getLogger(__name__)
 OPENSTACK_MODEL = "openstack"
-OPENSTACK_DEPLOY_TIMEOUT = 3600  # 60 minutes
+OPENSTACK_DEPLOY_TIMEOUT = 5400  # 90 minutes
 METALLB_ANNOTATION = "metallb.universe.tf/loadBalancerIPs"
 
 CONFIG_KEY = "TerraformVarsOpenstack"
