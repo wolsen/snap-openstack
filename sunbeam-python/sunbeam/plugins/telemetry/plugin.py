@@ -25,6 +25,7 @@ from sunbeam.commands.openstack import OPENSTACK_MODEL
 from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
 from sunbeam.jobs.common import BaseStep, Result, ResultType, Status, run_plan
 from sunbeam.jobs.juju import (
+    ApplicationNotFoundException,
     JujuException,
     JujuHelper,
     ModelNotFoundException,
@@ -168,7 +169,15 @@ class UpgradeCeilometerStep(BaseStep):
                 return Result(
                     ResultType.SKIPPED, "Ceilometer/Gnocchi applications missing"
                 )
-        except JujuException as e:
+
+            # Check if any one of gnocchi unit is active
+            app = run_sync(self.jhelper.get_application("gnocchi", OPENSTACK_MODEL))
+            if not any(unit.workload_status == "active" for unit in app.units):
+                return Result(
+                    ResultType.SKIPPED, "Gnocchi units are not in active state"
+                )
+
+        except (ApplicationNotFoundException, JujuException) as e:
             return Result(ResultType.FAILED, str(e))
 
         return Result(ResultType.COMPLETED)
