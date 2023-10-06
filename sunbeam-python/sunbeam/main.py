@@ -106,11 +106,11 @@ def main():
     cli.add_command(enable)
     cli.add_command(disable)
 
-    # Register the plugins
-    PluginManager.register(cli)
-
     cli.add_command(utils)
     utils.add_command(utils_cmds.juju_login)
+
+    # Register the plugins after all groups,commands are registered
+    PluginManager.register(cli)
 
     cli()
 
