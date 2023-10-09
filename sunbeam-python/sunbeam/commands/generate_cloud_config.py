@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Optional
 
 import click
+import click.core
 import yaml
 from rich.console import Console
 from snaphelpers import Snap
@@ -226,6 +227,7 @@ class GenerateCloudConfigStep(BaseStep):
 
 
 @click.command()
+@click.pass_context
 @click.option("-c", "--cloud", help="Name of the cloud", type=str, default="sunbeam")
 @click.option(
     "-a",
@@ -249,9 +251,17 @@ class GenerateCloudConfigStep(BaseStep):
     type=click.Path(dir_okay=False, path_type=Path),
 )
 def cloud_config(
-    cloud: str, admin: bool, update: bool, cloud_file: Optional[Path] = None
+    ctx: click.Context,
+    cloud: str,
+    admin: bool,
+    update: bool,
+    cloud_file: Optional[Path] = None,
 ) -> None:
     """Generate or Update clouds.yaml."""
+    parameter_source = ctx.get_parameter_source("cloud")
+    if parameter_source == click.core.ParameterSource.DEFAULT and admin:
+        cloud += "-admin"
+
     preflight_checks = []
     preflight_checks.append(VerifyBootstrappedCheck())
     run_preflight_checks(preflight_checks, console)
