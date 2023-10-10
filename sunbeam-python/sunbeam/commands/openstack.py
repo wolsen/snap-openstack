@@ -367,7 +367,7 @@ class ResizeControlPlaneStep(BaseStep, JujuStepHelper):
 
 
 class PatchLoadBalancerServicesStep(BaseStep):
-    SERVICES = ["traefik", "rabbitmq", "ovn-relay"]
+    SERVICES = ["traefik", "traefik-public", "rabbitmq", "ovn-relay"]
     MODEL = OPENSTACK_MODEL
 
     def __init__(
