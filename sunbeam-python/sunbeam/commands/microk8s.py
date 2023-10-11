@@ -188,7 +188,7 @@ class RemoveMicrok8sUnitStep(RemoveMachineUnitStep):
         )
 
     def get_unit_timeout(self) -> int:
-        return SUNBEAM_MACHINE_UNIT_TIMEOUT
+        return MICROK8S_UNIT_TIMEOUT
 
 
 class AddMicrok8sCloudStep(BaseStep, JujuStepHelper):
