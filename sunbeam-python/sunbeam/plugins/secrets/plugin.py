@@ -16,7 +16,6 @@
 import click
 from packaging.version import Version
 
-
 from sunbeam.clusterd.service import ConfigItemNotFoundException
 from sunbeam.jobs.common import read_config
 from sunbeam.plugins.interface.v1.openstack import (
