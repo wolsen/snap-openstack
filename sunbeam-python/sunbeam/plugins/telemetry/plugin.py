@@ -14,23 +14,15 @@
 # limitations under the License.
 
 import logging
-from typing import Optional
 
 import click
 from packaging.version import Version
 from rich.console import Console
 
 from sunbeam.commands.hypervisor import ReapplyHypervisorTerraformPlanStep
-from sunbeam.commands.openstack import OPENSTACK_MODEL
 from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
-from sunbeam.jobs.common import BaseStep, Result, ResultType, Status, run_plan
-from sunbeam.jobs.juju import (
-    ApplicationNotFoundException,
-    JujuException,
-    JujuHelper,
-    ModelNotFoundException,
-    run_sync,
-)
+from sunbeam.jobs.common import run_plan
+from sunbeam.jobs.juju import JujuHelper
 from sunbeam.plugins.interface.v1.openstack import (
     DisableOpenStackApplicationStep,
     EnableOpenStackApplicationStep,
@@ -70,7 +62,6 @@ class TelemetryPlugin(OpenStackControlPlanePlugin):
         plan = [
             TerraformInitStep(tfhelper),
             EnableOpenStackApplicationStep(tfhelper, jhelper, self),
-            UpgradeCeilometerStep(jhelper),
             # No need to pass any extra terraform vars for this plugin
             ReapplyHypervisorTerraformPlanStep(tfhelper_hypervisor_deploy, jhelper),
         ]
@@ -107,12 +98,12 @@ class TelemetryPlugin(OpenStackControlPlanePlugin):
         """Application names handled by the terraform plan."""
         database_topology = self.get_database_topology()
 
-        apps = ["ceilometer", "aodh", "aodh-mysql-router"]
+        apps = ["aodh", "aodh-mysql-router"]
         if database_topology == "multi":
             apps.append("aodh-mysql")
 
         if self.client.cluster.list_nodes_by_role("storage"):
-            apps.extend(["gnocchi", "gnocchi-mysql-router"])
+            apps.extend(["ceilometer", "gnocchi", "gnocchi-mysql-router"])
             if database_topology == "multi":
                 apps.append("gnocchi-mysql")
 
@@ -142,64 +133,3 @@ class TelemetryPlugin(OpenStackControlPlanePlugin):
     def disable_plugin(self) -> None:
         """Disable OpenStack Telemetry applications."""
         super().disable_plugin()
-
-
-class UpgradeCeilometerStep(BaseStep):
-    """Step to upgrade ceilometer."""
-
-    def __init__(self, jhelper: JujuHelper):
-        super().__init__("Ceilometer dbsync", "Ceilometer syncing the database")
-        self.jhelper = jhelper
-
-    def is_skip(self, status: Optional[Status] = None) -> Result:
-        """Determines if the step should be skipped or not.
-
-        :return: ResultType.SKIPPED if the Step should be skipped,
-                ResultType.COMPLETED or ResultType.FAILED otherwise
-        """
-
-        try:
-            run_sync(self.jhelper.get_model(OPENSTACK_MODEL))
-        except ModelNotFoundException:
-            return Result(ResultType.FAILED, "Openstack model must be deployed.")
-
-        try:
-            apps = run_sync(self.jhelper.get_application_names(OPENSTACK_MODEL))
-            if "ceilometer" not in apps or "gnocchi" not in apps:
-                return Result(
-                    ResultType.SKIPPED, "Ceilometer/Gnocchi applications missing"
-                )
-
-            # Check if any one of gnocchi unit is active
-            app = run_sync(self.jhelper.get_application("gnocchi", OPENSTACK_MODEL))
-            if not any(unit.workload_status == "active" for unit in app.units):
-                return Result(
-                    ResultType.SKIPPED, "Gnocchi units are not in active state"
-                )
-
-        except (ApplicationNotFoundException, JujuException) as e:
-            return Result(ResultType.FAILED, str(e))
-
-        return Result(ResultType.COMPLETED)
-
-    def run(self, status: Optional[Status] = None) -> Result:
-        """Runs the step.
-
-        :return: ResultType.COMPLETED or ResultType.FAILED
-        """
-        app = "ceilometer"
-        action_cmd = "ceilometer-upgrade"
-
-        unit = run_sync(self.jhelper.get_leader_unit(app, OPENSTACK_MODEL))
-        if not unit:
-            _message = f"Unable to get {app} leader"
-            return Result(ResultType.FAILED, _message)
-
-        action_result = run_sync(
-            self.jhelper.run_action(unit, OPENSTACK_MODEL, action_cmd)
-        )
-        if action_result.get("return-code", 0) > 1:
-            _message = "Unable to run ceilometer-upgrade on Ceilometer service"
-            return Result(ResultType.FAILED, _message)
-
-        return Result(ResultType.COMPLETED)
