@@ -1,6 +1,6 @@
 # DNS service
 
-This plugin provides a DNS service for Sunbeam. It based on [Designate](https://docs.openstack.org/designate/latest/), a DNS service for OpenStack and Bind.
+This plugin provides a DNS service for Sunbeam. It's based on [Designate](https://docs.openstack.org/designate/latest/), a DNS service for OpenStack and Bind.
 
 ## Installation
 
