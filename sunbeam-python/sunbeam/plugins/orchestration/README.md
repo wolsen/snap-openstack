@@ -1,6 +1,6 @@
 # Orchestration service
 
-This plugin provides Orchestration service for Sunbeam. It based on [Heat](https://docs.openstack.org/heat/latest/), an Orchestration service for OpenStack.
+This plugin provides Orchestration service for Sunbeam. It's based on [Heat](https://docs.openstack.org/heat/latest/), an Orchestration service for OpenStack.
 
 ## Installation
 
