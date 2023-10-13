@@ -214,8 +214,8 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
             {
                 "model": self.model,
                 # Make these channel options configurable by the user
-                "openstack-channel": "2023.1/edge",
-                "ovn-channel": "23.03/edge",
+                "openstack-channel": "2023.2/edge",
+                "ovn-channel": "23.09/edge",
                 "rabbitmq-channel": "3.12/edge",
                 "cloud": self.cloud,
                 "credential": f"{self.cloud}{CREDENTIAL_SUFFIX}",
