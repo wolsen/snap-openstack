@@ -136,11 +136,6 @@ class ContainerInfraPlugin(OpenStackControlPlanePlugin):
                 " plugin to be enabled"
             ) from e
 
-        src = Path(__file__).parent / "etc" / self.configure_plan
-        dst = self.snap.paths.user_common / "etc" / self.configure_plan
-        LOG.debug(f"Updating {dst} from {src}...")
-        shutil.copytree(src, dst, dirs_exist_ok=True)
-
     @click.command()
     def enable_plugin(self) -> None:
         """Enable Container Infra service."""
@@ -158,8 +153,12 @@ class ContainerInfraPlugin(OpenStackControlPlanePlugin):
     @click.command()
     def configure(self):
         """Configure Cloud for Container Infra use."""
-        data_location = self.snap.paths.user_data
+        src = Path(__file__).parent / "etc" / self.configure_plan
+        dst = self.snap.paths.user_common / "etc" / self.configure_plan
+        LOG.debug(f"Updating {dst} from {src}...")
+        shutil.copytree(src, dst, dirs_exist_ok=True)
 
+        data_location = self.snap.paths.user_data
         jhelper = JujuHelper(data_location)
         admin_credentials = retrieve_admin_credentials(jhelper, OPENSTACK_MODEL)
         tfhelper = TerraformHelper(
@@ -191,11 +190,8 @@ class ContainerInfraPlugin(OpenStackControlPlanePlugin):
         if enabled:
             commands.update(
                 {
-                    "init": [
-                        {"name": "container-infra", "command": self.container_infra}
-                    ],
-                    "container-infra": [
-                        {"name": "configure", "command": self.configure}
+                    "configure": [
+                        {"name": "container-infra", "command": self.configure}
                     ],
                 }
             )

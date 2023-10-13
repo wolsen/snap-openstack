@@ -3,7 +3,7 @@ terraform {
   required_providers {
     openstack = {
       source  = "terraform-provider-openstack/openstack"
-      version = "~> 1.48.0"
+      version = "~> 1.52.1"
     }
   }
 }
@@ -18,6 +18,8 @@ resource "openstack_images_image_v2" "fedora-coreos" {
   decompress       = true
   visibility       = "public"
   properties = {
-    os_distro = "fedora-coreos"
+    os_distro       = "fedora-coreos"
+    architecture    = "x86_64"
+    hypervisor_type = "qemu"
   }
 }
