@@ -10,6 +10,16 @@ To enable the Container Infra service, you need an already bootstraped Sunbeam i
 sunbeam enable container-infra
 ```
 
+## Configure
+
+The Container Infra service needs a compatible image to instanciate kubernetes cluster. The correct image can be setup automatically with:
+
+```bash
+sunbeam configure container-infra
+```
+
+The list of compatible images can be found [here](https://docs.openstack.org/magnum/latest/user/index.html#supported-versions).
+
 ## Contents
 
 This plugin will install the following services:
