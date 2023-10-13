@@ -98,7 +98,7 @@ class ContainerInfraPlugin(OpenStackControlPlanePlugin):
     def set_tfvars_on_enable(self) -> dict:
         """Set terraform variables to enable the application."""
         return {
-            "magnum-channel": "2023.1/edge",
+            "magnum-channel": "2023.2/edge",
             "enable-magnum": True,
         }
 
