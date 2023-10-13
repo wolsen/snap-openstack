@@ -146,10 +146,6 @@ class ContainerInfraPlugin(OpenStackControlPlanePlugin):
         """Disable Container Infra service."""
         super().disable_plugin()
 
-    @click.group()
-    def container_infra(self) -> None:
-        """Manage Container Infra."""
-
     @click.command()
     def configure(self):
         """Configure Cloud for Container Infra use."""
