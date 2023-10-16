@@ -53,16 +53,16 @@ LOG = logging.getLogger(__name__)
 console = Console()
 
 
-class ContainerInfraConfigureStep(BaseStep):
-    """Configure Container Infra service."""
+class CaasConfigureStep(BaseStep):
+    """Configure CaaS service."""
 
     def __init__(
         self,
         tfhelper: TerraformHelper,
     ):
         super().__init__(
-            "Configure Container Infra",
-            "Configure Cloud for Container Infra use",
+            "Configure Container as a Service",
+            "Configure Cloud for Container as a Service use",
         )
         self.tfhelper = tfhelper
 
@@ -71,21 +71,21 @@ class ContainerInfraConfigureStep(BaseStep):
         try:
             self.tfhelper.apply()
         except TerraformException as e:
-            LOG.exception("Error configuring Container Infra plugin.")
+            LOG.exception("Error configuring Container as a Service plugin.")
             return Result(ResultType.FAILED, str(e))
 
         return Result(ResultType.COMPLETED)
 
 
-class ContainerInfraPlugin(OpenStackControlPlanePlugin):
+class CaasPlugin(OpenStackControlPlanePlugin):
     version = Version("0.0.1")
 
     def __init__(self) -> None:
         super().__init__(
-            name="container-infra",
+            name="caas",
             tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO,
         )
-        self.configure_plan = "container-infra-setup"
+        self.configure_plan = "caas-setup"
 
     def set_application_names(self) -> list:
         """Application names handled by the terraform plan."""
@@ -121,7 +121,7 @@ class ContainerInfraPlugin(OpenStackControlPlanePlugin):
                 raise ValueError("Secrets plugin is not enabled")
         except (ConfigItemNotFoundException, ValueError) as e:
             raise click.ClickException(
-                "OpenStack Container Infra plugin requires Secrets plugin to be enabled"
+                "OpenStack CaaS plugin requires Secrets plugin to be enabled"
             ) from e
         try:
             orchestration_info = read_config(
@@ -132,23 +132,23 @@ class ContainerInfraPlugin(OpenStackControlPlanePlugin):
                 raise ValueError("Orchestration plugin is not enabled")
         except (ConfigItemNotFoundException, ValueError) as e:
             raise click.ClickException(
-                "OpenStack Container Infra plugin requires Orchestration"
+                "OpenStack Container as a Service plugin requires Orchestration"
                 " plugin to be enabled"
             ) from e
 
     @click.command()
     def enable_plugin(self) -> None:
-        """Enable Container Infra service."""
+        """Enable Container as a Service plugin."""
         super().enable_plugin()
 
     @click.command()
     def disable_plugin(self) -> None:
-        """Disable Container Infra service."""
+        """Disable Container as a Service plugin."""
         super().disable_plugin()
 
     @click.command()
     def configure(self):
-        """Configure Cloud for Container Infra use."""
+        """Configure Cloud for Container as a Service use."""
         src = Path(__file__).parent / "etc" / self.configure_plan
         dst = self.snap.paths.user_common / "etc" / self.configure_plan
         LOG.debug(f"Updating {dst} from {src}...")
@@ -160,13 +160,13 @@ class ContainerInfraPlugin(OpenStackControlPlanePlugin):
         tfhelper = TerraformHelper(
             path=self.snap.paths.user_common / "etc" / self.configure_plan,
             env=admin_credentials,
-            plan="container-infra-plan",
+            plan="caas-plan",
             backend="http",
             data_location=data_location,
         )
         plan = [
             TerraformInitStep(tfhelper),
-            ContainerInfraConfigureStep(tfhelper),
+            CaasConfigureStep(tfhelper),
         ]
 
         run_plan(plan, console)
@@ -187,7 +187,7 @@ class ContainerInfraPlugin(OpenStackControlPlanePlugin):
             commands.update(
                 {
                     "configure": [
-                        {"name": "container-infra", "command": self.configure}
+                        {"name": "caas", "command": self.configure}
                     ],
                 }
             )
