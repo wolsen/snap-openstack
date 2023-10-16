@@ -186,9 +186,7 @@ class CaasPlugin(OpenStackControlPlanePlugin):
         if enabled:
             commands.update(
                 {
-                    "configure": [
-                        {"name": "caas", "command": self.configure}
-                    ],
+                    "configure": [{"name": "caas", "command": self.configure}],
                 }
             )
         return commands
