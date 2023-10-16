@@ -11,8 +11,8 @@ terraform {
 provider "openstack" {}
 
 resource "openstack_images_image_v2" "fedora-coreos" {
-  name             = "fedora-coreos-35"
-  image_source_url = "https://builds.coreos.fedoraproject.org/prod/streams/stable/builds/35.20220116.3.0/x86_64/fedora-coreos-35.20220116.3.0-openstack.x86_64.qcow2.xz"
+  name             = "fedora-coreos-38"
+  image_source_url = "https://builds.coreos.fedoraproject.org/prod/streams/stable/builds/38.20230806.3.0/x86_64/fedora-coreos-38.20230806.3.0-openstack.x86_64.qcow2.xz"
   container_format = "bare"
   disk_format      = "qcow2"
   decompress       = true
