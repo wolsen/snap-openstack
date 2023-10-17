@@ -14,8 +14,8 @@
 # limitations under the License.
 
 import logging
-from pathlib import Path
 import shutil
+from pathlib import Path
 from typing import Optional
 
 import click
@@ -27,21 +27,16 @@ from sunbeam.clusterd.service import (
     ClusterServiceUnavailableException,
     ConfigItemNotFoundException,
 )
-from sunbeam.commands.openstack import OPENSTACK_MODEL
 from sunbeam.commands.configure import retrieve_admin_credentials
+from sunbeam.commands.openstack import OPENSTACK_MODEL
 from sunbeam.commands.terraform import (
     TerraformException,
     TerraformHelper,
     TerraformInitStep,
 )
-from sunbeam.jobs.common import (
-    BaseStep,
-    Result,
-    ResultType,
-    read_config,
-    run_plan,
-)
+from sunbeam.jobs.common import BaseStep, Result, ResultType, read_config, run_plan
 from sunbeam.jobs.juju import JujuHelper
+from sunbeam.plugins.interface.v1.base import PluginRequirement
 from sunbeam.plugins.interface.v1.openstack import (
     OpenStackControlPlanePlugin,
     TerraformPlanLocation,
@@ -79,6 +74,11 @@ class CaasConfigureStep(BaseStep):
 
 class CaasPlugin(OpenStackControlPlanePlugin):
     version = Version("0.0.1")
+    requires = {
+        PluginRequirement("secrets"),
+        PluginRequirement("orchestration"),
+        PluginRequirement("loadbalancer", optional=True),
+    }
 
     def __init__(self) -> None:
         super().__init__(
