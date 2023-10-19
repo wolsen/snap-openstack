@@ -145,8 +145,7 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         self.pre_checks()
         super().pre_enable()
 
-    def run_enable_plans(self) -> None:
-        """Run plans to enable plugin."""
+    def get_tfhelper(self):
         data_location = self.snap.paths.user_data
         tfhelper = TerraformHelper(
             path=self.snap.paths.user_common / "etc" / f"deploy-{self.tfplan}",
@@ -154,6 +153,12 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
             backend="http",
             data_location=data_location,
         )
+        return tfhelper
+
+    def run_enable_plans(self) -> None:
+        """Run plans to enable plugin."""
+        data_location = self.snap.paths.user_data
+        tfhelper = self.get_tfhelper()
         jhelper = JujuHelper(data_location)
         plan = [
             TerraformInitStep(tfhelper),
@@ -171,12 +176,7 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
     def run_disable_plans(self) -> None:
         """Run plans to disable the plugin."""
         data_location = self.snap.paths.user_data
-        tfhelper = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / f"deploy-{self.tfplan}",
-            plan=self._get_plan_name(),
-            backend="http",
-            data_location=data_location,
-        )
+        tfhelper = self.get_tfhelper()
         jhelper = JujuHelper(data_location)
         plan = [
             TerraformInitStep(tfhelper),
@@ -283,6 +283,142 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
             horizon_plugins.remove(plugin)
 
         return {"horizon-plugins": sorted(horizon_plugins)}
+
+    @property
+    def k8s_application_data(self) -> dict[str, dict[str, str]]:
+        """Mapping of k8s applications to their required channels.
+
+        {
+            "<application_name>": {
+                "channel": "<charm channel>",
+                "tfvars_channel_var": "<var name>"},
+            "<application_name>": {
+                "channel": "<charm channel>",
+                "tfvars_channel_var": "<var name>"}
+        }
+        """
+        return {}
+
+    @property
+    def machine_application_data(self) -> dict[str, dict[str, str]]:
+        """Mapping of machine applications to their required channels.
+
+        {
+            "<application_name>": {
+                "channel": "<charm channel>",
+                "tfvars_channel_var": "<var name>"},
+            "<application_name>": {
+                "channel": "<charm channel>",
+                "tfvars_channel_var": "<var name>"}
+        }
+        """
+        return {}
+
+    def upgrade_hook(self, upgrade_release: bool = False):
+        """Run upgrade.
+
+        :param upgrade_release: Whether to upgrade release
+        """
+        data_location = self.snap.paths.user_data
+        tfhelper = self.get_tfhelper()
+        jhelper = JujuHelper(data_location)
+        plan = [
+            UpgradeApplicationStep(tfhelper, jhelper, self, upgrade_release),
+        ]
+
+        run_plan(plan, console)
+
+
+class UpgradeApplicationStep(BaseStep, JujuStepHelper):
+    def __init__(
+        self,
+        tfhelper: TerraformHelper,
+        jhelper: JujuHelper,
+        plugin: OpenStackControlPlanePlugin,
+        upgrade_release: bool = False,
+    ) -> None:
+        """Constructor for the generic plan.
+
+        :param tfhelper: Terraform helper pointing to terraform plan
+        :param jhelper: Juju helper with loaded juju credentials
+        :param plugin: Plugin that uses this plan to perform callbacks to
+                       plugin.
+        """
+        super().__init__(
+            f"Refresh OpenStack {plugin.name}",
+            f"Refresh OpenStack {plugin.name} application",
+        )
+        self.tfhelper = tfhelper
+        self.jhelper = jhelper
+        self.plugin = plugin
+        self.model = OPENSTACK_MODEL
+        self.upgrade_release = upgrade_release
+
+    def terraform_sync(self, config_key: str, tfvars_delta: dict):
+        """Sync the running state back to the Terraform state file.
+
+        :param config_key: The config key used to access the data in
+                           microcluster
+        :param tfvars_delta: The delta of changes to be applied to the
+                             terraform vars stored in microcluster.
+        """
+        self.client = Client()
+        tfvars = read_config(self.client, config_key)
+        tfvars.update(tfvars_delta)
+        update_config(self.client, config_key, tfvars)
+        self.tfhelper.write_tfvars(tfvars)
+        self.tfhelper.sync()
+
+    def upgrade_charms(
+        self,
+        application_data: dict[str, dict[str, str]],
+        model: str,
+    ):
+        """Upgrade applications.
+
+        :param application_data: Mapping of applications to their required channels
+        :param model: Name of model applications are in
+        """
+        for application_name, config in application_data.items():
+            if self.revision_update_needed(application_name, model):
+                run_sync(self.jhelper.charm_refresh(application_name, model))
+        if self.upgrade_release:
+            batch = {}
+            expect_wls = {"workload": ["blocked", "active"]}
+            for application_name, config in application_data.items():
+                current_channel = run_sync(
+                    self.jhelper.get_charm_channel(application_name, model)
+                )
+                new_channel = config["channel"]
+                LOG.debug(
+                    f"new_channel: {new_channel} current_channel: {current_channel}"
+                )
+                if self.channel_update_needed(current_channel, new_channel):
+                    batch[application_name] = {
+                        "channel": new_channel,
+                        "expected_status": expect_wls,
+                    }
+                else:
+                    LOG.debug(f"{application_name} no channel upgrade needed")
+            run_sync(self.jhelper.update_applications_channel(model, batch))
+
+    def terraform_sync_channel_updates(self, application_data):
+        for application_name, config in application_data.items():
+            if config.get("tfvars_channel_var"):
+                self.terraform_sync(
+                    self.plugin.get_tfvar_config_key(),
+                    {config["tfvars_channel_var"]: config["channel"]},
+                )
+
+    def run(self, status: Optional[Status] = None) -> Result:
+        """Run plugin upgrade."""
+        self.upgrade_charms(self.plugin.k8s_application_data, "openstack")
+        if self.upgrade_release:
+            self.terraform_sync_channel_updates(self.plugin.k8s_application_data)
+        self.upgrade_charms(self.plugin.machine_application_data, "controller")
+        if self.upgrade_release:
+            self.terraform_sync_channel_updates(self.plugin.machine_application_data)
+        return Result(ResultType.COMPLETED)
 
 
 class EnableOpenStackApplicationStep(BaseStep, JujuStepHelper):

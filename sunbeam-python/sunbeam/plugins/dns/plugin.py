@@ -30,6 +30,7 @@ from sunbeam.plugins.interface.v1.openstack import (
     OpenStackControlPlanePlugin,
     TerraformPlanLocation,
 )
+from sunbeam.versions import OPENSTACK_CHANNEL
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -171,3 +172,20 @@ class DnsPlugin(OpenStackControlPlanePlugin):
                 }
             )
         return commands
+
+    @property
+    def k8s_application_data(self):
+        return {
+            "designate": {
+                "channel": OPENSTACK_CHANNEL,
+                "tfvars_channel_var": None,
+            },
+            "bind": {
+                "channel": "9/edge",
+                "tfvars_channel_var": None,
+            },
+        }
+
+    @property
+    def tfvars_channel_var(self):
+        return "designate-channel"

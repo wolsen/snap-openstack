@@ -51,6 +51,90 @@ def mock_open():
         yield p
 
 
+class TestJujuStepHelper:
+    def test_get_available_charm_revision(self, check_output, mocker):
+        jsh = juju.JujuStepHelper()
+        cmd_out = {
+            "channels": {
+                "legacy": {
+                    "edge": [
+                        {
+                            "track": "legacy",
+                            "risk": "stable",
+                            "version": "121",
+                            "revision": 121,
+                            "released-at": "2023-08-17T12:06:46.206939+00:00",
+                            "size": 7074285,
+                            "architectures": ["amd64"],
+                            "bases": [
+                                {"name": "ubuntu", "channel": "20.04"},
+                                {"name": "ubuntu", "channel": "22.04"},
+                            ],
+                        }
+                    ]
+                }
+            }
+        }
+
+        with patch.object(juju.JujuStepHelper, "_juju_cmd", return_value=cmd_out):
+            assert jsh.get_available_charm_revision("microk8s", "legacy", "edge") == 121
+
+    def test_revision_update_needed(self, mocker):
+        jsh = juju.JujuStepHelper()
+        CHARMREV = {"nova-k8s": 31, "cinder-k8s": 51, "another-k8s": 70}
+
+        def _get_available_charm_revision(charm_name, track, risk):
+            return CHARMREV[charm_name]
+
+        _status = {
+            "applications": {
+                "nova": {
+                    "charm": "ch:amd64/jammy/nova-k8s-30",
+                    "charm-channel": "2023.2/edge/gnuoy",
+                },
+                "cinder": {
+                    "charm": "ch:amd64/jammy/cinder-k8s-50",
+                    "charm-channel": "2023.2/edge",
+                },
+                "another": {
+                    "charm": "ch:amd64/jammy/another-k8s-70",
+                    "charm-channel": "edge",
+                },
+            }
+        }
+        with patch.object(
+            juju.JujuStepHelper,
+            "get_available_charm_revision",
+            side_effect=_get_available_charm_revision,
+        ):
+            assert jsh.revision_update_needed("cinder", "openstack", _status)
+            assert not jsh.revision_update_needed("nova", "openstack", _status)
+            assert not jsh.revision_update_needed("another", "openstack", _status)
+
+    def test_normalise_channel(self):
+        jsh = juju.JujuStepHelper()
+        assert jsh.normalise_channel("2023.2/edge") == "2023.2/edge"
+        assert jsh.normalise_channel("edge") == "latest/edge"
+
+    def test_extract_charm_name(self):
+        jsh = juju.JujuStepHelper()
+        assert jsh._extract_charm_name("ch:amd64/jammy/cinder-k8s-50") == "cinder-k8s"
+
+    def test_extract_charm_revision(self):
+        jsh = juju.JujuStepHelper()
+        assert jsh._extract_charm_revision("ch:amd64/jammy/cinder-k8s-50") == "50"
+
+    def test_channel_update_needed(self):
+        jsh = juju.JujuStepHelper()
+        assert jsh.channel_update_needed("2023.1/stable", "2023.2/stable")
+        assert jsh.channel_update_needed("2023.1/stable", "2023.1/edge")
+        assert jsh.channel_update_needed("latest/stable", "latest/edge")
+        assert not jsh.channel_update_needed("2023.1/stable", "2023.1/stable")
+        assert not jsh.channel_update_needed("2023.2/stable", "2023.1/stable")
+        assert not jsh.channel_update_needed("latest/stable", "latest/stable")
+        assert not jsh.channel_update_needed("foo/stable", "ba/stable")
+
+
 class TestWriteJujuStatusStep:
     def test_is_skip(self, jhelper):
         with tempfile.NamedTemporaryFile() as tmpfile:
