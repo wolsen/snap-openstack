@@ -242,7 +242,7 @@ def get_free_nic() -> str:
     return nic
 
 
-def get_nameservers(ipv4_only=True) -> List[str]:
+def get_nameservers(ipv4_only=True, max_count=5) -> List[str]:
     """Return a list of nameservers used by the host."""
     resolve_config = Path("/run/systemd/resolve/resolv.conf")
     nameservers = []
@@ -258,7 +258,7 @@ def get_nameservers(ipv4_only=True) -> List[str]:
         nameservers = list(set(nameservers))
     except FileNotFoundError:
         nameservers = []
-    return nameservers
+    return nameservers[:max_count]
 
 
 def generate_password() -> str:
