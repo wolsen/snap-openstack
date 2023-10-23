@@ -109,8 +109,7 @@ class TestAddLDAPDomainStep:
         self.tfhelper.write_tfvars.assert_called_with(
             {
                 "ldap-channel": "2023.1/edge",
-                "enable-ldap": True,
-                "ldap_apps": {"dom1": {"domain-name": "dom1"}},
+                "ldap-apps": {"dom1": {"domain-name": "dom1"}},
             }
         )
         self.tfhelper.apply.assert_called_once_with()
@@ -123,8 +122,7 @@ class TestAddLDAPDomainStep:
         self.plugin = FakeLDAPPlugin()
         read_config.return_value = {
             "ldap-channel": "2023.1/edge",
-            "enable-ldap": True,
-            "ldap_apps": {"dom1": {"domain-name": "dom1"}},
+            "ldap-apps": {"dom1": {"domain-name": "dom1"}},
         }
         step = AddLDAPDomainStep(
             self.tfhelper, self.jhelper, self.plugin, {"domain-name": "dom2"}
@@ -133,8 +131,7 @@ class TestAddLDAPDomainStep:
         self.tfhelper.write_tfvars.assert_called_with(
             {
                 "ldap-channel": "2023.1/edge",
-                "enable-ldap": True,
-                "ldap_apps": {
+                "ldap-apps": {
                     "dom1": {"domain-name": "dom1"},
                     "dom2": {"domain-name": "dom2"},
                 },
@@ -169,8 +166,7 @@ class TestAddLDAPDomainStep:
         self.tfhelper.write_tfvars.assert_called_with(
             {
                 "ldap-channel": "2023.1/edge",
-                "enable-ldap": True,
-                "ldap_apps": {"dom1": {"domain-name": "dom1"}},
+                "ldap-apps": {"dom1": {"domain-name": "dom1"}},
             }
         )
         self.tfhelper.apply.assert_called_once_with()
@@ -202,13 +198,12 @@ class TestDisableLDAPDomainStep:
         self.plugin = FakeLDAPPlugin()
         read_config.return_value = {
             "ldap-channel": "2023.1/edge",
-            "enable-ldap": True,
-            "ldap_apps": {"dom1": {"domain-name": "dom1"}},
+            "ldap-apps": {"dom1": {"domain-name": "dom1"}},
         }
         step = DisableLDAPDomainStep(self.tfhelper, self.jhelper, self.plugin, "dom1")
         step.run()
         self.tfhelper.write_tfvars.assert_called_with(
-            {"ldap-channel": "2023.1/edge", "enable-ldap": True, "ldap_apps": {}}
+            {"ldap-channel": "2023.1/edge", "ldap-apps": {}}
         )
         self.tfhelper.apply.assert_called_once_with()
 
@@ -217,13 +212,12 @@ class TestDisableLDAPDomainStep:
         self.plugin = FakeLDAPPlugin()
         read_config.return_value = {
             "ldap-channel": "2023.1/edge",
-            "enable-ldap": True,
-            "ldap_apps": {"dom1": {"domain-name": "dom1"}},
+            "ldap-apps": {"dom1": {"domain-name": "dom1"}},
         }
         step = DisableLDAPDomainStep(self.tfhelper, self.jhelper, self.plugin, "dom1")
         result = step.run()
         self.tfhelper.write_tfvars.assert_called_with(
-            {"ldap-channel": "2023.1/edge", "enable-ldap": True, "ldap_apps": {}}
+            {"ldap-channel": "2023.1/edge", "ldap-apps": {}}
         )
         self.tfhelper.apply.assert_called_once_with()
         assert result.result_type == ResultType.FAILED
@@ -233,8 +227,7 @@ class TestDisableLDAPDomainStep:
         self.plugin = FakeLDAPPlugin()
         read_config.return_value = {
             "ldap-channel": "2023.1/edge",
-            "enable-ldap": True,
-            "ldap_apps": {"dom1": {"domain-name": "dom1"}},
+            "ldap-apps": {"dom1": {"domain-name": "dom1"}},
         }
         step = DisableLDAPDomainStep(self.tfhelper, self.jhelper, self.plugin, "dom2")
         result = step.run()
@@ -267,8 +260,7 @@ class TestUpdateLDAPDomainStep:
         self.plugin = FakeLDAPPlugin()
         read_config.return_value = {
             "ldap-channel": "2023.1/edge",
-            "enable-ldap": True,
-            "ldap_apps": {"dom1": {"domain-name": "dom1"}},
+            "ldap-apps": {"dom1": {"domain-name": "dom1"}},
         }
         step = UpdateLDAPDomainStep(
             self.tfhelper, self.jhelper, self.plugin, self.charm_config
@@ -277,8 +269,7 @@ class TestUpdateLDAPDomainStep:
         self.tfhelper.write_tfvars.assert_called_with(
             {
                 "ldap-channel": "2023.1/edge",
-                "enable-ldap": True,
-                "ldap_apps": {"dom1": {"domain-name": "dom1"}},
+                "ldap-apps": {"dom1": {"domain-name": "dom1"}},
             }
         )
         self.tfhelper.apply.assert_called_once_with()
@@ -291,8 +282,7 @@ class TestUpdateLDAPDomainStep:
         self.plugin = FakeLDAPPlugin()
         read_config.return_value = {
             "ldap-channel": "2023.1/edge",
-            "enable-ldap": True,
-            "ldap_apps": {"dom1": {"domain-name": "dom1"}},
+            "ldap-apps": {"dom1": {"domain-name": "dom1"}},
         }
         step = UpdateLDAPDomainStep(
             self.tfhelper, self.jhelper, self.plugin, {"domain-name": "dom2"}
@@ -306,8 +296,7 @@ class TestUpdateLDAPDomainStep:
         self.plugin = FakeLDAPPlugin()
         read_config.return_value = {
             "ldap-channel": "2023.1/edge",
-            "enable-ldap": True,
-            "ldap_apps": {"dom1": {"domain-name": "dom1"}},
+            "ldap-apps": {"dom1": {"domain-name": "dom1"}},
         }
         step = UpdateLDAPDomainStep(
             self.tfhelper, self.jhelper, self.plugin, self.charm_config
@@ -323,8 +312,7 @@ class TestUpdateLDAPDomainStep:
         self.plugin = FakeLDAPPlugin()
         read_config.return_value = {
             "ldap-channel": "2023.1/edge",
-            "enable-ldap": True,
-            "ldap_apps": {"dom1": {"domain-name": "dom1"}},
+            "ldap-apps": {"dom1": {"domain-name": "dom1"}},
         }
         step = UpdateLDAPDomainStep(
             self.tfhelper, self.jhelper, self.plugin, self.charm_config

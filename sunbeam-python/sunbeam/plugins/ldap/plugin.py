@@ -93,8 +93,8 @@ class DisableLDAPDomainStep(BaseStep, JujuStepHelper):
         except ConfigItemNotFoundException:
             tfvars = {}
         tfvars.update(self.plugin.set_tfvars_on_enable())
-        if tfvars.get("ldap_apps") and self.domain_name in tfvars["ldap_apps"]:
-            del tfvars["ldap_apps"][self.domain_name]
+        if tfvars.get("ldap-apps") and self.domain_name in tfvars["ldap-apps"]:
+            del tfvars["ldap-apps"][self.domain_name]
         else:
             return Result(ResultType.FAILED, "Domain not found")
         self.tfhelper.write_tfvars(tfvars)
@@ -142,8 +142,8 @@ class UpdateLDAPDomainStep(BaseStep, JujuStepHelper):
             tfvars = read_config(self.client, config_key)
         except ConfigItemNotFoundException:
             tfvars = {}
-        if tfvars["ldap_apps"].get(self.charm_config["domain-name"]):
-            tfvars["ldap_apps"][self.charm_config["domain-name"]] = self.charm_config
+        if tfvars["ldap-apps"].get(self.charm_config["domain-name"]):
+            tfvars["ldap-apps"][self.charm_config["domain-name"]] = self.charm_config
         else:
             return Result(ResultType.FAILED, "Domain not found")
 
@@ -208,10 +208,10 @@ class AddLDAPDomainStep(BaseStep, JujuStepHelper):
         except ConfigItemNotFoundException:
             tfvars = {}
         tfvars.update(self.plugin.set_tfvars_on_enable())
-        if tfvars.get("ldap_apps"):
-            tfvars["ldap_apps"][self.charm_config["domain-name"]] = self.charm_config
+        if tfvars.get("ldap-apps"):
+            tfvars["ldap-apps"][self.charm_config["domain-name"]] = self.charm_config
         else:
-            tfvars["ldap_apps"] = {self.charm_config["domain-name"]: self.charm_config}
+            tfvars["ldap-apps"] = {self.charm_config["domain-name"]: self.charm_config}
         self.tfhelper.write_tfvars(tfvars)
         update_config(self.client, config_key, tfvars)
 
@@ -250,13 +250,12 @@ class LDAPPlugin(OpenStackControlPlanePlugin):
     def set_tfvars_on_enable(self) -> dict:
         """Set terraform variables to enable the application."""
         return {
-            "ldap-channel": "2023.1/edge",
-            "enable-ldap": True,
+            "ldap-channel": "2023.2/edge",
         }
 
     def set_tfvars_on_disable(self) -> dict:
         """Set terraform variables to disable the application."""
-        return {}
+        return {"ldap-apps": {}}
 
     def set_tfvars_on_resize(self) -> dict:
         """Set terraform variables to resize the application."""
@@ -284,7 +283,7 @@ class LDAPPlugin(OpenStackControlPlanePlugin):
             tfvars = read_config(self.client, self.get_tfvar_config_key())
         except ConfigItemNotFoundException:
             tfvars = {}
-        click.echo(" ".join(tfvars.get("ldap_apps", {}).keys()))
+        click.echo(" ".join(tfvars.get("ldap-apps", {}).keys()))
 
     @click.command()
     @click.argument("domain-name")
