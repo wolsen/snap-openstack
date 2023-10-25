@@ -27,6 +27,8 @@ import netifaces
 import pwgen
 from pyroute2 import IPDB, NDB
 
+from sunbeam.plugins.interface.v1.base import PluginError
+
 LOG = logging.getLogger(__name__)
 LOCAL_ACCESS = "local"
 REMOTE_ACCESS = "remote"
@@ -272,6 +274,10 @@ class CatchGroup(click.Group):
     def __call__(self, *args, **kwargs):
         try:
             return self.main(*args, **kwargs)
+        except PluginError as e:
+            LOG.debug(e, exc_info=True)
+            LOG.error("Error: %s", e)
+            sys.exit(1)
         except Exception as e:
             LOG.debug(e, exc_info=True)
             message = (

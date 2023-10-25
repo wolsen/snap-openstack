@@ -125,10 +125,10 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         """Return Terraform OpenStack plan location."""
         return self.get_terraform_plans_base_path() / "etc" / "deploy-openstack"
 
-    def pre_enable(self) -> None:
-        """Handler to perform tasks before enabling the plugin.
+    def pre_checks(self) -> None:
+        """Perform preflight checks before enabling the plugin.
 
-        Perform preflight checks, copy of terraform plan to required locations.
+        Also copies terraform plans to required locations.
         """
         preflight_checks = []
         preflight_checks.append(VerifyBootstrappedCheck())
@@ -137,6 +137,11 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         dst = self.snap.paths.user_common / "etc" / f"deploy-{self.tfplan}"
         LOG.debug(f"Updating {dst} from {src}...")
         shutil.copytree(src, dst, dirs_exist_ok=True)
+
+    def pre_enable(self) -> None:
+        """Handler to perform tasks before enabling the plugin."""
+        self.pre_checks()
+        super().pre_enable()
 
     def run_enable_plans(self) -> None:
         """Run plans to enable plugin."""
@@ -157,11 +162,9 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         click.echo(f"OpenStack {self.name} application enabled.")
 
     def pre_disable(self) -> None:
-        """Handler to perform tasks before disabling the plugin.
-
-        Perform preflight checks, copy of terraform plan to required locations.
-        """
-        self.pre_enable()
+        """Handler to perform tasks before disabling the plugin."""
+        self.pre_checks()
+        super().pre_disable()
 
     def run_disable_plans(self) -> None:
         """Run plans to disable the plugin."""
