@@ -54,6 +54,7 @@ LOG = logging.getLogger(__name__)
 console = Console()
 
 APPLICATION_DEPLOY_TIMEOUT = 900  # 15 minutes
+APPLICATION_REMOVE_TIMEOUT = 300  # 5 minutes
 
 
 class DisableLDAPDomainStep(BaseStep, JujuStepHelper):
@@ -103,6 +104,25 @@ class DisableLDAPDomainStep(BaseStep, JujuStepHelper):
         try:
             self.tfhelper.apply()
         except TerraformException as e:
+            return Result(ResultType.FAILED, str(e))
+
+        try:
+            run_sync(
+                self.jhelper.wait_application_gone(
+                    [f"keystone-ldap-{self.domain_name}"],
+                    self.model,
+                    timeout=APPLICATION_REMOVE_TIMEOUT,
+                )
+            )
+            run_sync(
+                self.jhelper.wait_all_units_ready(
+                    "keystone",
+                    self.model,
+                    timeout=APPLICATION_REMOVE_TIMEOUT,
+                )
+            )
+        except (JujuWaitException, TimeoutException) as e:
+            LOG.warning(str(e))
             return Result(ResultType.FAILED, str(e))
 
         return Result(ResultType.COMPLETED)
