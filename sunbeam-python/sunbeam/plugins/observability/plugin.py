@@ -148,7 +148,7 @@ class DeployGrafanaAgentStep(BaseStep, JujuStepHelper):
         tfhelper_cos: TerraformHelper,
         jhelper: JujuHelper,
     ):
-        super().__init__("Deploy Grafana Agent", "Deploying Grafana Agent")
+        super().__init__("Deploy Grafana Agent", "Deploy Grafana Agent")
         self.tfhelper = tfhelper
         self.tfhelper_cos = tfhelper_cos
         self.jhelper = jhelper
@@ -182,7 +182,7 @@ class DeployGrafanaAgentStep(BaseStep, JujuStepHelper):
         self.update_config(config)
         self.tfhelper.write_tfvars(tfvars)
 
-        self.update_status(status, "deploying application")
+        self.update_status(status, "deploying Grafana Agent")
         try:
             self.tfhelper.apply()
         except TerraformException as e:
