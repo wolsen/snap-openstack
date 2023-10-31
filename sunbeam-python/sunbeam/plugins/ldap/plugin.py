@@ -162,8 +162,11 @@ class UpdateLDAPDomainStep(BaseStep, JujuStepHelper):
             tfvars = read_config(self.client, config_key)
         except ConfigItemNotFoundException:
             tfvars = {}
-        if tfvars["ldap-apps"].get(self.charm_config["domain-name"]):
-            tfvars["ldap-apps"][self.charm_config["domain-name"]] = self.charm_config
+        config = tfvars["ldap-apps"].get(self.charm_config["domain-name"])
+        if config:
+            for k in config.keys():
+                if self.charm_config.get(k):
+                    config[k] = self.charm_config[k]
         else:
             return Result(ResultType.FAILED, "Domain not found")
 
@@ -327,10 +330,16 @@ class LDAPPlugin(OpenStackControlPlanePlugin):
         """Add LDAP backed domain."""
         with Path(domain_config_file).open(mode="r") as f:
             content = yaml.safe_load(f)
+        if ca_cert_file:
+            with Path(ca_cert_file).open(mode="r") as f:
+                ca = f.read()
+        else:
+            ca = ""
+        data_location = self.snap.paths.user_data
         charm_config = {
             "ldap-config-flags": json.dumps(content),
             "domain-name": domain_name,
-            "tls-ca-ldap": "",
+            "tls-ca-ldap": ca,
         }
         data_location = self.snap.paths.user_data
         tfhelper = TerraformHelper(
@@ -368,13 +377,15 @@ class LDAPPlugin(OpenStackControlPlanePlugin):
         self, ca_cert_file: str, domain_config_file: str, domain_name: str
     ) -> None:
         """Add LDAP backed domain."""
-        with Path(domain_config_file).open(mode="r") as f:
-            content = yaml.safe_load(f)
-        charm_config = {
-            "ldap-config-flags": json.dumps(content),
-            "domain-name": domain_name,
-            "tls-ca-ldap": "",
-        }
+        charm_config = {"domain-name": domain_name}
+        if domain_config_file:
+            with Path(domain_config_file).open(mode="r") as f:
+                content = yaml.safe_load(f)
+            charm_config["ldap-config-flags"] = json.dumps(content)
+        if ca_cert_file:
+            with Path(ca_cert_file).open(mode="r") as f:
+                ca = f.read()
+            charm_config["tls-ca-ldap"] = ca
         data_location = self.snap.paths.user_data
         tfhelper = TerraformHelper(
             path=self.snap.paths.user_common / "etc" / f"deploy-{self.tfplan}",
