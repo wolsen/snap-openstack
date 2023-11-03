@@ -58,6 +58,8 @@ LOG = logging.getLogger(__name__)
 console = Console()
 
 APPLICATION_DEPLOY_TIMEOUT = 900  # 15 minutes
+OPENSTACK_TERRAFORM_VARS = "TerraformVarsOpenstack"
+OPENSTACK_TERRAFORM_PLAN = "openstack"
 
 
 class TerraformPlanLocation(Enum):
@@ -96,7 +98,7 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         # Based on terraform plan location, tfplan will be either
         # openstack or plugin name
         if self.tf_plan_location == TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO:
-            self.tfplan = "openstack"
+            self.tfplan = OPENSTACK_TERRAFORM_PLAN
         else:
             self.tfplan = self.name
 
@@ -194,7 +196,7 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         TerraformVars-<plugin name>.
         """
         if self.tf_plan_location == TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO:
-            return "TerraformVarsOpenstack"
+            return OPENSTACK_TERRAFORM_VARS
         else:
             return f"TerraformVars{self.app_name}"
 
