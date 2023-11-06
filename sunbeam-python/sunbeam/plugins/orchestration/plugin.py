@@ -37,7 +37,7 @@ class OrchestrationPlugin(OpenStackControlPlanePlugin):
 
     def set_application_names(self) -> list:
         """Application names handled by the terraform plan."""
-        apps = ["heat", "heat-mysql-router", "heat-cfn", "heat-cfn-mysql-router"]
+        apps = ["heat", "heat-mysql-router"]
         if self.get_database_topology() == "multi":
             apps.extend(["heat-mysql"])
 
