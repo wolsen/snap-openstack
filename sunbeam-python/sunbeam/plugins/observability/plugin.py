@@ -238,7 +238,7 @@ class DeployGrafanaAgentStep(BaseStep, JujuStepHelper):
         tfhelper_cos: TerraformHelper,
         jhelper: JujuHelper,
     ):
-        super().__init__("Deploy Grafana Agent", "Deploying Grafana Agent")
+        super().__init__("Deploy Grafana Agent", "Deploy Grafana Agent")
         self.tfhelper = tfhelper
         self.tfhelper_cos = tfhelper_cos
         self.jhelper = jhelper
