@@ -18,6 +18,7 @@ import enum
 import json
 import logging
 import os
+from pathlib import Path
 from typing import List, Optional, Type
 
 import click
@@ -37,6 +38,9 @@ FORMAT_TABLE = "table"
 FORMAT_YAML = "yaml"
 FORMAT_DEFAULT = "default"
 FORMAT_VALUE = "value"
+
+CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
+SHARE_PATH = Path(".local/share/openstack/")
 
 
 class Role(enum.Enum):

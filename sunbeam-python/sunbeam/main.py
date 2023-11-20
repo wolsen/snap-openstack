@@ -18,18 +18,15 @@ import logging
 import click
 from snaphelpers import Snap
 
-from sunbeam import log
-from sunbeam.commands import bootstrap as bootstrap_cmds
+from sunbeam import log, provider
 from sunbeam.commands import configure as configure_cmds
 from sunbeam.commands import dashboard_url as dasboard_url_cmds
 from sunbeam.commands import generate_cloud_config as generate_cloud_config_cmds
 from sunbeam.commands import generate_preseed as generate_preseed_cmds
 from sunbeam.commands import inspect as inspect_cmds
 from sunbeam.commands import launch as launch_cmds
-from sunbeam.commands import node as node_cmds
 from sunbeam.commands import openrc as openrc_cmds
 from sunbeam.commands import prepare_node as prepare_node_cmds
-from sunbeam.commands import resize as resize_cmds
 from sunbeam.commands import utils as utils_cmds
 from sunbeam.jobs.plugin import PluginManager
 from sunbeam.utils import CatchGroup
@@ -55,12 +52,6 @@ def cli(ctx, quiet, verbose):
     with by initializing the local node. Once the local node has been initialized,
     run the bootstrap process to get a live cloud.
     """
-
-
-@click.group("cluster", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
-@click.pass_context
-def cluster(ctx):
-    """Manage the Sunbeam Cluster"""
 
 
 @click.group("enable", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
@@ -95,13 +86,10 @@ def main():
     cli.add_command(dasboard_url_cmds.dashboard_url)
 
     # Cluster management
-    cli.add_command(cluster)
-    cluster.add_command(bootstrap_cmds.bootstrap)
-    cluster.add_command(node_cmds.add)
-    cluster.add_command(node_cmds.join)
-    cluster.add_command(node_cmds.list)
-    cluster.add_command(node_cmds.remove)
-    cluster.add_command(resize_cmds.resize)
+    provider_guess = provider.guess_provider(
+        snap.paths.real_home / provider.PROVIDER_PATH
+    )
+    provider.register_cli(cli, provider_guess)
 
     cli.add_command(enable)
     cli.add_command(disable)

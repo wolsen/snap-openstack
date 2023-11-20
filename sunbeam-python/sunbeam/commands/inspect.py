@@ -29,10 +29,14 @@ from snaphelpers import Snap
 from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import ConfigItemNotFoundException
 from sunbeam.commands.juju import WriteCharmLogStep, WriteJujuStatusStep
-from sunbeam.commands.node import FORMAT_TABLE, FORMAT_YAML
 from sunbeam.commands.openstack import OPENSTACK_MODEL
 from sunbeam.jobs.checks import DaemonGroupCheck
-from sunbeam.jobs.common import run_plan, run_preflight_checks
+from sunbeam.jobs.common import (
+    FORMAT_TABLE,
+    FORMAT_YAML,
+    run_plan,
+    run_preflight_checks,
+)
 from sunbeam.jobs.juju import CONTROLLER_MODEL, JujuHelper
 
 LOG = logging.getLogger(__name__)

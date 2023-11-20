@@ -35,3 +35,6 @@ lightkube-models
 # For plugin repo
 jsonschema
 GitPython
+
+# maas
+python-libmaas
