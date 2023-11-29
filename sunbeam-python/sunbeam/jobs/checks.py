@@ -21,6 +21,7 @@ from pathlib import Path
 from snaphelpers import Snap, SnapCtl
 
 from sunbeam.clusterd.client import Client
+from sunbeam.clusterd.service import ClusterServiceUnavailableException
 from sunbeam.jobs.common import (
     RAM_16_GB_IN_KB,
     get_host_total_cores,
@@ -141,12 +142,12 @@ class DaemonGroupCheck(Check):
 
 # NOTE: drop with Juju can do this itself
 class LocalShareCheck(Check):
-    """Check if ~/.local/share exists for Juju use."""
+    """Check if ~/.local/share exists."""
 
     def __init__(self):
         super().__init__(
             "Check for .local/share directory",
-            "Checking for ~/.local/share directory for Juju",
+            "Checking for ~/.local/share directory",
         )
 
     def run(self) -> bool:
@@ -287,3 +288,29 @@ class VerifyBootstrappedCheck(Check):
                 "completed succesfully. Please run `sunbeam cluster bootstrap`"
             )
             return False
+
+
+class VerifyClusterdNotBootstrappedCheck(Check):
+    """Check deployment has not been bootstrapped."""
+
+    def __init__(self):
+        super().__init__(
+            "Check internal database has not been bootstrapped",
+            "Checking the internal database has not been bootstrapped",
+        )
+        self.client = Client()
+
+    def run(self) -> bool:
+        client = Client()
+        try:
+            client.cluster.get_config("any")
+        except ClusterServiceUnavailableException:
+            return True
+        except Exception:
+            pass
+
+        self.message = (
+            "Local deployment has already been bootstrapped,"
+            " which is only compatible in a local type deployment."
+        )
+        return False

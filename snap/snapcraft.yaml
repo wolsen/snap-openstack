@@ -255,6 +255,11 @@ plugs:
     interface: personal-files
     write:
       - $HOME/.local/share/juju
+    
+  dot-local-share-openstack:
+    interface: personal-files
+    write:
+      - $HOME/.local/share/openstack
 
   dot-config-openstack:
     interface: personal-files
