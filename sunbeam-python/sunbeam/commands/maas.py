@@ -16,6 +16,8 @@
 """MAAS management."""
 
 import builtins
+import collections
+import enum
 import logging
 import ssl
 from pathlib import Path
@@ -47,15 +49,80 @@ class MaasConfig(TypedDict):
     deployments: list[MaasDeployment]
 
 
+class RoleTags(enum.Enum):
+    CONTROL = "control"
+    COMPUTE = "compute"
+    STORAGE = "storage"
+    JUJU = "juju"
+
+    @classmethod
+    def values(cls) -> list[str]:
+        """Return list of tag values."""
+        return [tag.value for tag in cls]
+
+
+class StorageTags(enum.Enum):
+    CEPH = "ceph"
+
+    @classmethod
+    def values(cls) -> list[str]:
+        """Return list of tag values."""
+        return [tag.value for tag in cls]
+
+
 class MaasClient:
     """Facade to MAAS APIs."""
 
-    def __init__(self, url: str, token: str):
+    def __init__(self, url: str, token: str, resource_pool: Optional[str] = None):
         self._client = connect(url, apikey=token)
+        self.resource_pool = resource_pool
 
     def get_resource_pool(self, name: str) -> object:
         """Fetch resource pool from MAAS."""
         return self._client.resource_pools.get(name)  # type: ignore
+
+    def list_machines(self) -> list[dict]:
+        """List machines."""
+        kwargs = {}
+        if self.resource_pool:
+            kwargs["pool"] = self.resource_pool
+        try:
+            return self._client.machines.list.__self__._handler.read(**kwargs)  # type: ignore # noqa
+        except bones.CallError as e:
+            if "No such pool" in str(e):
+                raise ValueError(f"Resource pool {self.resource_pool!r} not found.")
+            raise e
+
+    def get_machine(self, machine: str) -> dict:
+        """Get machine."""
+        kwargs = {
+            "hostname": machine,
+        }
+        if self.resource_pool:
+            kwargs["pool"] = self.resource_pool
+        machines = self._client.machines.list.__self__._handler.read(**kwargs)  # type: ignore # noqa
+        if len(machines) == 0:
+            raise ValueError(f"Machine {machine!r} not found.")
+        if len(machines) > 1:
+            raise ValueError(f"Machine {machine!r} not unique.")
+        return machines[0]
+
+    @classmethod
+    def active(cls, snap: Snap) -> "MaasClient":
+        """Return client connected to active deployment."""
+        path = maas_path(snap)
+        config = maas_config(path)
+        active = config.get("active")
+        if not active:
+            raise ValueError("No active deployment found.")
+        for deployment in config.get("deployments", []):
+            if deployment["name"] == active:
+                return cls(
+                    deployment["url"],
+                    deployment["token"],
+                    deployment["resource_pool"],
+                )
+        raise ValueError("Active deployment not found in configuration.")
 
 
 def maas_path(snap: Snap) -> Path:
@@ -114,6 +181,47 @@ def list_deployments(path: Path) -> dict:
         for deployment in config.get("deployments", [])
     ]
     return {"active": config.get("active"), "deployments": deployments}
+
+
+def list_machines(client: MaasClient) -> list[dict]:
+    """List machines in deployment, return consumable list of dicts."""
+    machines_raw = client.list_machines()
+
+    machines = []
+    for machine in machines_raw:
+        machines.append(
+            {
+                "hostname": machine["hostname"],
+                "roles": list(
+                    set(machine["tag_names"]).intersection(RoleTags.values())
+                ),
+                "zone": machine["zone"]["name"],
+                "status": machine["status_name"],
+            }
+        )
+    return machines
+
+
+def get_machine(client: MaasClient, machine: str) -> dict:
+    """Get machine in deployment, return consumable dict."""
+    machine_raw = client.get_machine(machine)
+
+    storage_tags = collections.Counter()
+    for blockdevice in machine_raw["blockdevice_set"]:
+        storage_tags.update(set(blockdevice["tags"]).intersection(StorageTags.values()))
+
+    spaces = []
+    for interface in machine_raw["interface_set"]:
+        spaces.append(interface["vlan"]["space"])
+
+    return {
+        "hostname": machine_raw["hostname"],
+        "roles": list(set(machine_raw["tag_names"]).intersection(RoleTags.values())),
+        "zone": machine_raw["zone"]["name"],
+        "status": machine_raw["status_name"],
+        "storage": dict(storage_tags),
+        "spaces": list(set(spaces)),
+    }
 
 
 class AddMaasDeployment(BaseStep):
