@@ -24,7 +24,10 @@ from snaphelpers import Snap
 from sunbeam.commands import resize as resize_cmds
 from sunbeam.commands.maas import (
     AddMaasDeployment,
+    MaasClient,
+    get_machine,
     list_deployments,
+    list_machines,
     maas_path,
     switch_deployment,
 )
@@ -54,6 +57,13 @@ def maas(ctx):
     """Manage MAAS-backed deployments."""
 
 
+@click.group("machine", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
+@click.pass_context
+def machine(ctx):
+    """Manage machines in the cluster."""
+    pass
+
+
 class MaasProvider(ProviderBase):
     def register_cli(self, cli: click.Group):
         cli.add_command(cluster)
@@ -64,6 +74,9 @@ class MaasProvider(ProviderBase):
         maas.add_command(add)
         maas.add_command(switch)
         maas.add_command(list_openstack_deployments)
+        maas.add_command(machine)
+        machine.add_command(list_machines_cmd)
+        machine.add_command(show_machine_cmd)
 
 
 @click.command()
@@ -162,3 +175,75 @@ def list_openstack_deployments(format: str) -> None:
         console.print(table)
     elif format == FORMAT_YAML:
         console.print(yaml.dump(deployment_list), end="")
+
+
+@click.command("list")
+@click.option(
+    "--format",
+    type=click.Choice([FORMAT_TABLE, FORMAT_YAML]),
+    default=FORMAT_TABLE,
+    help="Output format",
+)
+def list_machines_cmd(format: str) -> None:
+    """List machines in active deployment."""
+    preflight_checks = [
+        LocalShareCheck(),
+    ]
+    run_preflight_checks(preflight_checks, console)
+
+    snap = Snap()
+
+    client = MaasClient.active(snap)
+    machines = list_machines(client)
+    if format == FORMAT_TABLE:
+        table = Table()
+        table.add_column("Machine")
+        table.add_column("Roles")
+        table.add_column("Zone")
+        table.add_column("Status")
+        for machine in machines:
+            hostname = machine["hostname"]
+            status = machine["status"]
+            zone = machine["zone"]
+            roles = ", ".join(machine["roles"])
+            table.add_row(hostname, roles, zone, status)
+        console.print(table)
+    elif format == FORMAT_YAML:
+        console.print(yaml.dump(machines), end="")
+
+
+@click.command("show")
+@click.argument("hostname", type=str)
+@click.option(
+    "--format",
+    type=click.Choice([FORMAT_TABLE, FORMAT_YAML]),
+    default=FORMAT_TABLE,
+    help="Output format",
+)
+def show_machine_cmd(hostname: str, format: str) -> None:
+    """Show machine in active deployment."""
+    preflight_checks = [
+        LocalShareCheck(),
+    ]
+    run_preflight_checks(preflight_checks, console)
+
+    snap = Snap()
+    client = MaasClient.active(snap)
+    machine = get_machine(client, hostname)
+    header = "[bold]{}[/bold]"
+    if format == FORMAT_TABLE:
+        table = Table(show_header=False)
+        table.add_row(header.format("Name"), machine["hostname"])
+        table.add_row(header.format("Roles"), ", ".join(machine["roles"]))
+        table.add_row(header.format("Network Spaces"), ", ".join(machine["spaces"]))
+        table.add_row(
+            header.format(
+                "Storage Devices",
+            ),
+            ", ".join(f"{tag}({count})" for tag, count in machine["storage"].items()),
+        )
+        table.add_row(header.format("Zone"), machine["zone"])
+        table.add_row(header.format("Status"), machine["status"])
+        console.print(table)
+    elif format == FORMAT_YAML:
+        console.print(yaml.dump(machine), end="")
