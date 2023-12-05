@@ -112,6 +112,14 @@ class MaasClient:
             raise ValueError(f"Machine {machine!r} not unique.")
         return machines[0]
 
+    def list_machines_by_zone(self) -> dict[str, list[dict]]:
+        """List machines by zone."""
+        result = collections.defaultdict(list)
+        machines = self.list_machines()
+        for machine in machines:
+            result[machine["zone"]["name"]].append(machine)
+        return dict(result)
+
     @classmethod
     def active(cls, snap: Snap) -> "MaasClient":
         """Return client connected to active deployment."""
@@ -126,29 +134,7 @@ class MaasClient:
         )
 
 
-def list_machines(client: MaasClient) -> list[dict]:
-    """List machines in deployment, return consumable list of dicts."""
-    machines_raw = client.list_machines()
-
-    machines = []
-    for machine in machines_raw:
-        machines.append(
-            {
-                "hostname": machine["hostname"],
-                "roles": list(
-                    set(machine["tag_names"]).intersection(RoleTags.values())
-                ),
-                "zone": machine["zone"]["name"],
-                "status": machine["status_name"],
-            }
-        )
-    return machines
-
-
-def get_machine(client: MaasClient, machine: str) -> dict:
-    """Get machine in deployment, return consumable dict."""
-    machine_raw = client.get_machine(machine)
-
+def _convert_raw_machine(machine_raw: dict) -> dict:
     storage_tags = collections.Counter()
     for blockdevice in machine_raw["blockdevice_set"]:
         storage_tags.update(set(blockdevice["tags"]).intersection(StorageTags.values()))
@@ -156,7 +142,6 @@ def get_machine(client: MaasClient, machine: str) -> dict:
     spaces = []
     for interface in machine_raw["interface_set"]:
         spaces.append(interface["vlan"]["space"])
-
     return {
         "hostname": machine_raw["hostname"],
         "roles": list(set(machine_raw["tag_names"]).intersection(RoleTags.values())),
@@ -165,6 +150,34 @@ def get_machine(client: MaasClient, machine: str) -> dict:
         "storage": dict(storage_tags),
         "spaces": list(set(spaces)),
     }
+
+
+def list_machines(client: MaasClient) -> list[dict]:
+    """List machines in deployment, return consumable list of dicts."""
+    machines_raw = client.list_machines()
+
+    machines = []
+    for machine in machines_raw:
+        machines.append(_convert_raw_machine(machine))
+    return machines
+
+
+def get_machine(client: MaasClient, machine: str) -> dict:
+    """Get machine in deployment, return consumable dict."""
+    machine_raw = client.get_machine(machine)
+    return _convert_raw_machine(machine_raw)
+
+
+def list_machines_by_zone(client: MaasClient) -> dict[str, list[dict]]:
+    """List machines by zone, return consumable dict."""
+    zone_machine_raw = client.list_machines_by_zone()
+    machines = collections.defaultdict(list)
+
+    for zone, machines_raw in zone_machine_raw.items():
+        for machine in machines_raw:
+            machines[zone].append(_convert_raw_machine(machine))
+
+    return dict(machines)
 
 
 class AddMaasDeployment(BaseStep):

@@ -14,6 +14,8 @@
 # limitations under the License.
 
 
+from collections import Counter
+
 import click
 import yaml
 from rich.console import Console
@@ -27,6 +29,7 @@ from sunbeam.commands.maas import (
     MaasClient,
     get_machine,
     list_machines,
+    list_machines_by_zone,
 )
 from sunbeam.jobs.checks import LocalShareCheck, VerifyClusterdNotBootstrappedCheck
 from sunbeam.jobs.common import (
@@ -51,7 +54,14 @@ def cluster(ctx):
 @click.group("machine", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
 @click.pass_context
 def machine(ctx):
-    """Manage machines in the cluster."""
+    """Manage machines."""
+    pass
+
+
+@click.group("zone", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
+@click.pass_context
+def zone(ctx):
+    """Manage zones."""
     pass
 
 
@@ -66,11 +76,13 @@ class MaasProvider(ProviderBase):
     ):
         init.add_command(cluster)
         cluster.add_command(bootstrap)
-        cluster.add_command(list)
+        cluster.add_command(list_nodes)
         cluster.add_command(resize_cmds.resize)
         deployment.add_command(machine)
         machine.add_command(list_machines_cmd)
         machine.add_command(show_machine_cmd)
+        deployment.add_command(zone)
+        zone.add_command(list_zones_cmd)
 
 
 @click.command()
@@ -82,7 +94,7 @@ def bootstrap() -> None:
     raise NotImplementedError
 
 
-@click.command()
+@click.command("list")
 @click.option(
     "-f",
     "--format",
@@ -90,7 +102,7 @@ def bootstrap() -> None:
     default=FORMAT_TABLE,
     help="Output format.",
 )
-def list(format: str) -> None:
+def list_nodes(format: str) -> None:
     """List nodes in the custer."""
     raise NotImplementedError
 
@@ -186,3 +198,89 @@ def show_machine_cmd(hostname: str, format: str) -> None:
         console.print(table)
     elif format == FORMAT_YAML:
         console.print(yaml.dump(machine), end="")
+
+
+def _zones_table(zone_machines: dict[str, list[dict]]) -> Table:
+    table = Table()
+    table.add_column("Zone")
+    table.add_column("Machines")
+    for zone, machines in zone_machines.items():
+        table.add_row(zone, str(len(machines)))
+    return table
+
+
+def _zones_roles_table(zone_machines: dict[str, list[dict]]) -> Table:
+    table = Table(padding=(0, 0), show_header=False)
+
+    zone_table = Table(
+        title="\u00A0",  # non-breaking space to have zone same height as roles
+        show_edge=False,
+        show_header=False,
+        expand=True,
+    )
+    zone_table.add_column("#not_shown#", justify="center")
+    zone_table.add_row("[bold]Zone[/bold]", end_section=True)
+
+    machine_table = Table(
+        show_edge=False,
+        show_header=True,
+        title="Machines",
+        title_style="bold",
+        expand=True,
+    )
+    machine_table.add_column("control", justify="center")
+    machine_table.add_column("compute", justify="center")
+    machine_table.add_column("storage", justify="center")
+    machine_table.add_column("total", justify="center")
+    for zone, machines in zone_machines.items():
+        zone_table.add_row(zone)
+        role_count = Counter()
+        for machine in machines:
+            role_count.update(machine["roles"])
+        control = role_count.get("control", 0)
+        compute = role_count.get("compute", 0)
+        storage = role_count.get("storage", 0)
+        machine_table.add_row(
+            str(control),
+            str(compute),
+            str(storage),
+            str(len(machines)),
+        )
+
+    table.add_row(zone_table, machine_table)
+    return table
+
+
+@click.command("list")
+@click.option(
+    "--roles",
+    is_flag=True,
+    show_default=True,
+    default=False,
+    help="List roles",
+)
+@click.option(
+    "--format",
+    type=click.Choice([FORMAT_TABLE, FORMAT_YAML]),
+    default=FORMAT_TABLE,
+    help="Output format",
+)
+def list_zones_cmd(roles: bool, format: str) -> None:
+    """List zones in active deployment."""
+    preflight_checks = [
+        LocalShareCheck(),
+    ]
+    run_preflight_checks(preflight_checks, console)
+
+    snap = Snap()
+
+    client = MaasClient.active(snap)
+    zones_machines = list_machines_by_zone(client)
+    if format == FORMAT_TABLE:
+        if roles:
+            table = _zones_roles_table(zones_machines)
+        else:
+            table = _zones_table(zones_machines)
+        console.print(table)
+    elif format == FORMAT_YAML:
+        console.print(yaml.dump(zones_machines), end="")

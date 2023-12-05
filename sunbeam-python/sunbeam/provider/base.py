@@ -18,7 +18,6 @@ import abc
 import click
 from rich.console import Console
 
-
 console = Console()
 
 
