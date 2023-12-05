@@ -16,9 +16,32 @@
 import abc
 
 import click
+from rich.console import Console
+
+
+console = Console()
 
 
 class ProviderBase(abc.ABC):
     @abc.abstractmethod
-    def register_cli(self, group: click.Group):
+    def register_add_cli(
+        self,
+        add: click.Group,
+    ) -> None:
+        """Register common commands to CLI.
+
+        Always call to register commands that must be present.
+        """
+        pass
+
+    @abc.abstractmethod
+    def register_cli(
+        self,
+        init: click.Group,
+        deployment: click.Group,
+    ) -> None:
+        """Register provider specific commands to CLI.
+
+        Only called when the provider is enabled.
+        """
         pass

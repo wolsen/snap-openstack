@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import sys
 
 import click
 import yaml
@@ -22,14 +21,12 @@ from rich.table import Table
 from snaphelpers import Snap
 
 from sunbeam.commands import resize as resize_cmds
+from sunbeam.commands.deployment import deployment_path
 from sunbeam.commands.maas import (
     AddMaasDeployment,
     MaasClient,
     get_machine,
-    list_deployments,
     list_machines,
-    maas_path,
-    switch_deployment,
 )
 from sunbeam.jobs.checks import LocalShareCheck, VerifyClusterdNotBootstrappedCheck
 from sunbeam.jobs.common import (
@@ -51,12 +48,6 @@ def cluster(ctx):
     """Manage the Sunbeam Cluster"""
 
 
-@click.group("maas", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
-@click.pass_context
-def maas(ctx):
-    """Manage MAAS-backed deployments."""
-
-
 @click.group("machine", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
 @click.pass_context
 def machine(ctx):
@@ -65,16 +56,19 @@ def machine(ctx):
 
 
 class MaasProvider(ProviderBase):
-    def register_cli(self, cli: click.Group):
-        cli.add_command(cluster)
+    def register_add_cli(self, add: click.Group) -> None:
+        add.add_command(add_maas)
+
+    def register_cli(
+        self,
+        init: click.Group,
+        deployment: click.Group,
+    ):
+        init.add_command(cluster)
         cluster.add_command(bootstrap)
         cluster.add_command(list)
         cluster.add_command(resize_cmds.resize)
-        cli.add_command(maas)
-        maas.add_command(add)
-        maas.add_command(switch)
-        maas.add_command(list_openstack_deployments)
-        maas.add_command(machine)
+        deployment.add_command(machine)
         machine.add_command(list_machines_cmd)
         machine.add_command(show_machine_cmd)
 
@@ -101,12 +95,12 @@ def list(format: str) -> None:
     raise NotImplementedError
 
 
-@click.command()
+@click.command("maas")
 @click.option("-n", "--name", type=str, prompt=True, help="Name of the deployment")
 @click.option("-t", "--token", type=str, prompt=True, help="API token")
 @click.option("-u", "--url", type=str, prompt=True, help="API URL")
 @click.option("-r", "--resource-pool", type=str, prompt=True, help="Resource pool")
-def add(name: str, token: str, url: str, resource_pool: str) -> None:
+def add_maas(name: str, token: str, url: str, resource_pool: str) -> None:
     """Add MAAS-backed deployment to registered deployments."""
     preflight_checks = [
         LocalShareCheck(),
@@ -115,66 +109,11 @@ def add(name: str, token: str, url: str, resource_pool: str) -> None:
     run_preflight_checks(preflight_checks, console)
 
     snap = Snap()
-    path = maas_path(snap)
+    path = deployment_path(snap)
     plan = []
     plan.append(AddMaasDeployment(name, token, url, resource_pool, path))
     run_plan(plan, console)
     click.echo(f"MAAS deployment {name} added.")
-
-
-@click.command()
-@click.option("-n", "--name", type=str, prompt=True, help="Name of the deployment")
-def switch(name: str) -> None:
-    """Switch deployment."""
-    preflight_checks = [
-        LocalShareCheck(),
-    ]
-    run_preflight_checks(preflight_checks, console)
-
-    snap = Snap()
-    path = maas_path(snap)
-    try:
-        switch_deployment(path, name)
-        click.echo(f"Deployment switched to {name}.")
-    except ValueError as e:
-        click.echo(str(e))
-        sys.exit(1)
-
-
-@click.command("list")
-@click.option(
-    "--format",
-    type=click.Choice([FORMAT_TABLE, FORMAT_YAML]),
-    default=FORMAT_TABLE,
-    help="Output format",
-)
-def list_openstack_deployments(format: str) -> None:
-    """List OpenStack deployments."""
-    preflight_checks = [
-        LocalShareCheck(),
-    ]
-    run_preflight_checks(preflight_checks, console)
-
-    snap = Snap()
-    path = maas_path(snap)
-    deployment_list = list_deployments(path)
-    if format == FORMAT_TABLE:
-        table = Table()
-        table.add_column("Deployment")
-        table.add_column("MAAS URL")
-        table.add_column("Resource Pool")
-        for deployment in deployment_list["deployments"]:
-            style = None
-            name = deployment["name"]
-            url = deployment["url"]
-            pool = deployment["resource_pool"]
-            if name == deployment_list["active"]:
-                name = name + "*"
-                style = "green"
-            table.add_row(name, url, pool, style=style)
-        console.print(table)
-    elif format == FORMAT_YAML:
-        console.print(yaml.dump(deployment_list), end="")
 
 
 @click.command("list")

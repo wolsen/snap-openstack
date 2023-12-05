@@ -21,15 +21,22 @@ import enum
 import logging
 import ssl
 from pathlib import Path
-from typing import Optional, TypedDict
+from typing import Optional, TypeGuard
 
-import yaml
 from maas.client import bones, connect
 from rich.console import Console
 from rich.status import Status
 from snaphelpers import Snap
 
-from sunbeam.jobs.common import SHARE_PATH, BaseStep, Result, ResultType
+from sunbeam.commands.deployment import (
+    Deployment,
+    DeploymentType,
+    add_deployment,
+    deployment_config,
+    deployment_path,
+    get_active_deployment,
+)
+from sunbeam.jobs.common import BaseStep, Result, ResultType
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -37,16 +44,14 @@ console = Console()
 MAAS_CONFIG = "maas.yaml"
 
 
-class MaasDeployment(TypedDict):
-    name: str
+class MaasDeployment(Deployment):
     token: str
-    url: str
     resource_pool: str
 
 
-class MaasConfig(TypedDict):
-    active: str
-    deployments: list[MaasDeployment]
+def is_maas_deployment(deployment: Deployment) -> TypeGuard[MaasDeployment]:
+    """Check if deployment is a MAAS deployment."""
+    return deployment["type"] == DeploymentType.MAAS.value
 
 
 class RoleTags(enum.Enum):
@@ -110,77 +115,15 @@ class MaasClient:
     @classmethod
     def active(cls, snap: Snap) -> "MaasClient":
         """Return client connected to active deployment."""
-        path = maas_path(snap)
-        config = maas_config(path)
-        active = config.get("active")
-        if not active:
-            raise ValueError("No active deployment found.")
-        for deployment in config.get("deployments", []):
-            if deployment["name"] == active:
-                return cls(
-                    deployment["url"],
-                    deployment["token"],
-                    deployment["resource_pool"],
-                )
-        raise ValueError("Active deployment not found in configuration.")
-
-
-def maas_path(snap: Snap) -> Path:
-    """Path to MAAS deployments configuration."""
-    openstack = snap.paths.real_home / SHARE_PATH
-    openstack.mkdir(parents=True, exist_ok=True)
-    path = snap.paths.real_home / SHARE_PATH / MAAS_CONFIG
-    if not path.exists():
-        path.touch(0o600)
-        path.write_text("{}")
-    return path
-
-
-def maas_config(path: Path) -> MaasConfig:
-    """Read MAAS deployments configuration."""
-    with path.open() as fd:
-        data = yaml.safe_load(fd)
-    return data
-
-
-def add_deployment(path: Path, new_deployment: MaasDeployment) -> None:
-    """Add MAAS deployment to configuration."""
-    config = maas_config(path)
-    deployments = config.get("deployments", [])
-    deployments.append(new_deployment)
-    config["deployments"] = deployments
-    config["active"] = new_deployment["name"]
-    with path.open("w") as fd:
-        yaml.safe_dump(config, fd)
-    path.chmod(0o600)
-
-
-def switch_deployment(path: Path, name: str) -> None:
-    """Switch active deployment."""
-    config = maas_config(path)
-    if config.get("active") == name:
-        return
-    for deployment in config.get("deployments", []):
-        if deployment["name"] == name:
-            break
-    else:
-        raise ValueError(f"Deployment {name} not found in MAAS deployments.")
-    config["active"] = name
-    with path.open("w") as fd:
-        yaml.safe_dump(config, fd)
-
-
-def list_deployments(path: Path) -> dict:
-    config = maas_config(path)
-    deployments = [
-        {
-            "name": deployment["name"],
-            "url": deployment["url"],
-            "resource_pool": deployment["resource_pool"],
-        }
-        for deployment in config.get("deployments", [])
-    ]
-    return {"active": config.get("active"), "deployments": deployments}
+        path = deployment_path(snap)
+        deployment = get_active_deployment(path)
+        if not is_maas_deployment(deployment):
+            raise ValueError("Active deployment is not a MAAS deployment.")
+        return cls(
+            deployment["url"],
+            deployment["token"],
+            deployment["resource_pool"],
+        )
 
 
 def list_machines(client: MaasClient) -> list[dict]:
@@ -245,7 +188,7 @@ class AddMaasDeployment(BaseStep):
 
     def is_skip(self, status: Optional[Status] = None) -> Result:
         """Check if deployment is already added."""
-        config = maas_config(self.path)
+        config = deployment_config(self.path)
         if self.deployment in config:
             return Result(
                 ResultType.FAILED, f"Deployment {self.deployment} already exists."
@@ -253,7 +196,13 @@ class AddMaasDeployment(BaseStep):
 
         current_deployments = set()
         for deployment in config.get("deployments", []):
-            current_deployments.add((deployment["url"], deployment["resource_pool"]))
+            if is_maas_deployment(deployment):
+                current_deployments.add(
+                    (
+                        deployment["url"],
+                        deployment["resource_pool"],
+                    )
+                )
 
         if (self.url, self.resource_pool) in current_deployments:
             return Result(
@@ -305,6 +254,7 @@ class AddMaasDeployment(BaseStep):
             name=self.deployment,
             token=self.token,
             url=self.url,
+            type=DeploymentType.MAAS.value,
             resource_pool=self.resource_pool,
         )
         add_deployment(self.path, data)

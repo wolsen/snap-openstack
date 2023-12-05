@@ -124,9 +124,16 @@ def remove_trailing_dot(value: str) -> str:
 
 
 class LocalProvider(ProviderBase):
-    def register_cli(self, cli: click.Group):
-        """Register local provider commands to CLI."""
-        cli.add_command(cluster)
+    def register_add_cli(self, add: click.Group) -> None:
+        """A local provider cannot add deployments."""
+        pass
+
+    def register_cli(self, init: click.Group, deployment: click.Group):
+        """Register local provider commands to CLI.
+
+        Local provider does not add commands to the deployment group.
+        """
+        init.add_command(cluster)
         cluster.add_command(bootstrap)
         cluster.add_command(add)
         cluster.add_command(join)
