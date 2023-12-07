@@ -120,6 +120,10 @@ class MaasClient:
             result[machine["zone"]["name"]].append(machine)
         return dict(result)
 
+    def list_spaces(self) -> list[dict]:
+        """List spaces."""
+        return self._client.spaces.list.__self__._handler.read()  # type: ignore
+
     @classmethod
     def active(cls, snap: Snap) -> "MaasClient":
         """Return client connected to active deployment."""
@@ -178,6 +182,19 @@ def list_machines_by_zone(client: MaasClient) -> dict[str, list[dict]]:
             machines[zone].append(_convert_raw_machine(machine))
 
     return dict(machines)
+
+
+def list_spaces(client: MaasClient) -> list[dict]:
+    """List spaces in deployment, return consumable list of dicts."""
+    spaces_raw = client.list_spaces()
+    spaces = []
+    for space_raw in spaces_raw:
+        space = {
+            "name": space_raw["name"],
+            "subnets": [subnet_raw["cidr"] for subnet_raw in space_raw["subnets"]],
+        }
+        spaces.append(space)
+    return spaces
 
 
 class AddMaasDeployment(BaseStep):

@@ -30,6 +30,7 @@ from sunbeam.commands.maas import (
     get_machine,
     list_machines,
     list_machines_by_zone,
+    list_spaces,
 )
 from sunbeam.jobs.checks import LocalShareCheck, VerifyClusterdNotBootstrappedCheck
 from sunbeam.jobs.common import (
@@ -65,6 +66,13 @@ def zone(ctx):
     pass
 
 
+@click.group("space", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
+@click.pass_context
+def space(ctx):
+    """Manage spaces."""
+    pass
+
+
 class MaasProvider(ProviderBase):
     def register_add_cli(self, add: click.Group) -> None:
         add.add_command(add_maas)
@@ -83,6 +91,8 @@ class MaasProvider(ProviderBase):
         machine.add_command(show_machine_cmd)
         deployment.add_command(zone)
         zone.add_command(list_zones_cmd)
+        deployment.add_command(space)
+        space.add_command(list_spaces_cmd)
 
 
 @click.command()
@@ -284,3 +294,32 @@ def list_zones_cmd(roles: bool, format: str) -> None:
         console.print(table)
     elif format == FORMAT_YAML:
         console.print(yaml.dump(zones_machines), end="")
+
+
+@click.command("list")
+@click.option(
+    "--format",
+    type=click.Choice([FORMAT_TABLE, FORMAT_YAML]),
+    default=FORMAT_TABLE,
+    help="Output format",
+)
+def list_spaces_cmd(format: str) -> None:
+    """List spaces in MAAS deployment."""
+    preflight_checks = [
+        LocalShareCheck(),
+    ]
+    run_preflight_checks(preflight_checks, console)
+
+    snap = Snap()
+
+    client = MaasClient.active(snap)
+    spaces = list_spaces(client)
+    if format == FORMAT_TABLE:
+        table = Table()
+        table.add_column("Space")
+        table.add_column("Subnets", max_width=80)
+        for space in spaces:
+            table.add_row(space["name"], ", ".join(space["subnets"]))
+        console.print(table)
+    elif format == FORMAT_YAML:
+        console.print(yaml.dump(spaces), end="")
