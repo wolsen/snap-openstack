@@ -18,7 +18,9 @@ import logging
 import click
 from snaphelpers import Snap
 
-from sunbeam import log, provider
+from sunbeam import log
+from sunbeam.provider import command as provider_cmds
+from sunbeam.commands import deployment as deployment_cmds
 from sunbeam.commands import configure as configure_cmds
 from sunbeam.commands import dashboard_url as dasboard_url_cmds
 from sunbeam.commands import generate_cloud_config as generate_cloud_config_cmds
@@ -86,10 +88,10 @@ def main():
     cli.add_command(dasboard_url_cmds.dashboard_url)
 
     # Cluster management
-    provider_guess = provider.guess_provider(
-        snap.paths.real_home / provider.PROVIDER_PATH
+    provider_guess = provider_cmds.guess_provider(
+        snap.paths.real_home / deployment_cmds.DEPLOYMENT_CONFIG
     )
-    provider.register_cli(cli, provider_guess)
+    provider_cmds.register_cli(cli, provider_guess)
 
     cli.add_command(enable)
     cli.add_command(disable)

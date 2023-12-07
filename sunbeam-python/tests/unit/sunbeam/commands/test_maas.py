@@ -37,8 +37,18 @@ class TestAddMaasDeployment:
 
     def test_is_skip_with_existing_deployment(self, add_maas_deployment, mocker):
         mocker.patch(
-            "sunbeam.commands.maas.maas_config",
-            return_value={"test_deployment": {}},
+            "sunbeam.commands.maas.deployment_config",
+            return_value={
+                "active": "test_deployment",
+                "deployments": [
+                    {
+                        "name": "test_deployment",
+                        "type": "maas",
+                        "url": "test_url",
+                        "resource_pool": "test_resource_pool",
+                    }
+                ],
+            },
         )
         result = add_maas_deployment.is_skip()
         assert result.result_type == ResultType.FAILED
@@ -47,10 +57,14 @@ class TestAddMaasDeployment:
         self, add_maas_deployment, mocker
     ):
         mocker.patch(
-            "sunbeam.commands.maas.maas_config",
+            "sunbeam.commands.maas.deployment_config",
             return_value={
                 "deployments": [
-                    {"url": "test_url", "resource_pool": "test_resource_pool"}
+                    {
+                        "type": "maas",
+                        "url": "test_url",
+                        "resource_pool": "test_resource_pool",
+                    }
                 ]
             },
         )
@@ -58,7 +72,7 @@ class TestAddMaasDeployment:
         assert result.result_type == ResultType.FAILED
 
     def test_is_skip_with_no_existing_deployment(self, add_maas_deployment, mocker):
-        mocker.patch("sunbeam.commands.maas.maas_config", return_value={})
+        mocker.patch("sunbeam.commands.maas.deployment_config", return_value={})
         result = add_maas_deployment.is_skip()
         assert result.result_type == ResultType.COMPLETED
 
