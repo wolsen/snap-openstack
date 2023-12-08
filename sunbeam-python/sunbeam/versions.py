@@ -30,7 +30,7 @@ CERT_AUTH_CHANNEL = "latest/beta"
 OPENSTACK_SERVICES_K8S = {
     "cinder-ceph": OPENSTACK_CHANNEL,
     "cinder": OPENSTACK_CHANNEL,
-    "glance": "2023.2/candidate",
+    "glance": OPENSTACK_CHANNEL,
     "horizon": OPENSTACK_CHANNEL,
     "keystone": OPENSTACK_CHANNEL,
     "neutron": OPENSTACK_CHANNEL,
