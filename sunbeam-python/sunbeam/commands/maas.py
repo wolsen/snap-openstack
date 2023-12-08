@@ -35,6 +35,7 @@ from sunbeam.commands.deployment import (
     deployment_config,
     deployment_path,
     get_active_deployment,
+    update_deployment,
 )
 from sunbeam.jobs.common import BaseStep, Result, ResultType
 
@@ -47,6 +48,20 @@ MAAS_CONFIG = "maas.yaml"
 class MaasDeployment(Deployment):
     token: str
     resource_pool: str
+    network_mapping: dict[str, str | None]
+
+
+class Networks(enum.Enum):
+    PUBLIC = "public"
+    STORAGE = "storage"
+    STORAGE_CLUSTER = "storage-cluster"
+    INTERNAL = "internal"
+    DATA = "data"
+
+    @classmethod
+    def values(cls) -> list[str]:
+        """Return list of tag values."""
+        return [tag.value for tag in cls]
 
 
 def is_maas_deployment(deployment: Deployment) -> TypeGuard[MaasDeployment]:
@@ -197,6 +212,45 @@ def list_spaces(client: MaasClient) -> list[dict]:
     return spaces
 
 
+def map_space(snap: Snap, client: MaasClient, space: str, network: str):
+    """Map space to network."""
+    if network not in Networks.values():
+        raise ValueError(f"Network {network!r} is not a valid network.")
+
+    spaces_raw = client.list_spaces()
+    for space_raw in spaces_raw:
+        if space_raw["name"] == space:
+            break
+    else:
+        raise ValueError(f"Space {space!r} not found.")
+
+    path = deployment_path(snap)
+    deployment = get_active_deployment(path)
+    if not is_maas_deployment(deployment):
+        raise ValueError("Active deployment is not a MAAS deployment.")
+    network_mapping = deployment.get("network_mapping", {})
+    network_mapping[network] = space
+    deployment["network_mapping"] = network_mapping
+
+    update_deployment(path, deployment)
+
+
+def unmap_space(snap: Snap, network: str):
+    """Unmap network."""
+    if network not in Networks.values():
+        raise ValueError(f"Network {network!r} is not a valid network.")
+
+    path = deployment_path(snap)
+    deployment = get_active_deployment(path)
+    if not is_maas_deployment(deployment):
+        raise ValueError("Active deployment is not a MAAS deployment.")
+    network_mapping = deployment.get("network_mapping", {})
+    network_mapping.pop(network, None)
+    deployment["network_mapping"] = network_mapping
+
+    update_deployment(path, deployment)
+
+
 class AddMaasDeployment(BaseStep):
     def __init__(
         self,
@@ -286,6 +340,7 @@ class AddMaasDeployment(BaseStep):
             url=self.url,
             type=DeploymentType.MAAS.value,
             resource_pool=self.resource_pool,
+            network_mapping={},
         )
         add_deployment(self.path, data)
         return Result(ResultType.COMPLETED)

@@ -27,10 +27,13 @@ from sunbeam.commands.deployment import deployment_path
 from sunbeam.commands.maas import (
     AddMaasDeployment,
     MaasClient,
+    Networks,
     get_machine,
     list_machines,
     list_machines_by_zone,
     list_spaces,
+    map_space,
+    unmap_space,
 )
 from sunbeam.jobs.checks import LocalShareCheck, VerifyClusterdNotBootstrappedCheck
 from sunbeam.jobs.common import (
@@ -93,6 +96,8 @@ class MaasProvider(ProviderBase):
         zone.add_command(list_zones_cmd)
         deployment.add_command(space)
         space.add_command(list_spaces_cmd)
+        space.add_command(map_space_cmd)
+        space.add_command(unmap_space_cmd)
 
 
 @click.command()
@@ -323,3 +328,35 @@ def list_spaces_cmd(format: str) -> None:
         console.print(table)
     elif format == FORMAT_YAML:
         console.print(yaml.dump(spaces), end="")
+
+
+@click.command("map")
+@click.argument("space")
+@click.argument("network", type=click.Choice(Networks.values()))
+def map_space_cmd(space: str, network: str) -> None:
+    """Map space to network."""
+    preflight_checks = [
+        LocalShareCheck(),
+    ]
+    run_preflight_checks(preflight_checks, console)
+
+    snap = Snap()
+
+    client = MaasClient.active(snap)
+    map_space(snap, client, space, network)
+    console.print(f"Space {space} mapped to network {network}.")
+
+
+@click.command("unmap")
+@click.argument("network", type=click.Choice(Networks.values()))
+def unmap_space_cmd(network: str) -> None:
+    """Unmap space from network."""
+    preflight_checks = [
+        LocalShareCheck(),
+    ]
+    run_preflight_checks(preflight_checks, console)
+
+    snap = Snap()
+
+    unmap_space(snap, network)
+    console.print(f"Space unmapped from network {network}.")
