@@ -52,38 +52,12 @@ def mock_open():
 
 
 class TestJujuStepHelper:
-    def test_get_available_charm_revision(self, check_output, mocker):
+    def test_revision_update_needed(self, jhelper):
         jsh = juju.JujuStepHelper()
-        cmd_out = {
-            "channels": {
-                "legacy": {
-                    "edge": [
-                        {
-                            "track": "legacy",
-                            "risk": "stable",
-                            "version": "121",
-                            "revision": 121,
-                            "released-at": "2023-08-17T12:06:46.206939+00:00",
-                            "size": 7074285,
-                            "architectures": ["amd64"],
-                            "bases": [
-                                {"name": "ubuntu", "channel": "20.04"},
-                                {"name": "ubuntu", "channel": "22.04"},
-                            ],
-                        }
-                    ]
-                }
-            }
-        }
-
-        with patch.object(juju.JujuStepHelper, "_juju_cmd", return_value=cmd_out):
-            assert jsh.get_available_charm_revision("microk8s", "legacy", "edge") == 121
-
-    def test_revision_update_needed(self, mocker):
-        jsh = juju.JujuStepHelper()
+        jsh.jhelper = jhelper
         CHARMREV = {"nova-k8s": 31, "cinder-k8s": 51, "another-k8s": 70}
 
-        def _get_available_charm_revision(charm_name, track, risk):
+        def _get_available_charm_revision(model, charm_name, deployed_channel):
             return CHARMREV[charm_name]
 
         _status = {
@@ -102,14 +76,10 @@ class TestJujuStepHelper:
                 },
             }
         }
-        with patch.object(
-            juju.JujuStepHelper,
-            "get_available_charm_revision",
-            side_effect=_get_available_charm_revision,
-        ):
-            assert jsh.revision_update_needed("cinder", "openstack", _status)
-            assert not jsh.revision_update_needed("nova", "openstack", _status)
-            assert not jsh.revision_update_needed("another", "openstack", _status)
+        jhelper.get_available_charm_revision.side_effect = _get_available_charm_revision
+        assert jsh.revision_update_needed("cinder", "openstack", _status)
+        assert not jsh.revision_update_needed("nova", "openstack", _status)
+        assert not jsh.revision_update_needed("another", "openstack", _status)
 
     def test_normalise_channel(self):
         jsh = juju.JujuStepHelper()

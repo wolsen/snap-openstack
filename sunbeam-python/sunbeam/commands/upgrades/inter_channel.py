@@ -14,7 +14,7 @@
 # limitations under the License.
 
 import logging
-from typing import Callable, Dict, List, Optional, Union
+from typing import Callable, Dict, List, Optional, TypedDict, Union
 
 from rich.console import Console
 from rich.status import Status
@@ -32,7 +32,7 @@ from sunbeam.jobs.common import (
     run_plan,
     update_config,
 )
-from sunbeam.jobs.juju import JujuHelper, run_sync
+from sunbeam.jobs.juju import ChannelUpdate, JujuHelper, run_sync
 from sunbeam.versions import (
     CHARM_VERSIONS,
     MACHINE_SERVICES,
@@ -43,6 +43,28 @@ from sunbeam.versions import (
 
 LOG = logging.getLogger(__name__)
 console = Console()
+
+
+class UpgradeStrategy(TypedDict):
+    """A strategy for upgrading applications.
+
+    The strategy is a list of dicts. Each dict consists of:
+        {
+            "upgrade_f": f,
+            "applications": [apps]
+        },
+
+    upgrade_f is the function to be applied to each application (in
+    parallel) to perform the upgrade.
+
+    applications is a list of applications that can be upgraded in parallel.
+
+    Currently only apps that are upgraded with the same function can be
+    grouped together.
+    """
+
+    upgrade_f: Callable[[list[str], str], None]
+    applications: list[str]
 
 
 class BaseUpgrade(BaseStep, JujuStepHelper):
@@ -58,29 +80,15 @@ class BaseUpgrade(BaseStep, JujuStepHelper):
         self.tfhelper = tfhelper
         self.model = model
 
-    def get_upgrade_strategy(self) -> List[Dict[str, Union[Callable, List]]]:
-        """Return a strategy for performing the upgrade.
+    def get_upgrade_strategy_steps(self) -> UpgradeStrategy:
+        """Return a strategy for performing the upgrade."""
 
-        The strategy is a list of dicts. Each dict consists of:
-            {
-                "upgrade_f": f,
-                "applications": [apps]
-            },
-
-        upgrade_f is the function to be applied to each application (in
-        parallel) to perform the upgrade.
-
-        applications is a list of applications that can be upgraded in parallel.
-
-        Currently only apps that are upgraded with the same function can be
-        grouped together.
-        """
         raise NotImplementedError
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Run control plane and machine charm upgrade."""
         self.pre_upgrade_tasks()
-        for step in self.get_upgrade_strategy():
+        for step in self.get_upgrade_strategy_steps():
             step["upgrade_f"](step["applications"], self.model)
         self.post_upgrade_tasks()
         return Result(ResultType.COMPLETED)
@@ -97,7 +105,7 @@ class BaseUpgrade(BaseStep, JujuStepHelper):
         self,
         application_list: List[str],
         model: str,
-        expect_wls: Optional[Dict[str, str]] = None,
+        expect_wls: Optional[Dict[str, list[str]]] = None,
     ) -> None:
         """Upgrade applications.
 
@@ -112,10 +120,10 @@ class BaseUpgrade(BaseStep, JujuStepHelper):
             new_channel = self.get_new_channel(app_name, model)
             if new_channel:
                 LOG.debug(f"Upgrade needed for {app_name}")
-                batch[app_name] = {
-                    "channel": new_channel,
-                    "expected_status": expect_wls,
-                }
+                batch[app_name] = ChannelUpdate(
+                    channel=new_channel,
+                    expected_status=expect_wls,
+                )
             else:
                 LOG.debug(f"{app_name} no channel upgrade needed")
         run_sync(self.jhelper.update_applications_channel(model, batch))
@@ -174,20 +182,20 @@ class UpgradeControlPlane(BaseUpgrade):
             model,
         )
 
-    def get_upgrade_strategy(self) -> List[Dict[str, Union[Callable, List]]]:
+    def get_upgrade_strategy_steps(self) -> List[Dict[str, Union[Callable, List]]]:
         """Return a strategy for performing the upgrade.
 
         Upgrade all control plane applications in parallel.
         """
-        upgrade_strategy = [
-            {
-                "upgrade_f": self.upgrade_applications,
-                "applications": list(MISC_SERVICES_K8S.keys())
+        upgrade_strategy_steps = [
+            UpgradeStrategy(
+                upgrade_f=self.upgrade_applications,
+                applications=list(MISC_SERVICES_K8S.keys())
                 + list(OVN_SERVICES_K8S.keys())  # noqa
                 + list(OPENSTACK_SERVICES_K8S.keys()),  # noqa
-            },
+            ),
         ]
-        return upgrade_strategy
+        return upgrade_strategy_steps
 
     def post_upgrade_tasks(self) -> None:
         """Update channels in terraform vars db."""
@@ -224,18 +232,17 @@ class UpgradeMachineCharms(BaseUpgrade):
             model,
         )
 
-    def get_upgrade_strategy(self) -> List[Dict[str, Union[Callable, List]]]:
+    def get_upgrade_strategy_steps(self) -> List[Dict[str, Union[Callable, List]]]:
         """Return a strategy for performing the upgrade.
 
         Upgrade all machine applications in parallel.
         """
-        upgrade_strategy = [
-            {
-                "upgrade_f": self.upgrade_applications,
-                "applications": MACHINE_SERVICES,
-            },
+        upgrade_strategy_steps = [
+            UpgradeStrategy(
+                upgrade_f=self.upgrade_applications, applications=MACHINE_SERVICES
+            ),
         ]
-        return upgrade_strategy
+        return upgrade_strategy_steps
 
     def post_upgrade_tasks(self) -> None:
         """Update channels in terraform vars db."""

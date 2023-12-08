@@ -55,7 +55,7 @@ class UpgradePlugins(BaseStep):
 
 class UpgradeCoordinator:
     def __init__(
-        self, jhelper: JujuHelper, tfhelper: TerraformHelper, channel: str = None
+        self, jhelper: JujuHelper, tfhelper: TerraformHelper, channel: str | None = None
     ):
         """Upgrade coordinator.
 

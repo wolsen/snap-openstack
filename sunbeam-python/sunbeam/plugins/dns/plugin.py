@@ -26,6 +26,7 @@ from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
 from sunbeam.jobs.common import run_plan
 from sunbeam.jobs.juju import JujuHelper, run_sync
 from sunbeam.plugins.interface.v1.openstack import (
+    ApplicationChannelData,
     EnableOpenStackApplicationStep,
     OpenStackControlPlanePlugin,
     TerraformPlanLocation,
@@ -176,14 +177,14 @@ class DnsPlugin(OpenStackControlPlanePlugin):
     @property
     def k8s_application_data(self):
         return {
-            "designate": {
-                "channel": OPENSTACK_CHANNEL,
-                "tfvars_channel_var": None,
-            },
-            "bind": {
-                "channel": "9/edge",
-                "tfvars_channel_var": None,
-            },
+            "designate": ApplicationChannelData(
+                channel=OPENSTACK_CHANNEL,
+                tfvars_channel_var=None,
+            ),
+            "bind": ApplicationChannelData(
+                channel="9/edge",
+                tfvars_channel_var=None,
+            ),
         }
 
     @property

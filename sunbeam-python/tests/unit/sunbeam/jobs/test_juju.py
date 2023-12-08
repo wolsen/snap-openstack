@@ -14,7 +14,7 @@
 
 import asyncio
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 import yaml
@@ -552,3 +552,16 @@ async def test_jhelper_wait_until_active_timed_out(jhelper: juju.JujuHelper, mod
     ):
         await jhelper.wait_until_active("control-plane")
     assert model.wait_for_idle.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_get_available_charm_revision(jhelper: juju.JujuHelper, model):
+    cmd_out = {"channel-map": {"legacy/edge": {"revision": {"version": "121"}}}}
+    with patch.object(juju, "CharmHub") as p:
+        charmhub = AsyncMock()
+        charmhub.info.return_value = cmd_out
+        p.return_value = charmhub
+        revno = await jhelper.get_available_charm_revision(
+            "openstack", "microk8s", "legacy/edge"
+        )
+        assert revno == 121

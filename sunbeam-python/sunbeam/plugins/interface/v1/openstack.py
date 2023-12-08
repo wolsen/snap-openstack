@@ -20,7 +20,7 @@ import shutil
 from abc import abstractmethod
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TypedDict
 
 import click
 from packaging.version import Version
@@ -51,7 +51,13 @@ from sunbeam.jobs.common import (
     run_preflight_checks,
     update_config,
 )
-from sunbeam.jobs.juju import JujuHelper, JujuWaitException, TimeoutException, run_sync
+from sunbeam.jobs.juju import (
+    ChannelUpdate,
+    JujuHelper,
+    JujuWaitException,
+    TimeoutException,
+    run_sync,
+)
 from sunbeam.plugins.interface.v1.base import EnableDisablePlugin
 
 LOG = logging.getLogger(__name__)
@@ -60,6 +66,17 @@ console = Console()
 APPLICATION_DEPLOY_TIMEOUT = 900  # 15 minutes
 OPENSTACK_TERRAFORM_VARS = "TerraformVarsOpenstack"
 OPENSTACK_TERRAFORM_PLAN = "openstack"
+
+
+class ApplicationChannelData(TypedDict):
+    """Application channel data.
+
+    channel is the charm channel that is inline with this snap
+    tfvars_channel_var is the terraform variable used to store the channel.
+    """
+
+    channel: str
+    tfvars_channel_var: str | None
 
 
 class TerraformPlanLocation(Enum):
@@ -285,33 +302,13 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         return {"horizon-plugins": sorted(horizon_plugins)}
 
     @property
-    def k8s_application_data(self) -> dict[str, dict[str, str]]:
-        """Mapping of k8s applications to their required channels.
-
-        {
-            "<application_name>": {
-                "channel": "<charm channel>",
-                "tfvars_channel_var": "<var name>"},
-            "<application_name>": {
-                "channel": "<charm channel>",
-                "tfvars_channel_var": "<var name>"}
-        }
-        """
+    def k8s_application_data(self) -> dict[str, ApplicationChannelData]:
+        """Mapping of k8s applications to their required channels."""
         return {}
 
     @property
-    def machine_application_data(self) -> dict[str, dict[str, str]]:
-        """Mapping of machine applications to their required channels.
-
-        {
-            "<application_name>": {
-                "channel": "<charm channel>",
-                "tfvars_channel_var": "<var name>"},
-            "<application_name>": {
-                "channel": "<charm channel>",
-                "tfvars_channel_var": "<var name>"}
-        }
-        """
+    def machine_application_data(self) -> dict[str, ApplicationChannelData]:
+        """Mapping of machine applications to their required channels."""
         return {}
 
     def upgrade_hook(self, upgrade_release: bool = False):
@@ -394,10 +391,10 @@ class UpgradeApplicationStep(BaseStep, JujuStepHelper):
                     f"new_channel: {new_channel} current_channel: {current_channel}"
                 )
                 if self.channel_update_needed(current_channel, new_channel):
-                    batch[application_name] = {
-                        "channel": new_channel,
-                        "expected_status": expect_wls,
-                    }
+                    batch[application_name] = ChannelUpdate(
+                        channel=new_channel,
+                        expected_status=expect_wls,
+                    )
                 else:
                     LOG.debug(f"{application_name} no channel upgrade needed")
             run_sync(self.jhelper.update_applications_channel(model, batch))

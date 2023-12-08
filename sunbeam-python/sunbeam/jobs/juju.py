@@ -21,12 +21,13 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
-from typing import Awaitable, Dict, List, Optional, TypeVar, cast
+from typing import Awaitable, Dict, List, Optional, TypedDict, TypeVar, cast
 
 import pytz
 import yaml
 from juju import utils as juju_utils
 from juju.application import Application
+from juju.charmhub import CharmHub
 from juju.client import client as jujuClient
 from juju.controller import Controller
 from juju.errors import (
@@ -136,6 +137,20 @@ class UnsupportedKubeconfigException(JujuException):
     """Raised when kubeconfig have unsupported config."""
 
     pass
+
+
+class ChannelUpdate(TypedDict):
+    """Channel Update step.
+
+    Defines a channel that needs updating to and the expected
+    state of the charm afterwards.
+
+    channel: Channel to upgrade to
+    expected_status: map of accepted statuses for "workload" and "agent"
+    """
+
+    channel: str
+    expected_status: Dict[str, List[str]]
 
 
 @dataclass
@@ -721,7 +736,7 @@ class JujuHelper:
     async def update_applications_channel(
         self,
         model: str,
-        updates: Dict,
+        updates: Dict[str, ChannelUpdate],
         timeout: Optional[int] = None,
     ):
         """Upgrade charm to new channel
@@ -750,11 +765,6 @@ class JujuHelper:
                 )
                 for unit in _app.units:
                     statuses[unit.entity_id] = bool(unit.agent_status_since > timestamp)
-                    if not unit.agent_status_since > timestamp:
-                        LOG.debug(
-                            f"Waiting on {unit.entity_id}: Upgrade start {timestamp} "
-                            f"WLS update {unit.agent_status_since}"
-                        )
             return all(statuses.values())
 
         try:
@@ -797,3 +807,18 @@ class JujuHelper:
         """
         app = await self.get_application(application_name, model)
         await app.refresh()
+
+    @controller
+    async def get_available_charm_revision(
+        self, model: str, charm_name: str, channel: str
+    ) -> int:
+        """Find the latest available revision of a charm in a given channel
+
+        :param model: Name of model
+        :param charm_name: Name of charm to look up
+        :param channel: Channel to lookup charm in
+        """
+        model_impl = await self.get_model(model)
+        available_charm_data = await CharmHub(model_impl).info(charm_name, channel)
+        version = available_charm_data["channel-map"][channel]["revision"]["version"]
+        return int(version)
