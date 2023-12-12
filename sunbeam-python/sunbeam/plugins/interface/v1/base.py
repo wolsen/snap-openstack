@@ -107,7 +107,7 @@ class BasePlugin(ABC):
         """
         pass
 
-    def upgrade_hook(self) -> None:
+    def upgrade_hook(self, upgrade_release: bool = False) -> None:
         """Upgrade hook for the plugin.
 
         snap-openstack upgrade hook handler invokes this function on all the

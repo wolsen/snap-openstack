@@ -281,6 +281,36 @@ class TerraformHelper:
             LOG.warning(e.stderr)
             raise TerraformException(str(e))
 
+    def sync(self) -> None:
+        """Sync the running state back to the Terraform state file."""
+        os_env = os.environ.copy()
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        tf_log = str(self.path / f"terraform-sync-{timestamp}.log")
+        os_env.update({"TF_LOG_PATH": tf_log})
+        os_env.setdefault("TF_LOG", "INFO")
+        if self.env:
+            os_env.update(self.env)
+        if self.data_location:
+            os_env.update(self.update_juju_provider_credentials())
+
+        try:
+            cmd = [self.terraform, "apply", "-refresh-only", "-auto-approve"]
+            process = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+                cwd=self.path,
+                env=os_env,
+            )
+            LOG.debug(
+                f"Command finished. stdout={process.stdout}, stderr={process.stderr}"
+            )
+        except subprocess.CalledProcessError as e:
+            LOG.error(f"terraform sync failed: {e.output}")
+            LOG.error(e.stderr)
+            raise TerraformException(str(e))
+
 
 class TerraformInitStep(BaseStep):
     """Initialize Terraform with required providers."""

@@ -51,6 +51,7 @@ from sunbeam.jobs.juju import (
     TimeoutException,
     run_sync,
 )
+from sunbeam.versions import OPENSTACK_CHANNEL, OVN_CHANNEL, RABBITMQ_CHANNEL
 
 LOG = logging.getLogger(__name__)
 OPENSTACK_MODEL = "openstack"
@@ -214,9 +215,9 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
             {
                 "model": self.model,
                 # Make these channel options configurable by the user
-                "openstack-channel": "2023.2/edge",
-                "ovn-channel": "23.09/edge",
-                "rabbitmq-channel": "3.12/edge",
+                "openstack-channel": OPENSTACK_CHANNEL,
+                "ovn-channel": OVN_CHANNEL,
+                "rabbitmq-channel": RABBITMQ_CHANNEL,
                 "cloud": self.cloud,
                 "credential": f"{self.cloud}{CREDENTIAL_SUFFIX}",
                 "config": {"workload-storage": MICROK8S_DEFAULT_STORAGECLASS},

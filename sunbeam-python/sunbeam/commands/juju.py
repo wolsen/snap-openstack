@@ -27,6 +27,7 @@ from typing import Optional
 import pexpect
 import pwgen
 import yaml
+from packaging import version
 from pyroute2 import Console
 from snaphelpers import Snap
 
@@ -170,6 +171,82 @@ class JujuStepHelper:
             )
 
         return True
+
+    def revision_update_needed(
+        self, application_name: str, model: str, status: dict | None = None
+    ) -> bool:
+        """Check if a revision update is available for an applicaton.
+
+        :param application_name: Name of application to check for updates for
+        :param model: Model application is in
+        :param status: Dictionay of model status
+        """
+        if not status:
+            _status = run_sync(self.jhelper.get_model_status_full(model))
+            status = json.loads(_status.to_json())
+        app_status = status["applications"].get(application_name, {})
+        if not app_status:
+            LOG.debug(f"{application_name} not present in model")
+            return False
+        deployed_revision = int(self._extract_charm_revision(app_status["charm"]))
+        charm_name = self._extract_charm_name(app_status["charm"])
+        deployed_channel = self.normalise_channel(app_status["charm-channel"])
+        if len(deployed_channel.split("/")) > 2:
+            LOG.debug(f"Cannot calculate upgrade for {application_name}, branch in use")
+            return False
+        available_revision = run_sync(
+            self.jhelper.get_available_charm_revision(
+                model, charm_name, deployed_channel
+            )
+        )
+        return bool(available_revision > deployed_revision)
+
+    def normalise_channel(self, channel: str) -> str:
+        """Expand channel if it is using abbreviation.
+
+        Juju supports abbreviating latest/{risk} to {risk}. This expands it.
+
+        :param channel: Channel string to normalise
+        """
+        if channel in ["stable", "candidate", "beta", "edge"]:
+            channel = f"latest/{channel}"
+        return channel
+
+    def _extract_charm_name(self, charm_url: str) -> str:
+        """Extract charm name from charm url.
+
+        :param charm_url: Url to examine
+        """
+        # XXX There must be a better way. ch:amd64/jammy/cinder-k8s-50 -> cinder-k8s
+        return charm_url.split("/")[-1].rsplit("-", maxsplit=1)[0]
+
+    def _extract_charm_revision(self, charm_url: str) -> str:
+        """Extract charm revision from charm url.
+
+        :param charm_url: Url to examine
+        """
+        return charm_url.split("-")[-1]
+
+    def channel_update_needed(self, channel: str, new_channel: str) -> bool:
+        """Compare two channels and see if the second is 'newer'.
+
+        :param current_channel: Current channel
+        :param new_channel: Proposed new channel
+        """
+        risks = ["stable", "candidate", "beta", "edge"]
+        current_channel = self.normalise_channel(channel)
+        current_track, current_risk = current_channel.split("/")
+        new_track, new_risk = new_channel.split("/")
+        if current_track != new_track:
+            try:
+                return version.parse(current_track) < version.parse(new_track)
+            except version.InvalidVersion:
+                LOG.error("Error: Could not compare tracks")
+                return False
+        if risks.index(current_risk) < risks.index(new_risk):
+            return True
+        else:
+            return False
 
 
 def bootstrap_questions():

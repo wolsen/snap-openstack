@@ -316,7 +316,9 @@ class PluginManager:
         )
 
     @classmethod
-    def update_plugins(cls, repos: Optional[list] = []) -> None:
+    def update_plugins(
+        cls, repos: Optional[list] = [], upgrade_release: bool = False
+    ) -> None:
         """Call plugin upgrade hooks.
 
         Get all the plugins defined in repos and call the corresponding plugin
@@ -350,8 +352,16 @@ class PluginManager:
                 if (
                     hasattr(plugin, "enabled")
                     and p.enabled  # noqa W503
-                    and cls.is_plugin_version_changed(p)  # noqa W503
                     and hasattr(plugin, "upgrade_hook")  # noqa W503
                 ):
                     LOG.debug(f"Upgrading plugin {p.name} defined in repo {repo}")
-                    p.upgrade_hook()
+                    try:
+                        p.upgrade_hook(upgrade_release=upgrade_release)
+                    except TypeError:
+                        LOG.debug(
+                            (
+                                f"Plugin {p.name} does not support upgrades "
+                                "between channels"
+                            )
+                        )
+                        p.upgrade_hook()
