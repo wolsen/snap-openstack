@@ -370,8 +370,7 @@ linecache2===1.0.0
 oauth2client===4.1.3
 idna===3.4
 yamlloader===1.1.0
-# Disable due to version conflict with macaroonbakery
-# protobuf===4.21.7
+protobuf===4.21.7
 pyhcl===0.4.4
 sushy===4.4.2
 python-neutronclient===9.0.0
