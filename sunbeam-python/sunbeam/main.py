@@ -19,10 +19,9 @@ import click
 from snaphelpers import Snap
 
 from sunbeam import log
-from sunbeam.provider import command as provider_cmds
-from sunbeam.commands import deployment as deployment_cmds
 from sunbeam.commands import configure as configure_cmds
 from sunbeam.commands import dashboard_url as dasboard_url_cmds
+from sunbeam.commands import deployment as deployment_cmds
 from sunbeam.commands import generate_cloud_config as generate_cloud_config_cmds
 from sunbeam.commands import generate_preseed as generate_preseed_cmds
 from sunbeam.commands import inspect as inspect_cmds
@@ -31,6 +30,7 @@ from sunbeam.commands import openrc as openrc_cmds
 from sunbeam.commands import prepare_node as prepare_node_cmds
 from sunbeam.commands import utils as utils_cmds
 from sunbeam.jobs.plugin import PluginManager
+from sunbeam.provider import command as provider_cmds
 from sunbeam.utils import CatchGroup
 
 LOG = logging.getLogger()
