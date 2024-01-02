@@ -251,6 +251,18 @@ def unmap_space(snap: Snap, network: str):
     update_deployment(path, deployment)
 
 
+def get_network_mapping(snap: Snap) -> dict[str, str | None]:
+    """Return network mapping."""
+    path = deployment_path(snap)
+    deployment = get_active_deployment(path)
+    if not is_maas_deployment(deployment):
+        raise ValueError("Active deployment is not a MAAS deployment.")
+    mapping = deployment.get("network_mapping", {})
+    for network in Networks.values():
+        mapping.setdefault(network, None)
+    return mapping
+
+
 class AddMaasDeployment(BaseStep):
     def __init__(
         self,
