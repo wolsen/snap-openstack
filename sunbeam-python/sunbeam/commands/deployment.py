@@ -71,6 +71,11 @@ def add_deployment(path: Path, new_deployment: Deployment) -> None:
     deployments.append(new_deployment)
     config["deployments"] = deployments
     config["active"] = new_deployment["name"]
+    write_deployment_config(path, config)
+
+
+def write_deployment_config(path: Path, config: DeploymentsConfig) -> None:
+    """Write deployment configuration."""
     with path.open("w") as fd:
         yaml.safe_dump(config, fd)
     path.chmod(0o600)
@@ -123,3 +128,17 @@ def get_active_deployment(path: Path) -> Deployment:
         if deployment["name"] == active:
             return deployment
     raise ValueError(f"Active deployment {active} not found in configuration.")
+
+
+def update_deployment(path: Path, deployment: Deployment):
+    """Update deployment in deployments configuration."""
+    config = deployment_config(path)
+    deployments = config.get("deployments", [])
+    for dep in deployments:
+        if dep["name"] == deployment["name"]:
+            dep.update(deployment)
+            break
+    else:
+        raise ValueError(f"Deployment {deployment['name']} not found in deployments.")
+    config["deployments"] = deployments
+    write_deployment_config(path, config)
