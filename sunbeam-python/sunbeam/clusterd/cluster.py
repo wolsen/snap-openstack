@@ -194,6 +194,31 @@ class ExtendedAPIService(service.BaseService):
         """Unlock plan."""
         self._put(f"/1.0/terraformunlock/{plan}", data=json.dumps(lock))
 
+    def add_manifest(self, data: str) -> str:
+        """Add manifest to cluster database."""
+        manifest_id = secrets.token_hex(16)
+        data = {"manifestid": manifest_id, "data": data}
+        self._post("/1.0/manifests", data=json.dumps(data))
+        return manifest_id
+
+    def list_manifests(self) -> list:
+        """List all manifests."""
+        manifests = self._get("/1.0/manifests")
+        return manifests.get("metadata")
+
+    def get_manifest(self, manifest_id: str) -> dict:
+        """Get manifest info along with data."""
+        manifest = self._get(f"/1.0/manifests/{manifest_id}")
+        return manifest
+
+    def get_latest_manifest(self) -> dict:
+        """Get latest manifest."""
+        return self.get_manifest("latest")
+
+    def delete_manifest(self, manifest_id: str) -> None:
+        """Remove manifest from database."""
+        self._delete(f"/1.0/manifest/{manifest_id}")
+
 
 class ClusterService(MicroClusterService, ExtendedAPIService):
     """Lists and manages cluster."""
