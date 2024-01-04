@@ -29,6 +29,7 @@ from sunbeam.commands.maas import (
     MaasClient,
     Networks,
     get_machine,
+    get_network_mapping,
     list_machines,
     list_machines_by_zone,
     list_spaces,
@@ -76,6 +77,13 @@ def space(ctx):
     pass
 
 
+@click.group("network", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
+@click.pass_context
+def network(ctx):
+    """Manage networks."""
+    pass
+
+
 class MaasProvider(ProviderBase):
     def register_add_cli(self, add: click.Group) -> None:
         add.add_command(add_maas)
@@ -98,6 +106,8 @@ class MaasProvider(ProviderBase):
         space.add_command(list_spaces_cmd)
         space.add_command(map_space_cmd)
         space.add_command(unmap_space_cmd)
+        deployment.add_command(network)
+        network.add_command(list_networks_cmd)
 
 
 @click.command()
@@ -360,3 +370,31 @@ def unmap_space_cmd(network: str) -> None:
 
     unmap_space(snap, network)
     console.print(f"Space unmapped from network {network}.")
+
+
+@click.command("list")
+@click.option(
+    "--format",
+    type=click.Choice([FORMAT_TABLE, FORMAT_YAML]),
+    default=FORMAT_TABLE,
+    help="Output format",
+)
+def list_networks_cmd(format: str):
+    """List networks and associated spaces."""
+    preflight_checks = [
+        LocalShareCheck(),
+    ]
+    run_preflight_checks(preflight_checks, console)
+
+    snap = Snap()
+
+    mapping = get_network_mapping(snap)
+    if format == FORMAT_TABLE:
+        table = Table()
+        table.add_column("Network")
+        table.add_column("MAAS Space")
+        for network, space in mapping.items():
+            table.add_row(network, space or "[italic]<unmapped>[italic]")
+        console.print(table)
+    elif format == FORMAT_YAML:
+        console.print(mapping, end="")
