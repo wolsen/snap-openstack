@@ -81,6 +81,7 @@ from sunbeam.jobs.common import (
     validate_roles,
 )
 from sunbeam.jobs.juju import CONTROLLER, JujuHelper
+from sunbeam.jobs.manifest import AddManifestStep, Manifest
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -93,6 +94,12 @@ snap = Snap()
     "-p",
     "--preseed",
     help="Preseed file.",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option(
+    "-m",
+    "--manifest",
+    help="Manifest file.",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
 @click.option(
@@ -128,6 +135,7 @@ def bootstrap(
     roles: List[Role],
     topology: str,
     database: str,
+    manifest: Optional[Path] = None,
     preseed: Optional[Path] = None,
     accept_defaults: bool = False,
 ) -> None:
@@ -135,6 +143,12 @@ def bootstrap(
 
     Initialize the sunbeam cluster.
     """
+    # Validate manifest file
+    manifest_obj = None
+    if manifest:
+        manifest_obj = Manifest.load(manifest_file=manifest)
+        LOG.debug(f"Manifest object created with no errors: {manifest_obj}")
+
     # Bootstrap node must always have the control role
     if Role.CONTROL not in roles:
         LOG.debug("Enabling control role for bootstrap")
@@ -188,6 +202,8 @@ def bootstrap(
     plan = []
     plan.append(JujuLoginStep(data_location))
     plan.append(ClusterInitStep(roles_to_str_list(roles)))
+    if manifest:
+        plan.append(AddManifestStep(manifest))
     plan.append(
         BootstrapJujuStep(
             cloud_name,
