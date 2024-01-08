@@ -25,6 +25,9 @@ from sunbeam.clusterd.client import Client as clusterClient
 from sunbeam.jobs.common import BaseStep, Result, ResultType, Status
 
 LOG = logging.getLogger(__name__)
+EMPTY_MANIFEST = """charms: {}
+terraform-plans: {}
+"""
 
 
 @dataclass
@@ -71,6 +74,11 @@ class Manifest:
             raise e
         except ValidationError as e:
             raise e
+
+    @classmethod
+    def load_latest_from_cluserdb(cls) -> "Manifest":
+        manifest_latest = clusterClient().cluster.get_latest_manifest()
+        return Manifest(**manifest_latest)
 
 
 class AddManifestStep(BaseStep):
