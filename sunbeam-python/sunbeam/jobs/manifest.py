@@ -1,4 +1,4 @@
-# Copyright (c) 2023 Canonical Ltd.
+# Copyright (c) 2024 Canonical Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,16 +18,25 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import yaml
-from pydantic import Field, ValidationError
+from pydantic import Field
 from pydantic.dataclasses import dataclass
 
 from sunbeam.clusterd.client import Client as clusterClient
 from sunbeam.jobs.common import BaseStep, Result, ResultType, Status
+from sunbeam.jobs.plugin import PluginManager
 
 LOG = logging.getLogger(__name__)
 EMPTY_MANIFEST = """charms: {}
 terraform-plans: {}
 """
+VALID_CORE_TERRAFORM_PLANS = {
+    "deploy-sunbeam-machine",
+    "deploy-microk8s",
+    "deploy-microceph",
+    "deploy-openstack",
+    "deploy-openstack-hypervisor",
+    "demo-setup",
+}
 
 
 @dataclass
@@ -61,24 +70,50 @@ class TerraformManifest:
 class Manifest:
     juju: Optional[JujuManifest] = None
     charms: Optional[Dict[str, CharmsManifest]] = None
-    terraform_plans: Optional[Dict[str, TerraformManifest]] = Field(
-        default=None, alias="terraform-plans"
-    )
+    terraform: Optional[Dict[str, TerraformManifest]] = None
 
     @classmethod
     def load(cls, manifest_file: Path) -> "Manifest":
-        try:
-            with manifest_file.open() as file:
-                return Manifest(**yaml.safe_load(file))
-        except FileNotFoundError as e:
-            raise e
-        except ValidationError as e:
-            raise e
+        with manifest_file.open() as file:
+            return Manifest(**yaml.safe_load(file))
 
     @classmethod
-    def load_latest_from_cluserdb(cls) -> "Manifest":
-        manifest_latest = clusterClient().cluster.get_latest_manifest()
-        return Manifest(**manifest_latest)
+    def load_latest_from_clusterdb(cls) -> "Manifest":
+        try:
+            manifest_latest = clusterClient().cluster.get_latest_manifest()
+            return Manifest(**yaml.safe_load(manifest_latest.get("data")))
+        except Exception as e:
+            LOG.debug(f"Got error in creating latest manifest object: {str(e)}")
+            return Manifest()
+
+    """
+    # field_validator supported only in pydantix 2.x
+    @field_validator("terraform", "mode_after")
+    def validate_terraform(cls, terraform):
+        if terraform:
+            tf_keys = list(terraform.keys())
+            if not set(tf_keys) <= set(VALID_TERRAFORM_PLANS):
+                raise ValueError(
+                    f"Terraform keys should be one of {VALID_TERRAFORM_PLANS}"
+                )
+
+        return terraform
+    """
+
+    def validate_terraform_keys(self):
+        if self.terraform:
+            tf_keys = set(self.terraform.keys())
+            plugin_terraform_plans = PluginManager().get_all_terraform_plan_dir_names()
+            LOG.debug(
+                f"Plugin terraform plan directory names: {plugin_terraform_plans}"
+            )
+            all_tfplans = VALID_CORE_TERRAFORM_PLANS.union(plugin_terraform_plans)
+            if not tf_keys <= all_tfplans:
+                raise ValueError(f"Terraform keys should be one of {all_tfplans} ")
+
+    def __post_init__(self):
+        # Add custom validations
+        self.validate_terraform_keys()
 
 
 class AddManifestStep(BaseStep):

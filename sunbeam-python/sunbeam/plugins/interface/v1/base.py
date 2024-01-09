@@ -189,6 +189,10 @@ class BasePlugin(ABC):
 
         return Version(version)
 
+    def get_terraform_plan_dir_names(self) -> set:
+        """Return all terraform plan directory names."""
+        return set()
+
     def get_terraform_plans_base_path(self) -> Path:
         """Return Terraform plan base location."""
         return Snap().paths.user_common

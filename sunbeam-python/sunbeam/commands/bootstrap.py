@@ -148,6 +148,8 @@ def bootstrap(
     if manifest:
         manifest_obj = Manifest.load(manifest_file=manifest)
         LOG.debug(f"Manifest object created with no errors: {manifest_obj}")
+    else:
+        manifest_obj = Manifest()
 
     # Bootstrap node must always have the control role
     if Role.CONTROL not in roles:
@@ -179,8 +181,12 @@ def bootstrap(
                 "deploy-openstack-hypervisor",
             ]
         )
+    manifest_tfplans = manifest_obj.terraform
     for tfplan_dir in tfplan_dirs:
-        src = snap.paths.snap / "etc" / tfplan_dir
+        if manifest_tfplans and manifest_tfplans.get(tfplan_dir):
+            src = manifest_tfplans.get(tfplan_dir).source
+        else:
+            src = snap.paths.snap / "etc" / tfplan_dir
         dst = snap.paths.user_common / "etc" / tfplan_dir
         LOG.debug(f"Updating {dst} from {src}...")
         shutil.copytree(src, dst, dirs_exist_ok=True)

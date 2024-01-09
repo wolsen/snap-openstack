@@ -210,7 +210,7 @@ class ExtendedAPIService(service.BaseService):
     def get_manifest(self, manifest_id: str) -> dict:
         """Get manifest info along with data."""
         manifest = self._get(f"/1.0/manifests/{manifest_id}")
-        return manifest
+        return manifest.get("metadata")
 
     def get_latest_manifest(self) -> dict:
         """Get latest manifest."""

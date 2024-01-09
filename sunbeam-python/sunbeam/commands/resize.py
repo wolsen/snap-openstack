@@ -23,6 +23,7 @@ from sunbeam.commands.openstack import ResizeControlPlaneStep
 from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
 from sunbeam.jobs.common import click_option_topology, run_plan
 from sunbeam.jobs.juju import JujuHelper
+from sunbeam.jobs.manifest import Manifest
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -37,8 +38,14 @@ snap = Snap()
 def resize(topology: str, force: bool = False) -> None:
     """Expand the control plane to fit available nodes."""
 
+    manifest_obj = Manifest.load_latest_from_clusterdb()
+
     tfplan = "deploy-openstack"
-    src = snap.paths.snap / "etc" / tfplan
+    manifest_tfplans = manifest_obj.terraform
+    if manifest_tfplans and manifest_tfplans.get(tfplan):
+        src = manifest_tfplans.get(tfplan).source
+    else:
+        src = snap.paths.snap / "etc" / tfplan
     dst = snap.paths.user_common / "etc" / tfplan
     LOG.debug(f"Updating {dst} from {src}...")
     shutil.copytree(src, dst, dirs_exist_ok=True)

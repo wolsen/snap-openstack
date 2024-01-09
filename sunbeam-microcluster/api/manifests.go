@@ -28,8 +28,8 @@ var manifestsCmd = rest.Endpoint{
 var manifestCmd = rest.Endpoint{
 	Path: "manifests/{manifestid}",
 
-	Get:    rest.EndpointAction{Handler: cmdManifestsGet, ProxyTarget: true},
-	Delete: rest.EndpointAction{Handler: cmdManifestsDelete, ProxyTarget: true},
+	Get:    rest.EndpointAction{Handler: cmdManifestGet, ProxyTarget: true},
+	Delete: rest.EndpointAction{Handler: cmdManifestDelete, ProxyTarget: true},
 }
 
 func cmdManifestsGetAll(s *state.State, _ *http.Request) response.Response {
@@ -42,7 +42,7 @@ func cmdManifestsGetAll(s *state.State, _ *http.Request) response.Response {
 	return response.SyncResponse(true, manifests)
 }
 
-func cmdManifestsGet(s *state.State, r *http.Request) response.Response {
+func cmdManifestGet(s *state.State, r *http.Request) response.Response {
 	var manifestid string
 	manifestid, err := url.PathUnescape(mux.Vars(r)["manifestid"])
 	if err != nil {
@@ -77,7 +77,7 @@ func cmdManifestsPost(s *state.State, r *http.Request) response.Response {
 	return response.EmptySyncResponse
 }
 
-func cmdManifestsDelete(s *state.State, r *http.Request) response.Response {
+func cmdManifestDelete(s *state.State, r *http.Request) response.Response {
 	manifestid, err := url.PathUnescape(mux.Vars(r)["manifestid"])
 	if err != nil {
 		return response.SmartError(err)

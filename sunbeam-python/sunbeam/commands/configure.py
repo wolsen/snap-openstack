@@ -52,6 +52,7 @@ from sunbeam.jobs.juju import (
     ModelNotFoundException,
     run_sync,
 )
+from sunbeam.jobs.manifest import Manifest
 
 CLOUD_CONFIG_SECTION = "CloudConfig"
 LOG = logging.getLogger(__name__)
@@ -727,9 +728,15 @@ def _configure(
     preflight_checks.append(VerifyBootstrappedCheck())
     run_preflight_checks(preflight_checks, console)
 
+    manifest_obj = Manifest.load_latest_from_clusterdb()
+
     name = utils.get_fqdn()
     snap = Snap()
-    src = snap.paths.snap / "etc" / "demo-setup/"
+    manifest_tfplans = manifest_obj.terraform
+    if manifest_tfplans and manifest_tfplans.get("demo-setup"):
+        src = manifest_tfplans.get("demo-setup").source
+    else:
+        src = snap.paths.snap / "etc" / "demo-setup"
     dst = snap.paths.user_common / "etc" / "demo-setup"
     try:
         os.mkdir(dst)
