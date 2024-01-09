@@ -58,6 +58,7 @@ from sunbeam.jobs.juju import (
     TimeoutException,
     run_sync,
 )
+from sunbeam.jobs.manifest import Manifest
 from sunbeam.plugins.interface.v1.base import EnableDisablePlugin
 
 LOG = logging.getLogger(__name__)
@@ -123,11 +124,16 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
 
     def _get_tf_plan_full_path(self) -> Path:
         """Returns terraform plan absolute path."""
-        if self.tf_plan_location == TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO:
-            return self.snap.paths.snap / "etc" / f"deploy-{self.tfplan}"
+        manifest_obj = Manifest.load_latest_from_clusterdb()
+        manifest_tfplans = manifest_obj.terraform
+        tfplan_dir = f"deploy-{self.tfplan}"
+        if manifest_tfplans and manifest_tfplans.get(tfplan_dir):
+            return manifest_tfplans.get(tfplan_dir).source
+        elif self.tf_plan_location == TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO:
+            return self.snap.paths.snap / "etc" / tfplan_dir
         else:
             plugin_class_dir = Path(inspect.getfile(self.__class__)).parent
-            return plugin_class_dir / "etc" / f"deploy-{self.tfplan}"
+            return plugin_class_dir / "etc" / tfplan_dir
 
     def _get_plan_name(self) -> str:
         """Returns plan name in format defined in cluster db."""
@@ -143,6 +149,10 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
     def get_terraform_openstack_plan_path(self) -> Path:
         """Return Terraform OpenStack plan location."""
         return self.get_terraform_plans_base_path() / "etc" / "deploy-openstack"
+
+    def get_terraform_plan_dir_names(self) -> set:
+        """Return all terraform plan directory names."""
+        return {f"deploy-{self.tfplan}"}
 
     def pre_checks(self) -> None:
         """Perform preflight checks before enabling the plugin.

@@ -87,6 +87,10 @@ class CaasPlugin(OpenStackControlPlanePlugin):
         )
         self.configure_plan = "caas-setup"
 
+    def get_terraform_plan_dir_names(self) -> set:
+        """Return all terraform plan directory names."""
+        return {f"deploy-{self.tfplan}", self.configure_plan}
+
     def set_application_names(self) -> list:
         """Application names handled by the terraform plan."""
         apps = ["magnum", "magnum-mysql-router"]

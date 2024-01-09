@@ -13,6 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
+import tempfile
+from pathlib import Path
+from typing import Optional
 
 import click
 from rich.console import Console
@@ -21,7 +24,9 @@ from snaphelpers import Snap
 from sunbeam.commands.terraform import TerraformHelper
 from sunbeam.commands.upgrades.inter_channel import ChannelUpgradeCoordinator
 from sunbeam.commands.upgrades.intra_channel import LatestInChannelCoordinator
+from sunbeam.jobs.common import run_plan
 from sunbeam.jobs.juju import JujuHelper
+from sunbeam.jobs.manifest import EMPTY_MANIFEST, AddManifestStep, Manifest
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -30,18 +35,59 @@ snap = Snap()
 
 @click.command()
 @click.option(
+    "-c",
+    "--clear-manifest",
+    is_flag=True,
+    default=False,
+    help="Clear the manifest file.",
+    type=bool,
+)
+@click.option(
+    "-m",
+    "--manifest",
+    help="Manifest file.",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option(
     "--upgrade-release",
     is_flag=True,
     show_default=True,
     default=False,
     help="Upgrade OpenStack release.",
 )
-def refresh(upgrade_release) -> None:
+def refresh(
+    upgrade_release: bool,
+    manifest: Optional[Path] = None,
+    clear_manifest: bool = False,
+) -> None:
     """Refresh deployment.
 
     Refresh the deployment. If --upgrade-release is supplied then charms are
     upgraded the channels aligned with this snap revision
     """
+    if clear_manifest and manifest:
+        raise click.ClickException(
+            "Options manifest and clear_manifest are mutually exclusive"
+        )
+
+    # Validate manifest file
+    manifest_obj = None
+    if clear_manifest:
+        with tempfile.NamedTemporaryFile(mode="w+t") as tmpfile:
+            tmpfile.write(EMPTY_MANIFEST)
+            tmpfile.seek(0)
+            manifest_obj = Manifest.load(manifest_file=Path(tmpfile.name))
+            LOG.debug(f"Manifest object created with no errors: {manifest_obj}")
+            run_plan([AddManifestStep(Path(tmpfile.name))], console)
+    elif manifest:
+        manifest_obj = Manifest.load(manifest_file=manifest)
+        LOG.debug(f"Manifest object created with no errors: {manifest_obj}")
+        run_plan([AddManifestStep(manifest)], console)
+    else:
+        LOG.debug("Getting latest manifest")
+        manifest_obj = Manifest.load_latest_from_cluserdb()
+        LOG.debug(f"Manifest object created with no errors: {manifest_obj}")
+
     tfplan = "deploy-openstack"
     data_location = snap.paths.user_data
     tfhelper = TerraformHelper(

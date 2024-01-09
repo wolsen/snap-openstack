@@ -62,6 +62,7 @@ from sunbeam.jobs.juju import (
     TimeoutException,
     run_sync,
 )
+from sunbeam.jobs.manifest import Manifest
 from sunbeam.plugins.interface.v1.base import EnableDisablePlugin, PluginRequirement
 from sunbeam.plugins.interface.v1.openstack import (
     OPENSTACK_TERRAFORM_PLAN,
@@ -436,13 +437,25 @@ class ObservabilityPlugin(EnableDisablePlugin):
         self.tfplan_cos = "deploy-cos"
         self.tfplan_grafana_agent = "deploy-grafana-agent"
 
+    def get_terraform_plan_dir_names(self) -> set:
+        """Return all terraform plan directory names."""
+        return {self.tfplan_cos, self.tfplan_grafana_agent}
+
     def pre_enable(self):
-        src = Path(__file__).parent / "etc" / self.tfplan_cos
+        manifest_obj = Manifest.load_latest_from_clusterdb()
+        manifest_tfplans = manifest_obj.terraform
+        if manifest_tfplans and manifest_tfplans.get(self.tfplan_cos):
+            src = manifest_tfplans.get(self.tfplan_cos).source
+        else:
+            src = Path(__file__).parent / "etc" / self.tfplan_cos
         dst = self.snap.paths.user_common / "etc" / self.tfplan_cos
         LOG.debug(f"Updating {dst} from {src}...")
         shutil.copytree(src, dst, dirs_exist_ok=True)
 
-        src = Path(__file__).parent / "etc" / self.tfplan_grafana_agent
+        if manifest_tfplans and manifest_tfplans.get(self.tfplan_grafana_agent):
+            src = manifest_tfplans.get(self.tfplan_grafana_agent).source
+        else:
+            src = Path(__file__).parent / "etc" / self.tfplan_grafana_agent
         dst = self.snap.paths.user_common / "etc" / self.tfplan_grafana_agent
         LOG.debug(f"Updating {dst} from {src}...")
         shutil.copytree(src, dst, dirs_exist_ok=True)

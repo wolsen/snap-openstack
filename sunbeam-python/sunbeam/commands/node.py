@@ -83,6 +83,7 @@ from sunbeam.jobs.common import (
     validate_roles,
 )
 from sunbeam.jobs.juju import CONTROLLER, JujuHelper
+from sunbeam.jobs.manifest import Manifest
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -207,14 +208,20 @@ def join(
     controller = CONTROLLER
     data_location = snap.paths.user_data
 
+    manifest_obj = Manifest.load_latest_from_cluserdb()
+
     # NOTE: install to user writable location
     tfplan_dirs = ["deploy-sunbeam-machine"]
     if is_control_node:
         tfplan_dirs.extend(["deploy-microk8s", "deploy-microceph", "deploy-openstack"])
     if is_compute_node:
         tfplan_dirs.extend(["deploy-openstack-hypervisor"])
+    manifest_tfplans = manifest_obj.terraform
     for tfplan_dir in tfplan_dirs:
-        src = snap.paths.snap / "etc" / tfplan_dir
+        if manifest_tfplans and manifest_tfplans.get(tfplan_dir):
+            src = manifest_tfplans.get(tfplan_dir).source
+        else:
+            src = snap.paths.snap / "etc" / tfplan_dir
         dst = snap.paths.user_common / "etc" / tfplan_dir
         LOG.debug(f"Updating {dst} from {src}...")
         shutil.copytree(src, dst, dirs_exist_ok=True)

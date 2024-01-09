@@ -81,6 +81,7 @@ from sunbeam.jobs.common import (
     validate_roles,
 )
 from sunbeam.jobs.juju import CONTROLLER, JujuHelper
+from sunbeam.jobs.manifest import AddManifestStep, Manifest
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -93,6 +94,12 @@ snap = Snap()
     "-p",
     "--preseed",
     help="Preseed file.",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option(
+    "-m",
+    "--manifest",
+    help="Manifest file.",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
 @click.option(
@@ -128,6 +135,7 @@ def bootstrap(
     roles: List[Role],
     topology: str,
     database: str,
+    manifest: Optional[Path] = None,
     preseed: Optional[Path] = None,
     accept_defaults: bool = False,
 ) -> None:
@@ -135,6 +143,14 @@ def bootstrap(
 
     Initialize the sunbeam cluster.
     """
+    # Validate manifest file
+    manifest_obj = None
+    if manifest:
+        manifest_obj = Manifest.load(manifest_file=manifest)
+        LOG.debug(f"Manifest object created with no errors: {manifest_obj}")
+    else:
+        manifest_obj = Manifest()
+
     # Bootstrap node must always have the control role
     if Role.CONTROL not in roles:
         LOG.debug("Enabling control role for bootstrap")
@@ -165,8 +181,12 @@ def bootstrap(
                 "deploy-openstack-hypervisor",
             ]
         )
+    manifest_tfplans = manifest_obj.terraform
     for tfplan_dir in tfplan_dirs:
-        src = snap.paths.snap / "etc" / tfplan_dir
+        if manifest_tfplans and manifest_tfplans.get(tfplan_dir):
+            src = manifest_tfplans.get(tfplan_dir).source
+        else:
+            src = snap.paths.snap / "etc" / tfplan_dir
         dst = snap.paths.user_common / "etc" / tfplan_dir
         LOG.debug(f"Updating {dst} from {src}...")
         shutil.copytree(src, dst, dirs_exist_ok=True)
@@ -188,6 +208,8 @@ def bootstrap(
     plan = []
     plan.append(JujuLoginStep(data_location))
     plan.append(ClusterInitStep(roles_to_str_list(roles)))
+    if manifest:
+        plan.append(AddManifestStep(manifest))
     plan.append(
         BootstrapJujuStep(
             cloud_name,

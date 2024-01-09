@@ -254,6 +254,17 @@ class PluginManager:
         return enabled_plugins
 
     @classmethod
+    def get_all_terraform_plan_dir_names(cls) -> set:
+        tf_plans = set()
+        plugins = cls.get_all_plugin_classes()
+        for klass in plugins:
+            plugin = klass()
+            for plan in plugin.get_terraform_plan_dir_names():
+                tf_plans.add(plan)
+
+        return tf_plans
+
+    @classmethod
     def register(cls, cli: click.Group) -> None:
         """Register the plugins.
 

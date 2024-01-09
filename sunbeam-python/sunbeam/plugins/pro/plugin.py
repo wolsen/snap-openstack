@@ -34,6 +34,7 @@ from sunbeam.commands.terraform import (
 )
 from sunbeam.jobs.common import BaseStep, Result, ResultType, run_plan
 from sunbeam.jobs.juju import MODEL, JujuHelper, TimeoutException, run_sync
+from sunbeam.jobs.manifest import Manifest
 from sunbeam.plugins.interface.v1.base import EnableDisablePlugin
 
 LOG = logging.getLogger(__name__)
@@ -153,8 +154,17 @@ class ProPlugin(EnableDisablePlugin):
         self.snap = Snap()
         self.tfplan = f"deploy-{self.name}"
 
+    def get_terraform_plan_dir_names(self) -> set:
+        """Return all terraform plan directory names."""
+        return {self.tfplan}
+
     def pre_enable(self):
-        src = Path(__file__).parent / "etc" / self.tfplan
+        manifest_obj = Manifest.load_latest_from_clusterdb()
+        manifest_tfplans = manifest_obj.terraform
+        if manifest_tfplans and manifest_tfplans.get(self.tfplan):
+            src = manifest_tfplans.get(self.tfplan).source
+        else:
+            src = Path(__file__).parent / "etc" / self.tfplan
         dst = self.snap.paths.user_common / "etc" / self.tfplan
         LOG.debug(f"Updating {dst} from {src}...")
         shutil.copytree(src, dst, dirs_exist_ok=True)
