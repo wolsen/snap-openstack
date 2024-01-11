@@ -33,9 +33,12 @@ resource "juju_application" "sunbeam-machine" {
   units = length(var.machine_ids) # need to manage the number of units
 
   charm {
-    name    = "sunbeam-machine"
-    channel = var.charm_channel
-    series  = "jammy"
+    name     = "sunbeam-machine"
+    channel  = var.charm_channel
+    revision = var.charm_revision
+    series   = "jammy"
   }
+
+  config = var.charm_config
 
 }
