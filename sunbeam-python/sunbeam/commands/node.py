@@ -84,6 +84,7 @@ from sunbeam.jobs.common import (
 )
 from sunbeam.jobs.juju import CONTROLLER, JujuHelper
 from sunbeam.jobs.manifest import Manifest
+from sunbeam.versions import TERRAFORM_DIR_NAMES
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -208,32 +209,31 @@ def join(
     controller = CONTROLLER
     data_location = snap.paths.user_data
 
-    manifest_obj = Manifest.load_latest_from_cluserdb()
+    manifest_obj = Manifest.load_latest_from_cluserdb_on_default()
 
     # NOTE: install to user writable location
-    tfplan_dirs = ["deploy-sunbeam-machine"]
+    tfplans = ["sunbeam-machine-plan"]
     if is_control_node:
-        tfplan_dirs.extend(["deploy-microk8s", "deploy-microceph", "deploy-openstack"])
+        tfplans.extend(["microk8s-plan", "microceph-plan", "openstack-plan"])
     if is_compute_node:
-        tfplan_dirs.extend(["deploy-openstack-hypervisor"])
+        tfplans.extend(["hypervisor-plan"])
     manifest_tfplans = manifest_obj.terraform
-    for tfplan_dir in tfplan_dirs:
-        if manifest_tfplans and manifest_tfplans.get(tfplan_dir):
-            src = manifest_tfplans.get(tfplan_dir).source
-        else:
-            src = snap.paths.snap / "etc" / tfplan_dir
-        dst = snap.paths.user_common / "etc" / tfplan_dir
+    for tfplan in tfplans:
+        src = manifest_tfplans.get(tfplan).source
+        dst = snap.paths.user_common / "etc" / TERRAFORM_DIR_NAMES.get(tfplan, tfplan)
         LOG.debug(f"Updating {dst} from {src}...")
         shutil.copytree(src, dst, dirs_exist_ok=True)
 
     tfhelper_openstack_deploy = TerraformHelper(
-        path=snap.paths.user_common / "etc" / "deploy-openstack",
+        path=snap.paths.user_common / "etc" / TERRAFORM_DIR_NAMES.get("openstack-plan"),
         plan="openstack-plan",
         backend="http",
         data_location=data_location,
     )
     tfhelper_hypervisor_deploy = TerraformHelper(
-        path=snap.paths.user_common / "etc" / "deploy-openstack-hypervisor",
+        path=snap.paths.user_common
+        / "etc"  # noqa: W503
+        / TERRAFORM_DIR_NAMES.get("hypervisor-plan"),  # noqa: W503
         plan="hypervisor-plan",
         backend="http",
         data_location=data_location,

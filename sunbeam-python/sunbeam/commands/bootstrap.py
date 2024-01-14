@@ -82,6 +82,7 @@ from sunbeam.jobs.common import (
 )
 from sunbeam.jobs.juju import CONTROLLER, JujuHelper
 from sunbeam.jobs.manifest import AddManifestStep, Manifest
+from sunbeam.versions import TERRAFORM_DIR_NAMES
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -146,10 +147,11 @@ def bootstrap(
     # Validate manifest file
     manifest_obj = None
     if manifest:
-        manifest_obj = Manifest.load(manifest_file=manifest)
-        LOG.debug(f"Manifest object created with no errors: {manifest_obj}")
+        manifest_obj = Manifest.load(manifest_file=manifest, on_default=True)
     else:
-        manifest_obj = Manifest()
+        manifest_obj = Manifest.get_default_manifest()
+
+    LOG.debug(f"Manifest used for deployment: {manifest_obj}")
 
     # Bootstrap node must always have the control role
     if Role.CONTROL not in roles:
@@ -171,23 +173,20 @@ def bootstrap(
     data_location = snap.paths.user_data
 
     # NOTE: install to user writable location
-    tfplan_dirs = ["deploy-sunbeam-machine"]
+    tfplans = ["sunbeam-machine-plan"]
     if is_control_node:
-        tfplan_dirs.extend(
+        tfplans.extend(
             [
-                "deploy-microk8s",
-                "deploy-microceph",
-                "deploy-openstack",
-                "deploy-openstack-hypervisor",
+                "microk8s-plan",
+                "microceph-plan",
+                "openstack-plan",
+                "hypervisor-plan",
             ]
         )
     manifest_tfplans = manifest_obj.terraform
-    for tfplan_dir in tfplan_dirs:
-        if manifest_tfplans and manifest_tfplans.get(tfplan_dir):
-            src = manifest_tfplans.get(tfplan_dir).source
-        else:
-            src = snap.paths.snap / "etc" / tfplan_dir
-        dst = snap.paths.user_common / "etc" / tfplan_dir
+    for tfplan in tfplans:
+        src = manifest_tfplans.get(tfplan).source
+        dst = snap.paths.user_common / "etc" / TERRAFORM_DIR_NAMES.get(tfplan, tfplan)
         LOG.debug(f"Updating {dst} from {src}...")
         shutil.copytree(src, dst, dirs_exist_ok=True)
 

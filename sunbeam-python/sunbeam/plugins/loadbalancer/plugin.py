@@ -22,6 +22,7 @@ from sunbeam.plugins.interface.v1.openstack import (
     OpenStackControlPlanePlugin,
     TerraformPlanLocation,
 )
+from sunbeam.versions import OPENSTACK_CHANNEL
 
 LOG = logging.getLogger(__name__)
 
@@ -34,6 +35,22 @@ class LoadbalancerPlugin(OpenStackControlPlanePlugin):
             name="loadbalancer",
             tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO,
         )
+
+    def manifest(self) -> dict:
+        """Manifest in dict format."""
+        return {"charms": {"octavia": {"channel": OPENSTACK_CHANNEL}}}
+
+    def charm_manifest_tfvar_map(self) -> dict:
+        """Charm manifest terraformvars map."""
+        return {
+            self.tfplan: {
+                "octavia": {
+                    "channel": "octavia-channel",
+                    "revision": "octavia-revision",
+                    "config": "octavia-config",
+                }
+            }
+        }
 
     def set_application_names(self) -> list:
         """Application names handled by the terraform plan."""

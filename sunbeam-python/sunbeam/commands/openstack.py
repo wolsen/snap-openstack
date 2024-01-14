@@ -51,7 +51,7 @@ from sunbeam.jobs.juju import (
     TimeoutException,
     run_sync,
 )
-from sunbeam.versions import OPENSTACK_CHANNEL, OVN_CHANNEL, RABBITMQ_CHANNEL
+from sunbeam.jobs.manifest import Manifest
 
 LOG = logging.getLogger(__name__)
 OPENSTACK_MODEL = "openstack"
@@ -214,10 +214,6 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         tfvars.update(
             {
                 "model": self.model,
-                # Make these channel options configurable by the user
-                "openstack-channel": OPENSTACK_CHANNEL,
-                "ovn-channel": OVN_CHANNEL,
-                "rabbitmq-channel": RABBITMQ_CHANNEL,
                 "cloud": self.cloud,
                 "credential": f"{self.cloud}{CREDENTIAL_SUFFIX}",
                 "config": {"workload-storage": MICROK8S_DEFAULT_STORAGECLASS},
@@ -225,6 +221,9 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
             }
         )
         tfvars.update(self.get_storage_tfvars())
+        m = Manifest.load_latest_from_clusterdb(on_default=True)
+        LOG.debug(f"Latest manifest in openstack: {m}")
+        tfvars.update(m.get_tfvars(self.tfhelper.plan))
         update_config(self.client, self._CONFIG, tfvars)
         self.tfhelper.write_tfvars(tfvars)
         self.update_status(status, "deploying services")

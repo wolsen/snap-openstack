@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from sunbeam.commands.upgrades.inter_channel import BaseUpgrade
 from sunbeam.versions import (
+    MYSQL_ROUTER_SERVICES_K8S,
     MYSQL_SERVICES_K8S,
     OPENSTACK_SERVICES_K8S,
     OVN_SERVICES_K8S,
@@ -28,6 +29,7 @@ class TestBaseUpgrade:
         self.tfhelper = Mock()
         self.upgrade_service = (
             list(MYSQL_SERVICES_K8S.keys())  # noqa
+            + list(MYSQL_ROUTER_SERVICES_K8S.keys())  # noqa
             + list(OVN_SERVICES_K8S.keys())  # noqa
             + list(OPENSTACK_SERVICES_K8S.keys())  # noqa
         )

@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
 OPENSTACK_CHANNEL = "2023.2/edge"
 OVN_CHANNEL = "23.09/edge"
 RABBITMQ_CHANNEL = "3.12/edge"
@@ -22,6 +23,8 @@ SUNBEAM_MACHINE_CHANNEL = "latest/edge"
 MICROK8S_CHANNEL = "legacy/stable"
 MYSQL_CHANNEL = "8.0/candidate"
 CERT_AUTH_CHANNEL = "latest/beta"
+BIND_CHANNEL = "9/edge"
+VAULT_CHANNEL = "latest/edge"
 
 # The lists of services are needed for switching charm channels outside
 # of the terraform provider. If it ok to upgrade in one big-bang and
@@ -41,8 +44,8 @@ OVN_SERVICES_K8S = {
     "ovn-central": OVN_CHANNEL,
     "ovn-relay": OVN_CHANNEL,
 }
-MYSQL_SERVICES_K8S = {
-    "mysql": MYSQL_CHANNEL,
+MYSQL_SERVICES_K8S = {"mysql": MYSQL_CHANNEL}
+MYSQL_ROUTER_SERVICES_K8S = {
     "cinder-ceph-mysql-router": MYSQL_CHANNEL,
     "cinder-mysql-router": MYSQL_CHANNEL,
     "glance-mysql-router": MYSQL_CHANNEL,
@@ -71,8 +74,91 @@ K8S_SERVICES = {}
 K8S_SERVICES |= OPENSTACK_SERVICES_K8S
 K8S_SERVICES |= OVN_SERVICES_K8S
 K8S_SERVICES |= MYSQL_SERVICES_K8S
+K8S_SERVICES |= MYSQL_ROUTER_SERVICES_K8S
 K8S_SERVICES |= MISC_SERVICES_K8S
 
 CHARM_VERSIONS = {}
 CHARM_VERSIONS |= K8S_SERVICES
 CHARM_VERSIONS |= MACHINE_SERVICES
+
+# Similar to CHARM_VERSIONS except this is not per service
+# but per charm. So all *-mysql-router wont be included
+# and instead only mysql-router is included. Same is the
+# case of traefik charm.
+MANIFEST_CHARM_VERSIONS = {}
+MANIFEST_CHARM_VERSIONS |= OPENSTACK_SERVICES_K8S
+MANIFEST_CHARM_VERSIONS |= OVN_SERVICES_K8S
+MANIFEST_CHARM_VERSIONS |= MYSQL_SERVICES_K8S
+MANIFEST_CHARM_VERSIONS |= MISC_SERVICES_K8S
+MANIFEST_CHARM_VERSIONS |= MACHINE_SERVICES
+MANIFEST_CHARM_VERSIONS |= {"mysql-router": MYSQL_CHANNEL}
+MANIFEST_CHARM_VERSIONS.pop("traefik-public")
+
+
+# <TF plan>: <TF Plan dir>
+TERRAFORM_DIR_NAMES = {
+    "sunbeam-machine-plan": "deploy-sunbeam-machine",
+    "microk8s-plan": "deploy-microk8s",
+    "microceph-plan": "deploy-microceph",
+    "openstack-plan": "deploy-openstack",
+    "hypervisor-plan": "deploy-openstack-hypervisor",
+    "demo-setup": "demo-setup",
+}
+
+K8S_CHARMS = {}
+K8S_CHARMS |= OPENSTACK_SERVICES_K8S
+K8S_CHARMS |= OVN_SERVICES_K8S
+K8S_CHARMS |= MYSQL_SERVICES_K8S
+K8S_CHARMS |= MISC_SERVICES_K8S
+DEPLOY_OPENSTACK_TFVAR_MAP = {
+    svc: {
+        "channel": f"{svc}-channel",
+        "revision": f"{svc}-revision",
+        "config": f"{svc}-config",
+    }
+    for svc, channel in K8S_CHARMS.items()
+}
+DEPLOY_OPENSTACK_TFVAR_MAP.pop("traefik-public")
+DEPLOY_OPENSTACK_TFVAR_MAP["mysql-router"] = {
+    "channel": "mysql-router-channel",
+    "revision": "mysql-router-revision",
+    "config": "mysql-router-config",
+}
+
+DEPLOY_MICROK8S_TFVAR_MAP = {
+    "microk8s": {
+        "channel": "charm_microk8s_channel",
+        "revision": "charm_microk8s_revision",
+        "config": "charm_microk8s_config",
+    }
+}
+DEPLOY_MICROCEPH_TFVAR_MAP = {
+    "microceph": {
+        "channel": "charm_microceph_channel",
+        "revision": "charm_microceph_revision",
+        "config": "charm_microceph_config",
+    }
+}
+DEPLOY_OPENSTACK_HYPERVISOR_TFVAR_MAP = {
+    "openstack-hypervisor": {
+        "channel": "charm_channel",
+        "revision": "charm_revision",
+        "config": "charm_config",
+    }
+}
+DEPLOY_SUNBEAM_MACHINE_TFVAR_MAP = {
+    "sunbeam-machine": {
+        "channel": "charm_channel",
+        "revision": "charm_revision",
+        "config": "charm_config",
+    }
+}
+
+
+CHARM_MANIFEST_TFVARS_MAP = {
+    "sunbeam-machine-plan": DEPLOY_SUNBEAM_MACHINE_TFVAR_MAP,
+    "microk8s-plan": DEPLOY_MICROK8S_TFVAR_MAP,
+    "microceph-plan": DEPLOY_MICROCEPH_TFVAR_MAP,
+    "openstack-plan": DEPLOY_OPENSTACK_TFVAR_MAP,
+    "hypervisor-plan": DEPLOY_OPENSTACK_HYPERVISOR_TFVAR_MAP,
+}

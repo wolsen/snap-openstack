@@ -49,6 +49,7 @@ from sunbeam.plugins.interface.v1.openstack import (
     OpenStackControlPlanePlugin,
     TerraformPlanLocation,
 )
+from sunbeam.versions import OPENSTACK_CHANNEL
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -270,6 +271,21 @@ class LDAPPlugin(OpenStackControlPlanePlugin):
         )
         self.config_flags = None
 
+    def manifest(self) -> dict:
+        """Manifest in dict format."""
+        return {"charms": {"keystone-ldap": {"channel": OPENSTACK_CHANNEL}}}
+
+    def charm_manifest_tfvar_map(self) -> dict:
+        """Charm manifest terraformvars map."""
+        return {
+            self.tfplan: {
+                "keystone-ldap": {
+                    "channel": "ldap-channel",
+                    "revision": "ldap-revision",
+                }
+            }
+        }
+
     def set_tfvars_on_enable(self) -> dict:
         """Set terraform variables to enable the application."""
         return {
@@ -343,8 +359,8 @@ class LDAPPlugin(OpenStackControlPlanePlugin):
         }
         data_location = self.snap.paths.user_data
         tfhelper = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / f"deploy-{self.tfplan}",
-            plan=self._get_plan_name(),
+            path=self.snap.paths.user_common / "etc" / self.tfplan_dir,
+            plan=self.tfplan,
             backend="http",
             data_location=data_location,
         )
@@ -388,8 +404,8 @@ class LDAPPlugin(OpenStackControlPlanePlugin):
             charm_config["tls-ca-ldap"] = ca
         data_location = self.snap.paths.user_data
         tfhelper = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / f"deploy-{self.tfplan}",
-            plan=self._get_plan_name(),
+            path=self.snap.paths.user_common / "etc" / self.tfplan_dir,
+            plan=self.tfplan,
             backend="http",
             data_location=data_location,
         )
@@ -407,8 +423,8 @@ class LDAPPlugin(OpenStackControlPlanePlugin):
         """Remove LDAP backed domain."""
         data_location = self.snap.paths.user_data
         tfhelper = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / f"deploy-{self.tfplan}",
-            plan=self._get_plan_name(),
+            path=self.snap.paths.user_common / "etc" / self.tfplan_dir,
+            plan=self.tfplan,
             backend="http",
             data_location=data_location,
         )

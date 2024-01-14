@@ -29,6 +29,7 @@ from sunbeam.commands.hypervisor import (
 from sunbeam.commands.terraform import TerraformException
 from sunbeam.jobs.common import ResultType
 from sunbeam.jobs.juju import ApplicationNotFoundException, TimeoutException
+from sunbeam.jobs.manifest import Manifest
 
 
 @pytest.fixture(autouse=True)
@@ -94,7 +95,9 @@ class TestDeployHypervisorStep(unittest.TestCase):
         self.jhelper.get_application.assert_called_once()
         assert result.result_type == ResultType.SKIPPED
 
-    def test_run_pristine_installation(self):
+    @patch("sunbeam.jobs.manifest.PluginManager")
+    @patch.object(Manifest, "load_latest_from_clusterdb_on_default")
+    def test_run_pristine_installation(self, manifest, pluginmanager):
         self.jhelper.get_application.side_effect = ApplicationNotFoundException(
             "not found"
         )
@@ -108,7 +111,9 @@ class TestDeployHypervisorStep(unittest.TestCase):
         self.tfhelper.apply.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
 
-    def test_run_tf_apply_failed(self):
+    @patch("sunbeam.jobs.manifest.PluginManager")
+    @patch.object(Manifest, "load_latest_from_clusterdb_on_default")
+    def test_run_tf_apply_failed(self, manifest, pluginmanager):
         self.tfhelper.apply.side_effect = TerraformException("apply failed...")
 
         step = DeployHypervisorApplicationStep(
@@ -120,7 +125,9 @@ class TestDeployHypervisorStep(unittest.TestCase):
         assert result.result_type == ResultType.FAILED
         assert result.message == "apply failed..."
 
-    def test_run_waiting_timed_out(self):
+    @patch("sunbeam.jobs.manifest.PluginManager")
+    @patch.object(Manifest, "load_latest_from_clusterdb_on_default")
+    def test_run_waiting_timed_out(self, manifest, pluginmanager):
         self.jhelper.wait_application_ready.side_effect = TimeoutException("timed out")
 
         step = DeployHypervisorApplicationStep(

@@ -29,6 +29,7 @@ from sunbeam.plugins.interface.v1.openstack import (
     OpenStackControlPlanePlugin,
     TerraformPlanLocation,
 )
+from sunbeam.versions import OPENSTACK_CHANNEL
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -43,12 +44,44 @@ class TelemetryPlugin(OpenStackControlPlanePlugin):
             tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO,
         )
 
+    def manifest(self) -> dict:
+        """Manifest in dict format."""
+        return {
+            "charms": {
+                "aodh": {"channel": OPENSTACK_CHANNEL},
+                "gnocchi": {"channel": OPENSTACK_CHANNEL},
+                "ceilometer": {"channel": OPENSTACK_CHANNEL},
+            }
+        }
+
+    def charm_manifest_tfvar_map(self) -> dict:
+        """Charm manifest terraformvars map."""
+        return {
+            self.tfplan: {
+                "aodh": {
+                    "channel": "aodh-channel",
+                    "revision": "aodh-revision",
+                    "config": "aodh-config",
+                },
+                "gnocchi": {
+                    "channel": "gnocchi-channel",
+                    "revision": "gnocchi-revision",
+                    "config": "gnocchi-config",
+                },
+                "ceilometer": {
+                    "channel": "ceilometer-channel",
+                    "revision": "ceilometer-revision",
+                    "config": "ceilometer-config",
+                },
+            }
+        }
+
     def run_enable_plans(self) -> None:
         """Run plans to enable plugin."""
         data_location = self.snap.paths.user_data
         tfhelper = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / f"deploy-{self.tfplan}",
-            plan=self._get_plan_name(),
+            path=self.snap.paths.user_common / "etc" / self.tfplan_dir,
+            plan=self.tfplan,
             backend="http",
             data_location=data_location,
         )
@@ -73,8 +106,8 @@ class TelemetryPlugin(OpenStackControlPlanePlugin):
         """Run plans to disable the plugin."""
         data_location = self.snap.paths.user_data
         tfhelper = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / f"deploy-{self.tfplan}",
-            plan=self._get_plan_name(),
+            path=self.snap.paths.user_common / "etc" / self.tfplan_dir,
+            plan=self.tfplan,
             backend="http",
             data_location=data_location,
         )

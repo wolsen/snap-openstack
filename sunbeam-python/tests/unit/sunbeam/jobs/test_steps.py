@@ -23,6 +23,7 @@ from sunbeam.clusterd.service import NodeNotExistInClusterException
 from sunbeam.commands.terraform import TerraformException
 from sunbeam.jobs.common import ResultType
 from sunbeam.jobs.juju import ApplicationNotFoundException, TimeoutException
+from sunbeam.jobs.manifest import Manifest
 from sunbeam.jobs.steps import (
     AddMachineUnitStep,
     DeployMachineApplicationStep,
@@ -67,6 +68,18 @@ def read_config():
         yield p
 
 
+@pytest.fixture()
+def manifest():
+    with patch.object(Manifest, "load_latest_from_clusterdb_on_default") as p:
+        yield p
+
+
+@pytest.fixture()
+def pluginmanager():
+    with patch("sunbeam.jobs.manifest.PluginManager") as p:
+        yield p
+
+
 class TestDeployMachineApplicationStep:
     def test_is_skip(self, cclient, jhelper, tfhelper):
         jhelper.get_application.side_effect = ApplicationNotFoundException("not found")
@@ -88,7 +101,9 @@ class TestDeployMachineApplicationStep:
         jhelper.get_application.assert_called_once()
         assert result.result_type == ResultType.SKIPPED
 
-    def test_run_pristine_installation(self, cclient, jhelper, tfhelper, read_config):
+    def test_run_pristine_installation(
+        self, cclient, jhelper, tfhelper, read_config, manifest, pluginmanager
+    ):
         jhelper.get_application.side_effect = ApplicationNotFoundException("not found")
 
         step = DeployMachineApplicationStep(
@@ -101,7 +116,9 @@ class TestDeployMachineApplicationStep:
         tfhelper.apply.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
 
-    def test_run_already_deployed(self, cclient, jhelper, tfhelper, read_config):
+    def test_run_already_deployed(
+        self, cclient, jhelper, tfhelper, read_config, manifest, pluginmanager
+    ):
         machines = ["1", "2"]
         application = Mock(units=[Mock(machine=Mock(id=m)) for m in machines])
         jhelper.get_application.return_value = application
@@ -116,7 +133,9 @@ class TestDeployMachineApplicationStep:
         tfhelper.apply.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
 
-    def test_run_tf_apply_failed(self, cclient, jhelper, tfhelper, read_config):
+    def test_run_tf_apply_failed(
+        self, cclient, jhelper, tfhelper, read_config, manifest, pluginmanager
+    ):
         tfhelper.apply.side_effect = TerraformException("apply failed...")
 
         step = DeployMachineApplicationStep(
@@ -128,7 +147,9 @@ class TestDeployMachineApplicationStep:
         assert result.result_type == ResultType.FAILED
         assert result.message == "apply failed..."
 
-    def test_run_waiting_timed_out(self, cclient, jhelper, tfhelper, read_config):
+    def test_run_waiting_timed_out(
+        self, cclient, jhelper, tfhelper, read_config, manifest, pluginmanager
+    ):
         jhelper.wait_application_ready.side_effect = TimeoutException("timed out")
 
         step = DeployMachineApplicationStep(

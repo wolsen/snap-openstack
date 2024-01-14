@@ -22,6 +22,7 @@ import sunbeam.plugins.interface.v1.openstack as openstack
 from sunbeam.commands.terraform import TerraformException
 from sunbeam.jobs.common import ResultType
 from sunbeam.jobs.juju import TimeoutException
+from sunbeam.jobs.manifest import Manifest
 
 
 @pytest.fixture(autouse=True)
@@ -70,6 +71,18 @@ def osplugin():
         yield p
 
 
+@pytest.fixture()
+def manifest():
+    with patch.object(Manifest, "load_latest_from_clusterdb_on_default") as p:
+        yield p
+
+
+@pytest.fixture()
+def pluginmanager():
+    with patch("sunbeam.jobs.manifest.PluginManager") as p:
+        yield p
+
+
 class TestEnableOpenStackApplicationStep:
     def test_run(
         self,
@@ -78,6 +91,8 @@ class TestEnableOpenStackApplicationStep:
         jhelper,
         tfhelper,
         osplugin,
+        manifest,
+        pluginmanager,
     ):
         step = openstack.EnableOpenStackApplicationStep(tfhelper, jhelper, osplugin)
         result = step.run()
@@ -88,7 +103,7 @@ class TestEnableOpenStackApplicationStep:
         assert result.result_type == ResultType.COMPLETED
 
     def test_run_tf_apply_failed(
-        self, cclient, read_config, jhelper, tfhelper, osplugin
+        self, cclient, read_config, jhelper, tfhelper, osplugin, manifest, pluginmanager
     ):
         tfhelper.apply.side_effect = TerraformException("apply failed...")
 
@@ -102,7 +117,7 @@ class TestEnableOpenStackApplicationStep:
         assert result.message == "apply failed..."
 
     def test_run_waiting_timed_out(
-        self, cclient, read_config, jhelper, tfhelper, osplugin
+        self, cclient, read_config, jhelper, tfhelper, osplugin, manifest, pluginmanager
     ):
         jhelper.wait_until_active.side_effect = TimeoutException("timed out")
 

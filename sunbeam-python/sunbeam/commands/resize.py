@@ -24,6 +24,7 @@ from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
 from sunbeam.jobs.common import click_option_topology, run_plan
 from sunbeam.jobs.juju import JujuHelper
 from sunbeam.jobs.manifest import Manifest
+from sunbeam.versions import TERRAFORM_DIR_NAMES
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -38,22 +39,20 @@ snap = Snap()
 def resize(topology: str, force: bool = False) -> None:
     """Expand the control plane to fit available nodes."""
 
-    manifest_obj = Manifest.load_latest_from_clusterdb()
+    manifest_obj = Manifest.load_latest_from_clusterdb(on_default=True)
 
-    tfplan = "deploy-openstack"
+    tfplan = "openstack-plan"
+    tfplan_dir = TERRAFORM_DIR_NAMES.get(tfplan)
     manifest_tfplans = manifest_obj.terraform
-    if manifest_tfplans and manifest_tfplans.get(tfplan):
-        src = manifest_tfplans.get(tfplan).source
-    else:
-        src = snap.paths.snap / "etc" / tfplan
-    dst = snap.paths.user_common / "etc" / tfplan
+    src = manifest_tfplans.get(tfplan).source
+    dst = snap.paths.user_common / "etc" / tfplan_dir
     LOG.debug(f"Updating {dst} from {src}...")
     shutil.copytree(src, dst, dirs_exist_ok=True)
 
     data_location = snap.paths.user_data
     tfhelper = TerraformHelper(
-        path=snap.paths.user_common / "etc" / tfplan,
-        plan="openstack-plan",
+        path=snap.paths.user_common / "etc" / tfplan_dir,
+        plan=tfplan,
         backend="http",
         data_location=data_location,
     )

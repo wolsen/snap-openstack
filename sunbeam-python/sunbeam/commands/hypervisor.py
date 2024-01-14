@@ -38,6 +38,7 @@ from sunbeam.jobs.juju import (
     TimeoutException,
     run_sync,
 )
+from sunbeam.jobs.manifest import Manifest
 
 LOG = logging.getLogger(__name__)
 CONFIG_KEY = "TerraformVarsHypervisor"
@@ -105,6 +106,8 @@ class DeployHypervisorApplicationStep(BaseStep, JujuStepHelper):
                 "openstack-state-config": openstack_backend_config,
             }
         )
+        m = Manifest.load_latest_from_clusterdb(on_default=True)
+        tfvars.update(m.get_tfvars(self.tfhelper.plan))
         update_config(self.client, CONFIG_KEY, tfvars)
         self.tfhelper.write_tfvars(tfvars)
 

@@ -24,6 +24,7 @@ from sunbeam.plugins.interface.v1.openstack import (
     TerraformPlanLocation,
 )
 from sunbeam.plugins.vault.plugin import VaultPlugin
+from sunbeam.versions import OPENSTACK_CHANNEL
 
 
 class SecretsPlugin(OpenStackControlPlanePlugin):
@@ -36,6 +37,22 @@ class SecretsPlugin(OpenStackControlPlanePlugin):
             name="secrets",
             tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO,
         )
+
+    def manifest(self) -> dict:
+        """Manifest in dict format."""
+        return {"charms": {"barbican": {"channel": OPENSTACK_CHANNEL}}}
+
+    def charm_manifest_tfvar_map(self) -> dict:
+        """Charm manifest terraformvars map."""
+        return {
+            self.tfplan: {
+                "barbican": {
+                    "channel": "barbican-channel",
+                    "revision": "barbican-revision",
+                    "config": "barbican-config",
+                }
+            }
+        }
 
     def set_application_names(self) -> list:
         """Application names handled by the terraform plan."""

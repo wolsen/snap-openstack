@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import collections.abc
 import glob
 import ipaddress
 import logging
@@ -287,3 +288,17 @@ class CatchGroup(click.Group):
             LOG.warn(message)
             LOG.error("Error: %s", e)
             sys.exit(1)
+
+
+def merge_dict(d: dict, u: dict) -> dict:
+    """Merges nested dicts and updates the first dict."""
+    for k, v in u.items():
+        if not d.get(k):
+            d[k] = v
+        elif isinstance(v, collections.abc.Mapping):
+            d[k] = merge_dict(d.get(k, {}), v)
+        else:
+            if v:
+                d[k] = v
+
+    return d

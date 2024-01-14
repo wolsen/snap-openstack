@@ -23,6 +23,7 @@ import click
 import yaml
 from snaphelpers import Snap
 
+from sunbeam import utils
 from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import (
     ClusterServiceUnavailableException,
@@ -254,15 +255,26 @@ class PluginManager:
         return enabled_plugins
 
     @classmethod
-    def get_all_terraform_plan_dir_names(cls) -> set:
-        tf_plans = set()
+    def get_all_plugin_manifests(cls) -> dict:
+        manifest = {}
         plugins = cls.get_all_plugin_classes()
         for klass in plugins:
             plugin = klass()
-            for plan in plugin.get_terraform_plan_dir_names():
-                tf_plans.add(plan)
+            m_dict = plugin.manifest()
+            utils.merge_dict(manifest, m_dict)
 
-        return tf_plans
+        return manifest
+
+    @classmethod
+    def get_all_plugin_manfiest_tfvar_map(cls) -> dict:
+        tfvar_map = {}
+        plugins = cls.get_all_plugin_classes()
+        for klass in plugins:
+            plugin = klass()
+            m_dict = plugin.charm_manifest_tfvar_map()
+            utils.merge_dict(tfvar_map, m_dict)
+
+        return tfvar_map
 
     @classmethod
     def register(cls, cli: click.Group) -> None:

@@ -37,6 +37,7 @@ from sunbeam.jobs.juju import (
     JujuWaitException,
     TimeoutException,
 )
+from sunbeam.jobs.manifest import Manifest
 
 TOPOLOGY = "single"
 DATABASE = "single"
@@ -65,8 +66,10 @@ class TestDeployControlPlaneStep(unittest.TestCase):
         self.jhelper = AsyncMock()
         self.tfhelper = Mock(path=Path())
 
+    @patch("sunbeam.jobs.manifest.PluginManager")
+    @patch.object(Manifest, "load_latest_from_clusterdb_on_default")
     @patch("sunbeam.commands.openstack.Client")
-    def test_run_pristine_installation(self, client):
+    def test_run_pristine_installation(self, client, manifest, pluginmanager):
         self.jhelper.get_application.side_effect = ApplicationNotFoundException(
             "not found"
         )
@@ -82,8 +85,10 @@ class TestDeployControlPlaneStep(unittest.TestCase):
         self.tfhelper.apply.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
 
+    @patch("sunbeam.jobs.manifest.PluginManager")
+    @patch.object(Manifest, "load_latest_from_clusterdb_on_default")
     @patch("sunbeam.commands.openstack.Client")
-    def test_run_tf_apply_failed(self, client):
+    def test_run_tf_apply_failed(self, client, manifest, pluginmanager):
         self.tfhelper.apply.side_effect = TerraformException("apply failed...")
 
         step = DeployControlPlaneStep(self.tfhelper, self.jhelper, TOPOLOGY, DATABASE)
@@ -97,8 +102,10 @@ class TestDeployControlPlaneStep(unittest.TestCase):
         assert result.result_type == ResultType.FAILED
         assert result.message == "apply failed..."
 
+    @patch("sunbeam.jobs.manifest.PluginManager")
+    @patch.object(Manifest, "load_latest_from_clusterdb_on_default")
     @patch("sunbeam.commands.openstack.Client")
-    def test_run_waiting_timed_out(self, client):
+    def test_run_waiting_timed_out(self, client, manifest, pluginmanager):
         self.jhelper.wait_until_active.side_effect = TimeoutException("timed out")
 
         step = DeployControlPlaneStep(self.tfhelper, self.jhelper, TOPOLOGY, DATABASE)
@@ -112,8 +119,10 @@ class TestDeployControlPlaneStep(unittest.TestCase):
         assert result.result_type == ResultType.FAILED
         assert result.message == "timed out"
 
+    @patch("sunbeam.jobs.manifest.PluginManager")
+    @patch.object(Manifest, "load_latest_from_clusterdb_on_default")
     @patch("sunbeam.commands.openstack.Client")
-    def test_run_unit_in_error_state(self, client):
+    def test_run_unit_in_error_state(self, client, manifest, pluginmanager):
         self.jhelper.wait_until_active.side_effect = JujuWaitException(
             "Unit in error: placement/0"
         )

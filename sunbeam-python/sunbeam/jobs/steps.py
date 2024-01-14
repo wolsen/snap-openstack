@@ -31,6 +31,7 @@ from sunbeam.jobs.juju import (
     TimeoutException,
     run_sync,
 )
+from sunbeam.jobs.manifest import Manifest
 
 LOG = logging.getLogger(__name__)
 
@@ -90,6 +91,8 @@ class DeployMachineApplicationStep(BaseStep):
             tfvars = {}
 
         tfvars.update(self.extra_tfvars())
+        m = Manifest.load_latest_from_clusterdb(on_default=True)
+        tfvars.update(m.get_tfvars(self.tfhelper.plan))
         tfvars.update({"machine_ids": machine_ids})
         update_config(self.client, self.config, tfvars)
         self.tfhelper.write_tfvars(tfvars)

@@ -28,6 +28,7 @@ from sunbeam.plugins.interface.v1.openstack import (
     OpenStackControlPlanePlugin,
     TerraformPlanLocation,
 )
+from sunbeam.versions import VAULT_CHANNEL
 
 LOG = logging.getLogger(__name__)
 
@@ -40,6 +41,22 @@ class VaultPlugin(OpenStackControlPlanePlugin):
             name="vault",
             tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO,
         )
+
+    def manifest(self) -> dict:
+        """Manifest in dict format."""
+        return {"charms": {"vault": {"channel": VAULT_CHANNEL}}}
+
+    def charm_manifest_tfvar_map(self) -> dict:
+        """Charm manifest terraformvars map."""
+        return {
+            self.tfplan: {
+                "vault": {
+                    "channel": "vault-channel",
+                    "revision": "vault-revision",
+                    "config": "vault-config",
+                }
+            }
+        }
 
     def set_application_names(self) -> list:
         """Application names handled by the terraform plan."""

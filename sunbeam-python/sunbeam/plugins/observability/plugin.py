@@ -434,50 +434,58 @@ class ObservabilityPlugin(EnableDisablePlugin):
     def __init__(self) -> None:
         super().__init__(name="observability")
         self.snap = Snap()
-        self.tfplan_cos = "deploy-cos"
-        self.tfplan_grafana_agent = "deploy-grafana-agent"
+        self.tfplan_cos = "cos-plan"
+        self.tfplan_cos_dir = "deploy-cos"
+        self.tfplan_grafana_agent = "grafana-agent-plan"
+        self.tfplan_grafana_agent_dir = "deploy-grafana-agent"
 
-    def get_terraform_plan_dir_names(self) -> set:
-        """Return all terraform plan directory names."""
-        return {self.tfplan_cos, self.tfplan_grafana_agent}
+    def manifest(self) -> dict:
+        """Manifest in dict format."""
+        return {
+            "terraform": {
+                self.tfplan_cos: {
+                    "source": Path(__file__).parent / "etc" / self.tfplan_cos_dir
+                },
+                self.tfplan_grafana_agent: {
+                    "source": Path(__file__).parent
+                    / "etc"  # noqa: W503
+                    / self.tfplan_grafana_agent_dir  # noqa: W503
+                },
+            }
+        }
 
     def pre_enable(self):
-        manifest_obj = Manifest.load_latest_from_clusterdb()
+        manifest_obj = Manifest.load_latest_from_clusterdb(on_default=True)
         manifest_tfplans = manifest_obj.terraform
-        if manifest_tfplans and manifest_tfplans.get(self.tfplan_cos):
-            src = manifest_tfplans.get(self.tfplan_cos).source
-        else:
-            src = Path(__file__).parent / "etc" / self.tfplan_cos
-        dst = self.snap.paths.user_common / "etc" / self.tfplan_cos
+        src = manifest_tfplans.get(self.tfplan_cos).source
+        dst = self.snap.paths.user_common / "etc" / self.tfplan_cos_dir
         LOG.debug(f"Updating {dst} from {src}...")
         shutil.copytree(src, dst, dirs_exist_ok=True)
 
-        if manifest_tfplans and manifest_tfplans.get(self.tfplan_grafana_agent):
-            src = manifest_tfplans.get(self.tfplan_grafana_agent).source
-        else:
-            src = Path(__file__).parent / "etc" / self.tfplan_grafana_agent
-        dst = self.snap.paths.user_common / "etc" / self.tfplan_grafana_agent
+        src = manifest_tfplans.get(self.tfplan_grafana_agent).source
+        dst = self.snap.paths.user_common / "etc" / self.tfplan_grafana_agent_dir
         LOG.debug(f"Updating {dst} from {src}...")
         shutil.copytree(src, dst, dirs_exist_ok=True)
 
     def run_enable_plans(self):
         data_location = self.snap.paths.user_data
         tfhelper_cos = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / self.tfplan_cos,
-            plan="cos-plan",
+            path=self.snap.paths.user_common / "etc" / self.tfplan_cos_dir,
+            plan=self.tfplan_cos,
             backend="http",
             data_location=data_location,
         )
         tfhelper_grafana_agent = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / self.tfplan_grafana_agent,
-            plan="grafana-agent-plan",
+            path=self.snap.paths.user_common / "etc" / self.tfplan_grafana_agent_dir,
+            plan=self.tfplan_grafana_agent,
             backend="http",
             data_location=data_location,
         )
-        openstack_plan = "deploy-" + OPENSTACK_TERRAFORM_PLAN
+        tfplan_openstack = f"{OPENSTACK_TERRAFORM_PLAN}-plan"
+        tfplan_openstack_dir = f"deploy-{OPENSTACK_TERRAFORM_PLAN}"
         tfhelper_openstack = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / openstack_plan,
-            plan=OPENSTACK_TERRAFORM_PLAN + "-plan",
+            path=self.snap.paths.user_common / "etc" / tfplan_openstack_dir,
+            plan=tfplan_openstack,
             backend="http",
             data_location=data_location,
         )
@@ -507,21 +515,22 @@ class ObservabilityPlugin(EnableDisablePlugin):
     def run_disable_plans(self):
         data_location = self.snap.paths.user_data
         tfhelper_cos = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / self.tfplan_cos,
-            plan="cos-plan",
+            path=self.snap.paths.user_common / "etc" / self.tfplan_cos_dir,
+            plan=self.tfplan_cos,
             backend="http",
             data_location=data_location,
         )
         tfhelper_grafana_agent = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / self.tfplan_grafana_agent,
-            plan="grafana-agent-plan",
+            path=self.snap.paths.user_common / "etc" / self.tfplan_grafana_agent_dir,
+            plan=self.tfplan_grafana_agent,
             backend="http",
             data_location=data_location,
         )
-        openstack_plan = "deploy-" + OPENSTACK_TERRAFORM_PLAN
+        tfplan_openstack = f"{OPENSTACK_TERRAFORM_PLAN}-plan"
+        tfplan_openstack_dir = f"deploy-{OPENSTACK_TERRAFORM_PLAN}"
         tfhelper_openstack = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / openstack_plan,
-            plan=OPENSTACK_TERRAFORM_PLAN + "-plan",
+            path=self.snap.paths.user_common / "etc" / tfplan_openstack_dir,
+            plan=tfplan_openstack,
             backend="http",
             data_location=data_location,
         )

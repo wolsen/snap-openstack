@@ -152,28 +152,30 @@ class ProPlugin(EnableDisablePlugin):
         super().__init__(name="pro")
         self.token = None
         self.snap = Snap()
-        self.tfplan = f"deploy-{self.name}"
+        self.tfplan = "ubuntu-pro-plan"
+        self.tfplan_dir = f"deploy-{self.name}"
 
-    def get_terraform_plan_dir_names(self) -> set:
-        """Return all terraform plan directory names."""
-        return {self.tfplan}
+    def manifest(self) -> dict:
+        """Manifest in dict format."""
+        return {
+            "terraform": {
+                self.tfplan: {"source": Path(__file__).parent / "etc" / self.tfplan_dir}
+            }
+        }
 
     def pre_enable(self):
-        manifest_obj = Manifest.load_latest_from_clusterdb()
+        manifest_obj = Manifest.load_latest_from_clusterdb(on_default=True)
         manifest_tfplans = manifest_obj.terraform
-        if manifest_tfplans and manifest_tfplans.get(self.tfplan):
-            src = manifest_tfplans.get(self.tfplan).source
-        else:
-            src = Path(__file__).parent / "etc" / self.tfplan
-        dst = self.snap.paths.user_common / "etc" / self.tfplan
+        src = manifest_tfplans.get(self.tfplan).source
+        dst = self.snap.paths.user_common / "etc" / self.tfplan_dir
         LOG.debug(f"Updating {dst} from {src}...")
         shutil.copytree(src, dst, dirs_exist_ok=True)
 
     def run_enable_plans(self):
         data_location = self.snap.paths.user_data
         tfhelper = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / self.tfplan,
-            plan="ubuntu-pro-plan",
+            path=self.snap.paths.user_common / "etc" / self.tfplan_dir,
+            plan=self.tfplan,
             backend="http",
             data_location=data_location,
         )
@@ -197,8 +199,8 @@ class ProPlugin(EnableDisablePlugin):
     def run_disable_plans(self):
         data_location = self.snap.paths.user_data
         tfhelper = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / self.tfplan,
-            plan="ubuntu-pro-plan",
+            path=self.snap.paths.user_common / "etc" / self.tfplan_dir,
+            plan=self.tfplan,
             backend="http",
             data_location=data_location,
         )

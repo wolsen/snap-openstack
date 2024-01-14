@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
-import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -26,7 +25,8 @@ from sunbeam.commands.upgrades.inter_channel import ChannelUpgradeCoordinator
 from sunbeam.commands.upgrades.intra_channel import LatestInChannelCoordinator
 from sunbeam.jobs.common import run_plan
 from sunbeam.jobs.juju import JujuHelper
-from sunbeam.jobs.manifest import EMPTY_MANIFEST, AddManifestStep, Manifest
+from sunbeam.jobs.manifest import AddManifestStep, Manifest
+from sunbeam.versions import TERRAFORM_DIR_NAMES
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -73,26 +73,22 @@ def refresh(
     # Validate manifest file
     manifest_obj = None
     if clear_manifest:
-        with tempfile.NamedTemporaryFile(mode="w+t") as tmpfile:
-            tmpfile.write(EMPTY_MANIFEST)
-            tmpfile.seek(0)
-            manifest_obj = Manifest.load(manifest_file=Path(tmpfile.name))
-            LOG.debug(f"Manifest object created with no errors: {manifest_obj}")
-            run_plan([AddManifestStep(Path(tmpfile.name))], console)
+        run_plan([AddManifestStep()], console)
     elif manifest:
         manifest_obj = Manifest.load(manifest_file=manifest)
         LOG.debug(f"Manifest object created with no errors: {manifest_obj}")
         run_plan([AddManifestStep(manifest)], console)
     else:
         LOG.debug("Getting latest manifest")
-        manifest_obj = Manifest.load_latest_from_cluserdb()
+        manifest_obj = Manifest.load_latest_from_cluserdb(on_default=True)
         LOG.debug(f"Manifest object created with no errors: {manifest_obj}")
 
-    tfplan = "deploy-openstack"
+    tfplan = "openstack-plan"
+    tfplan_dir = TERRAFORM_DIR_NAMES.get(tfplan)
     data_location = snap.paths.user_data
     tfhelper = TerraformHelper(
-        path=snap.paths.user_common / "etc" / tfplan,
-        plan="openstack-plan",
+        path=snap.paths.user_common / "etc" / tfplan_dir,
+        plan=tfplan,
         backend="http",
         data_location=data_location,
     )

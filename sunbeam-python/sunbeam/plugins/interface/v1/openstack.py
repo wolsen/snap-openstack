@@ -14,7 +14,6 @@
 # limitations under the License.
 
 
-import inspect
 import logging
 import shutil
 from abc import abstractmethod
@@ -116,28 +115,19 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         # Based on terraform plan location, tfplan will be either
         # openstack or plugin name
         if self.tf_plan_location == TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO:
-            self.tfplan = OPENSTACK_TERRAFORM_PLAN
+            self.tfplan = f"{OPENSTACK_TERRAFORM_PLAN}-plan"
+            self.tfplan_dir = f"deploy-{OPENSTACK_TERRAFORM_PLAN}"
         else:
-            self.tfplan = self.name
+            self.tfplan = f"{self.name}-plan"
+            self.tfplan_dir = f"deploy-{self.name}"
 
         self.snap = Snap()
 
     def _get_tf_plan_full_path(self) -> Path:
         """Returns terraform plan absolute path."""
-        manifest_obj = Manifest.load_latest_from_clusterdb()
+        manifest_obj = Manifest.load_latest_from_clusterdb(on_default=True)
         manifest_tfplans = manifest_obj.terraform
-        tfplan_dir = f"deploy-{self.tfplan}"
-        if manifest_tfplans and manifest_tfplans.get(tfplan_dir):
-            return manifest_tfplans.get(tfplan_dir).source
-        elif self.tf_plan_location == TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO:
-            return self.snap.paths.snap / "etc" / tfplan_dir
-        else:
-            plugin_class_dir = Path(inspect.getfile(self.__class__)).parent
-            return plugin_class_dir / "etc" / tfplan_dir
-
-    def _get_plan_name(self) -> str:
-        """Returns plan name in format defined in cluster db."""
-        return f"{self.tfplan}-plan"
+        return manifest_tfplans.get(self.tfplan).source
 
     def is_openstack_control_plane(self) -> bool:
         """Is plugin deploys openstack control plane.
@@ -150,10 +140,6 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         """Return Terraform OpenStack plan location."""
         return self.get_terraform_plans_base_path() / "etc" / "deploy-openstack"
 
-    def get_terraform_plan_dir_names(self) -> set:
-        """Return all terraform plan directory names."""
-        return {f"deploy-{self.tfplan}"}
-
     def pre_checks(self) -> None:
         """Perform preflight checks before enabling the plugin.
 
@@ -163,7 +149,7 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         preflight_checks.append(VerifyBootstrappedCheck())
         run_preflight_checks(preflight_checks, console)
         src = self._get_tf_plan_full_path()
-        dst = self.snap.paths.user_common / "etc" / f"deploy-{self.tfplan}"
+        dst = self.snap.paths.user_common / "etc" / self.tfplan_dir
         LOG.debug(f"Updating {dst} from {src}...")
         shutil.copytree(src, dst, dirs_exist_ok=True)
 
@@ -175,8 +161,8 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
     def get_tfhelper(self):
         data_location = self.snap.paths.user_data
         tfhelper = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / f"deploy-{self.tfplan}",
-            plan=self._get_plan_name(),
+            path=self.snap.paths.user_common / "etc" / self.tfplan_dir,
+            plan=self.tfplan,
             backend="http",
             data_location=data_location,
         )
@@ -463,6 +449,8 @@ class EnableOpenStackApplicationStep(BaseStep, JujuStepHelper):
         except ConfigItemNotFoundException:
             tfvars = {}
         tfvars.update(self.plugin.set_tfvars_on_enable())
+        m = Manifest.load_latest_from_clusterdb(on_default=True)
+        tfvars.update(m.get_tfvars(self.tfhelper.plan))
         update_config(self.client, config_key, tfvars)
         self.tfhelper.write_tfvars(tfvars)
 

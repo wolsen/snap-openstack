@@ -36,6 +36,7 @@ from sunbeam.commands.terraform import (
 )
 from sunbeam.jobs.common import BaseStep, Result, ResultType, read_config, run_plan
 from sunbeam.jobs.juju import JujuHelper
+from sunbeam.jobs.manifest import Manifest
 from sunbeam.plugins.interface.v1.base import PluginRequirement
 from sunbeam.plugins.interface.v1.openstack import (
     OpenStackControlPlanePlugin,
@@ -43,6 +44,7 @@ from sunbeam.plugins.interface.v1.openstack import (
 )
 from sunbeam.plugins.orchestration.plugin import OrchestrationPlugin
 from sunbeam.plugins.secrets.plugin import SecretsPlugin
+from sunbeam.versions import OPENSTACK_CHANNEL
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -87,9 +89,30 @@ class CaasPlugin(OpenStackControlPlanePlugin):
         )
         self.configure_plan = "caas-setup"
 
-    def get_terraform_plan_dir_names(self) -> set:
-        """Return all terraform plan directory names."""
-        return {f"deploy-{self.tfplan}", self.configure_plan}
+    def manifest(self) -> dict:
+        """Manifest in dict format."""
+        return {
+            "charms": {
+                "magnum": {"channel": OPENSTACK_CHANNEL},
+            },
+            "terraform": {
+                self.configure_plan: {
+                    "source": Path(__file__).parent / "etc" / self.configure_plan
+                },
+            },
+        }
+
+    def charm_manifest_tfvar_map(self) -> dict:
+        """Charm manifest terraformvars map."""
+        return {
+            self.tfplan: {
+                "magnum": {
+                    "channel": "magnum-channel",
+                    "revision": "magnum-revision",
+                    "config": "magnum-config",
+                }
+            }
+        }
 
     def set_application_names(self) -> list:
         """Application names handled by the terraform plan."""
@@ -157,7 +180,9 @@ class CaasPlugin(OpenStackControlPlanePlugin):
     @click.command()
     def configure(self):
         """Configure Cloud for Container as a Service use."""
-        src = Path(__file__).parent / "etc" / self.configure_plan
+        manifest_obj = Manifest.load_latest_from_clusterdb(on_default=True)
+        manifest_tfplans = manifest_obj.terraform
+        src = manifest_tfplans.get(self.configure_plan).source
         dst = self.snap.paths.user_common / "etc" / self.configure_plan
         LOG.debug(f"Updating {dst} from {src}...")
         shutil.copytree(src, dst, dirs_exist_ok=True)
