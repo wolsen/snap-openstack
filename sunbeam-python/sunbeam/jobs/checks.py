@@ -57,6 +57,72 @@ class Check:
         return True
 
 
+class DiagnosticsResult:
+    def __init__(
+        self,
+        name: str,
+        passed: bool,
+        message: str | None = None,
+        diagnostics: str | None = None,
+        **details: dict,
+    ):
+        self.name = name
+        self.passed = passed
+        self.message = message
+        self.diagnostics = diagnostics
+        self.details = details
+
+    def to_dict(self) -> dict:
+        result = {
+            "name": self.name,
+            "passed": self.passed,
+            **self.details,
+        }
+        if self.message:
+            result["message"] = self.message
+        if self.diagnostics:
+            result["diagnostics"] = self.diagnostics
+        return result
+
+    @classmethod
+    def fail(
+        cls,
+        name: str,
+        message: str | None = None,
+        diagnostics: str | None = None,
+        **details: dict,
+    ):
+        return cls(name, False, message, diagnostics, **details)
+
+    @classmethod
+    def success(
+        cls,
+        name: str,
+        message: str | None = None,
+        diagnostics: str | None = None,
+        **details: dict,
+    ):
+        return cls(name, True, message, diagnostics, **details)
+
+
+class DiagnosticsCheck:
+    """Base class for Diagnostics checks."""
+
+    name: str
+    description: str
+
+    def __init__(self, name: str, description: str = ""):
+        self.name = name
+        self.description = description
+
+    def run(self) -> DiagnosticsResult | list[DiagnosticsResult]:
+        """Run the check logic here.
+
+        Return list of DiagnosticsResult.
+        """
+        ...
+
+
 class JujuSnapCheck(Check):
     """Check if juju snap is installed or not."""
 

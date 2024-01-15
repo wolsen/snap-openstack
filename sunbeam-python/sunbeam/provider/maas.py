@@ -15,6 +15,9 @@
 
 
 from collections import Counter
+from datetime import datetime
+import logging
+import sys
 
 import click
 import yaml
@@ -23,10 +26,16 @@ from rich.table import Table
 from snaphelpers import Snap
 
 from sunbeam.commands import resize as resize_cmds
-from sunbeam.commands.deployment import deployment_path
+from sunbeam.commands.deployment import deployment_path, get_active_deployment
 from sunbeam.commands.maas import (
     AddMaasDeployment,
+    DeploymentTopologyCheck,
     MaasClient,
+    DeploymentMachinesCheck,
+    MachineNetworkCheck,
+    MachineRequirementsCheck,
+    MachineRolesCheck,
+    MachineStorageCheck,
     Networks,
     get_machine,
     get_network_mapping,
@@ -34,10 +43,18 @@ from sunbeam.commands.maas import (
     list_machines_by_zone,
     list_spaces,
     map_space,
+    str_presenter,
     unmap_space,
 )
-from sunbeam.jobs.checks import LocalShareCheck, VerifyClusterdNotBootstrappedCheck
+from sunbeam.jobs.checks import (
+    DiagnosticsCheck,
+    DiagnosticsResult,
+    LocalShareCheck,
+    VerifyClusterdNotBootstrappedCheck,
+)
 from sunbeam.jobs.common import (
+    CLICK_FAIL,
+    CLICK_OK,
     CONTEXT_SETTINGS,
     FORMAT_TABLE,
     FORMAT_YAML,
@@ -47,6 +64,7 @@ from sunbeam.jobs.common import (
 from sunbeam.provider.base import ProviderBase
 from sunbeam.utils import CatchGroup
 
+LOG = logging.getLogger(__name__)
 console = Console()
 
 
@@ -100,6 +118,7 @@ class MaasProvider(ProviderBase):
         deployment.add_command(machine)
         machine.add_command(list_machines_cmd)
         machine.add_command(show_machine_cmd)
+        machine.add_command(validate_machine_cmd)
         deployment.add_command(zone)
         zone.add_command(list_zones_cmd)
         deployment.add_command(space)
@@ -108,6 +127,7 @@ class MaasProvider(ProviderBase):
         space.add_command(unmap_space_cmd)
         deployment.add_command(network)
         network.add_command(list_networks_cmd)
+        deployment.add_command(validate_deployment_cmd)
 
 
 @click.command()
@@ -397,4 +417,128 @@ def list_networks_cmd(format: str):
             table.add_row(network, space or "[italic]<unmapped>[italic]")
         console.print(table)
     elif format == FORMAT_YAML:
-        console.print(mapping, end="")
+        console.print(yaml.dump(mapping), end="")
+
+
+def _run_maas_checks(checks: list[DiagnosticsCheck], console: Console) -> list[dict]:
+    """Run checks sequentially.
+
+    Runs each checks, logs whether the check passed or failed.
+    Prints to console every result.
+    """
+    check_results = []
+    for check in checks:
+        LOG.debug(f"Starting check {check.name!r}")
+        message = f"{check.description}..."
+        with console.status(message):
+            results = check.run()
+            if not results:
+                raise ValueError(f"{check.name!r} returned no results.")
+
+            if isinstance(results, DiagnosticsResult):
+                results = [results]
+
+            for result in results:
+                LOG.debug(f"{result.name=!r}, {result.passed=!r}, {result.message=!r}")
+                console.print(
+                    message,
+                    result.message,
+                    "-",
+                    CLICK_OK if result.passed else CLICK_FAIL,
+                )
+                check_results.append(result.to_dict())
+    return check_results
+
+
+def _run_maas_meta_checks(
+    checks: list[DiagnosticsCheck], console: Console
+) -> list[dict]:
+    """Run checks sequentially.
+
+    Runs each checks, logs whether the check passed or failed.
+    Only prints to console last check result.
+    """
+    check_results = []
+
+    for check in checks:
+        LOG.debug(f"Starting check {check.name!r}")
+        message = f"{check.description}..."
+        with console.status(message):
+            results = check.run()
+            if not results:
+                raise ValueError(f"{check.name!r} returned no results.")
+            if isinstance(results, DiagnosticsResult):
+                results = [results]
+            for result in results:
+                check_results.append(result.to_dict())
+            console.print(message, CLICK_OK if results[-1].passed else CLICK_FAIL)
+    return check_results
+
+
+def _save_report(snap: Snap, name: str, report: list[dict]) -> str:
+    """Save report to filesystem."""
+    reports = snap.paths.user_common / "reports"
+    if not reports.exists():
+        reports.mkdir(parents=True)
+    report_path = reports / f"{name}-{datetime.now():%Y%m%d-%H%M%S.%f}.yaml"
+    with report_path.open("w") as fd:
+        yaml.add_representer(str, str_presenter)
+        yaml.dump(report, fd)
+    return str(report_path.absolute())
+
+
+@click.command("validate")
+@click.argument("machine", type=str)
+def validate_machine_cmd(machine: str):
+    """Validate machine configuration."""
+    preflight_checks = [
+        LocalShareCheck(),
+    ]
+    run_preflight_checks(preflight_checks, console)
+
+    snap = Snap()
+    client = MaasClient.active(snap)
+    with console.status(f"Fetching {machine} ..."):
+        try:
+            machine_obj = get_machine(client, machine)
+            LOG.debug(f"{machine_obj=!r}")
+        except ValueError as e:
+            console.print("Error:", e)
+            sys.exit(1)
+    validation_checks = [
+        MachineRolesCheck(machine_obj),
+        MachineNetworkCheck(snap, machine_obj),
+        MachineStorageCheck(machine_obj),
+        MachineRequirementsCheck(machine_obj),
+    ]
+    report = _run_maas_checks(validation_checks, console)
+    report_path = _save_report(snap, "validate-machine-" + machine, report)
+    console.print(f"Report saved to {report_path!r}")
+
+
+@click.command("validate")
+def validate_deployment_cmd():
+    """Validate deployment."""
+    preflight_checks = [
+        LocalShareCheck(),
+    ]
+    run_preflight_checks(preflight_checks, console)
+    snap = Snap()
+    path = deployment_path(snap)
+    deployment = get_active_deployment(path)
+    client = MaasClient.active(snap)
+    with console.status(f"Fetching {deployment['name']} machines ..."):
+        try:
+            machines = list_machines(client)
+        except ValueError as e:
+            console.print("Error:", e)
+            sys.exit(1)
+    validation_checks = [
+        DeploymentMachinesCheck(snap, machines),
+        DeploymentTopologyCheck(snap, machines),
+    ]
+    report = _run_maas_meta_checks(validation_checks, console)
+    report_path = _save_report(
+        snap, "validate-deployment-" + deployment["name"], report
+    )
+    console.print(f"Report saved to {report_path!r}")
