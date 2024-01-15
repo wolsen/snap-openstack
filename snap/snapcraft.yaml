@@ -110,7 +110,7 @@ parts:
     source: ./sunbeam-microcluster
     source-type: local
     build-snaps:
-      - go
+      - go/1.21/stable
     build-environment:
       - GOFLAGS: "-mod=readonly"
     override-build: |

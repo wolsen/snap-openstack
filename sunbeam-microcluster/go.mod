@@ -1,6 +1,6 @@
 module github.com/canonical/snap-openstack/sunbeam-microcluster
 
-go 1.18
+go 1.21
 
 require (
 	github.com/canonical/lxd v0.0.0-20230705090120-570f7071eeb2
