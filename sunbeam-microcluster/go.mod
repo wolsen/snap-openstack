@@ -1,4 +1,4 @@
-module github.com/openstack-snaps/snap-openstack/sunbeam-microcluster
+module github.com/canonical/snap-openstack/sunbeam-microcluster
 
 go 1.18
 

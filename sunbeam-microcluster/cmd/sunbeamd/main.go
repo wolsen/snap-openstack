@@ -13,9 +13,9 @@ import (
 	"github.com/canonical/microcluster/state"
 	"github.com/spf13/cobra"
 
-	"github.com/openstack-snaps/snap-openstack/sunbeam-microcluster/api"
-	"github.com/openstack-snaps/snap-openstack/sunbeam-microcluster/database"
-	"github.com/openstack-snaps/snap-openstack/sunbeam-microcluster/version"
+	"github.com/canonical/snap-openstack/sunbeam-microcluster/api"
+	"github.com/canonical/snap-openstack/sunbeam-microcluster/database"
+	"github.com/canonical/snap-openstack/sunbeam-microcluster/version"
 )
 
 // Debug indicates whether to log debug messages or not.
