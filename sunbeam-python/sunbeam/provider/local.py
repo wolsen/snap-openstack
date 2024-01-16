@@ -25,6 +25,7 @@ from rich.table import Table
 from snaphelpers import Snap
 
 from sunbeam import utils
+from sunbeam.commands import refresh as refresh_cmds
 from sunbeam.commands import resize as resize_cmds
 from sunbeam.commands.bootstrap_state import SetBootstrapped
 from sunbeam.commands.clusterd import (
@@ -140,6 +141,7 @@ class LocalProvider(ProviderBase):
         cluster.add_command(list)
         cluster.add_command(remove)
         cluster.add_command(resize_cmds.resize)
+        cluster.add_command(refresh_cmds.refresh)
 
 
 @click.command()

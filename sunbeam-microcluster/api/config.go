@@ -11,7 +11,7 @@ import (
 	"github.com/canonical/microcluster/state"
 	"github.com/gorilla/mux"
 
-	"github.com/openstack-snaps/snap-openstack/sunbeam-microcluster/sunbeam"
+	"github.com/canonical/snap-openstack/sunbeam-microcluster/sunbeam"
 )
 
 // /1.0/config/<name> endpoint.

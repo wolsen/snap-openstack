@@ -18,13 +18,16 @@ import base64
 import json
 import logging
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from functools import wraps
 from pathlib import Path
-from typing import Awaitable, Dict, List, Optional, TypeVar, cast
+from typing import Awaitable, Dict, List, Optional, TypedDict, TypeVar, cast
 
+import pytz
 import yaml
 from juju import utils as juju_utils
 from juju.application import Application
+from juju.charmhub import CharmHub
 from juju.client import client as jujuClient
 from juju.controller import Controller
 from juju.errors import (
@@ -136,6 +139,20 @@ class UnsupportedKubeconfigException(JujuException):
     pass
 
 
+class ChannelUpdate(TypedDict):
+    """Channel Update step.
+
+    Defines a channel that needs updating to and the expected
+    state of the charm afterwards.
+
+    channel: Channel to upgrade to
+    expected_status: map of accepted statuses for "workload" and "agent"
+    """
+
+    channel: str
+    expected_status: Dict[str, List[str]]
+
+
 @dataclass
 class JujuAccount:
     user: str
@@ -152,7 +169,8 @@ class JujuAccount:
                 return JujuAccount(**yaml.safe_load(file))
         except FileNotFoundError as e:
             raise JujuAccountNotFound(
-                "Juju user account not found, is node part of sunbeam cluster yet?"
+                "Juju user account not found, is node part of sunbeam "
+                f"cluster yet? {data_file}"
             ) from e
 
     def write(self, data_location: Path):
@@ -535,6 +553,11 @@ class JujuHelper:
         LOG.debug(f"Application {name!r} is in status: {application.status!r}")
 
         try:
+            LOG.debug(
+                "Waiting for app status to be: {} {}".format(
+                    model_impl.applications[name].status, accepted_status
+                )
+            )
             await model_impl.block_until(
                 lambda: model_impl.applications[name].status in accepted_status,
                 timeout=timeout,
@@ -708,3 +731,94 @@ class JujuHelper:
         """
         model_impl = await self.get_model(model)
         await model_impl.applications[app].set_config(config)
+
+    @controller
+    async def update_applications_channel(
+        self,
+        model: str,
+        updates: Dict[str, ChannelUpdate],
+        timeout: Optional[int] = None,
+    ):
+        """Upgrade charm to new channel
+
+        :model: Name of the model to wait for readiness
+        :application: Application to update
+        :channel: New channel
+        """
+        LOG.debug(f"Updates: {updates}")
+        model_impl = await self.get_model(model)
+        timestamp = pytz.UTC.localize(datetime.now())
+        LOG.debug(f"Base Timestamp {timestamp}")
+
+        coros = [
+            model_impl.applications[app_name].upgrade_charm(channel=config["channel"])
+            for app_name, config in updates.items()
+        ]
+        await asyncio.gather(*coros)
+
+        def condition() -> bool:
+            """Computes readiness for unit"""
+            statuses = {}
+            for app_name, config in updates.items():
+                _app = model_impl.applications.get(
+                    app_name,
+                )
+                for unit in _app.units:
+                    statuses[unit.entity_id] = bool(unit.agent_status_since > timestamp)
+            return all(statuses.values())
+
+        try:
+            LOG.debug("Waiting for workload status change")
+            await model_impl.block_until(
+                condition,
+                timeout=timeout,
+            )
+            LOG.debug("Waiting for units ready")
+            for app_name, config in updates.items():
+                _app = model_impl.applications.get(
+                    app_name,
+                )
+                for unit in _app.units:
+                    await self.wait_unit_ready(
+                        unit.entity_id, model, accepted_status=config["expected_status"]
+                    )
+        except asyncio.TimeoutError as e:
+            raise TimeoutException(
+                f"Timed out while waiting for unit {name!r} to be ready"
+            ) from e
+
+    @controller
+    async def get_charm_channel(self, application_name: str, model: str) -> str:
+        """Get the charm-channel from a deployed application.
+
+        :param application_list: Name of application
+        :param model: Name of model
+        """
+        _status = await self.get_model_status_full(model)
+        status = json.loads(_status.to_json())
+        return status["applications"].get(application_name, {}).get("charm-channel")
+
+    @controller
+    async def charm_refresh(self, application_name: str, model: str):
+        """Update application to latest charm revision in current channel.
+
+        :param application_list: Name of application
+        :param model: Name of model
+        """
+        app = await self.get_application(application_name, model)
+        await app.refresh()
+
+    @controller
+    async def get_available_charm_revision(
+        self, model: str, charm_name: str, channel: str
+    ) -> int:
+        """Find the latest available revision of a charm in a given channel
+
+        :param model: Name of model
+        :param charm_name: Name of charm to look up
+        :param channel: Channel to lookup charm in
+        """
+        model_impl = await self.get_model(model)
+        available_charm_data = await CharmHub(model_impl).info(charm_name, channel)
+        version = available_charm_data["channel-map"][channel]["revision"]["version"]
+        return int(version)
