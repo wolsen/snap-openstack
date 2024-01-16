@@ -46,6 +46,7 @@ apps:
       - ssh-keys
       - dot-config-openstack
       - etc-openstack
+      - dot-local-share-openstack
     environment:
       PATH: $PATH:$SNAP/juju/bin
   terraform:
@@ -255,6 +256,11 @@ plugs:
     interface: personal-files
     write:
       - $HOME/.local/share/juju
+    
+  dot-local-share-openstack:
+    interface: personal-files
+    write:
+      - $HOME/.local/share/openstack
 
   dot-config-openstack:
     interface: personal-files

@@ -18,6 +18,7 @@ import enum
 import json
 import logging
 import os
+from pathlib import Path
 from typing import List, Optional, Type
 
 import click
@@ -31,12 +32,19 @@ from sunbeam.clusterd.client import Client
 LOG = logging.getLogger(__name__)
 RAM_16_GB_IN_KB = 16 * 1024 * 1024
 RAM_32_GB_IN_KB = 32 * 1024 * 1024
+RAM_32_GB_IN_MB = 32 * 1000
 
 # Formatting related constants
 FORMAT_TABLE = "table"
 FORMAT_YAML = "yaml"
 FORMAT_DEFAULT = "default"
 FORMAT_VALUE = "value"
+
+CONTEXT_SETTINGS = dict(help_option_names=["-h", "--help"])
+SHARE_PATH = Path(".local/share/openstack/")
+
+CLICK_OK = "[green]OK[/green]"
+CLICK_FAIL = "[red]FAIL[/red]"
 
 
 class Role(enum.Enum):
