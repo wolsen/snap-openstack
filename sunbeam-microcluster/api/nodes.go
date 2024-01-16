@@ -19,17 +19,17 @@ import (
 var nodesCmd = rest.Endpoint{
 	Path: "nodes",
 
-	Get:  rest.EndpointAction{Handler: cmdNodesGetAll, ProxyTarget: true},
-	Post: rest.EndpointAction{Handler: cmdNodesPost, ProxyTarget: true},
+	Get:  rest.EndpointAction{Handler: cmdNodesGetAll, ProxyTarget: true, AllowUntrusted: true},
+	Post: rest.EndpointAction{Handler: cmdNodesPost, ProxyTarget: true, AllowUntrusted: true},
 }
 
 // /1.0/nodes/<name> endpoint.
 var nodeCmd = rest.Endpoint{
 	Path: "nodes/{name}",
 
-	Get:    rest.EndpointAction{Handler: cmdNodesGet, ProxyTarget: true},
-	Put:    rest.EndpointAction{Handler: cmdNodesPut, ProxyTarget: true},
-	Delete: rest.EndpointAction{Handler: cmdNodesDelete, ProxyTarget: true},
+	Get:    rest.EndpointAction{Handler: cmdNodesGet, ProxyTarget: true, AllowUntrusted: true},
+	Put:    rest.EndpointAction{Handler: cmdNodesPut, ProxyTarget: true, AllowUntrusted: true},
+	Delete: rest.EndpointAction{Handler: cmdNodesDelete, ProxyTarget: true, AllowUntrusted: true},
 }
 
 func cmdNodesGetAll(s *state.State, r *http.Request) response.Response {
