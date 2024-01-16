@@ -9,8 +9,8 @@ import (
 
 	"github.com/canonical/microcluster/state"
 
-	"github.com/openstack-snaps/snap-openstack/sunbeam-microcluster/api/types"
-	"github.com/openstack-snaps/snap-openstack/sunbeam-microcluster/database"
+	"github.com/canonical/snap-openstack/sunbeam-microcluster/api/types"
+	"github.com/canonical/snap-openstack/sunbeam-microcluster/database"
 )
 
 // ListNodes return all the nodes, filterable by role (Optional)
