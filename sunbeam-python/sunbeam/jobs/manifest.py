@@ -15,6 +15,7 @@
 
 import copy
 import logging
+import shutil
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -26,8 +27,19 @@ from snaphelpers import Snap
 
 from sunbeam import utils
 from sunbeam.clusterd.client import Client as clusterClient
-from sunbeam.clusterd.service import ManifestItemNotFoundException
-from sunbeam.jobs.common import BaseStep, Result, ResultType, Status
+from sunbeam.clusterd.service import (
+    ConfigItemNotFoundException,
+    ManifestItemNotFoundException,
+)
+from sunbeam.commands.terraform import TerraformHelper
+from sunbeam.jobs.common import (
+    BaseStep,
+    Result,
+    ResultType,
+    Status,
+    read_config,
+    update_config,
+)
 from sunbeam.jobs.plugin import PluginManager
 from sunbeam.versions import (
     CHARM_MANIFEST_TFVARS_MAP,
@@ -54,13 +66,15 @@ class CharmsManifest:
     revision: Optional[int] = Field(
         default=None, description="Revision number of the charm"
     )
-    rocks: Optional[Dict[str, str]] = Field(
-        default=None, description="Rock images for the charm"
-    )
+    # rocks: Optional[Dict[str, str]] = Field(
+    #     default=None, description="Rock images for the charm"
+    # )
     config: Optional[Dict[str, Any]] = Field(
         default=None, description="Config options of the charm"
     )
-    source: Optional[Path] = Field(default=None, description="Local charm bundle path")
+    # source: Optional[Path] = Field(
+    #     default=None, description="Local charm bundle path"
+    # )
 
 
 @dataclass
@@ -78,7 +92,7 @@ class Manifest:
     def load(cls, manifest_file: Path, on_default: bool = False) -> "Manifest":
         """Load the manifest with the provided file input"""
         if on_default:
-            return cls.load_on_default()
+            return cls.load_on_default(manifest_file)
 
         with manifest_file.open() as file:
             return Manifest(**yaml.safe_load(file))
@@ -171,17 +185,62 @@ class Manifest:
 
     def __post_init__(self):
         LOG.debug("Calling __post__init__")
-        manifest_dict = self.get_default_manifest_as_dict()
+        self.default_manifest_dict = self.get_default_manifest_as_dict()
         # Add custom validations
-        self.validate_terraform_keys(manifest_dict)
+        self.validate_terraform_keys(self.default_manifest_dict)
 
-    def get_tfvars(self, plan: str) -> dict:
+        # Add object variables to store
+        self.tf_helpers = {}
+        self.snap = Snap()
+        self.data_location = self.snap.paths.user_data
+        self.client = clusterClient()
+
+    # Terraform helper classes
+    def get_tfhelper(self, tfplan: str) -> TerraformHelper:
+        if self.tf_helpers.get(tfplan):
+            return self.tf_helpers.get(tfplan)
+
+        tfplan_dir = TERRAFORM_DIR_NAMES.get(tfplan, tfplan)
+        src = self.terraform.get(tfplan).source
+        dst = self.snap.paths.user_common / "etc" / tfplan_dir
+        LOG.debug(f"Updating {dst} from {src}...")
+        shutil.copytree(src, dst, dirs_exist_ok=True)
+
+        self.tf_helpers[tfplan] = TerraformHelper(
+            path=self.snap.paths.user_common / "etc" / tfplan_dir,
+            plan=tfplan,
+            backend="http",
+            data_location=self.data_location,
+        )
+
+        return self.tf_helpers[tfplan]
+
+    def update_tfvar_and_apply_tf(
+        self, tfplan: str, tfvar_config: Optional[str] = None, extra_tfvars: dict = {}
+    ) -> None:
+        tfvars = {}
+        if tfvar_config:
+            try:
+                tfvars = read_config(self.client, tfvar_config)
+            except ConfigItemNotFoundException:
+                pass
+
+        tfvars.update(extra_tfvars)
+        tfvars.update(self.get_tfvars(tfplan))
+        if tfvar_config:
+            update_config(self.client, tfvar_config, tfvars)
+
+        tfhelper = self.get_tfhelper(tfplan)
+        tfhelper.write_tfvars(tfvars)
+        tfhelper.apply()
+
+    def get_tfvars(self, tfplan: str) -> dict:
         tfvars = {}
         tfvar_map = copy.deepcopy(CHARM_MANIFEST_TFVARS_MAP)
         tfvar_map_plugin = PluginManager().get_all_plugin_manfiest_tfvar_map()
         utils.merge_dict(tfvar_map, tfvar_map_plugin)
 
-        for charm, value in tfvar_map.get(plan, {}).items():
+        for charm, value in tfvar_map.get(tfplan, {}).items():
             manifest_charm = asdict(self.charms.get(charm))
             for key, val in value.items():
                 if manifest_charm.get(key):

@@ -19,7 +19,6 @@ Plugin to deploy and manage observability, powered by COS Lite.
 """
 
 import logging
-import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -438,9 +437,18 @@ class ObservabilityPlugin(EnableDisablePlugin):
         self.tfplan_cos_dir = "deploy-cos"
         self.tfplan_grafana_agent = "grafana-agent-plan"
         self.tfplan_grafana_agent_dir = "deploy-grafana-agent"
+        self._manifest = None
 
-    def manifest(self) -> dict:
-        """Manifest in dict format."""
+    @property
+    def manifest(self) -> Manifest:
+        if self._manifest:
+            return self._manifest
+
+        self._manifest = Manifest.load_latest_from_clusterdb(on_default=True)
+        return self._manifest
+
+    def manifest_part(self) -> dict:
+        """Manifest plugin part in dict format."""
         return {
             "terraform": {
                 self.tfplan_cos: {
@@ -454,43 +462,15 @@ class ObservabilityPlugin(EnableDisablePlugin):
             }
         }
 
-    def pre_enable(self):
-        manifest_obj = Manifest.load_latest_from_clusterdb(on_default=True)
-        manifest_tfplans = manifest_obj.terraform
-        src = manifest_tfplans.get(self.tfplan_cos).source
-        dst = self.snap.paths.user_common / "etc" / self.tfplan_cos_dir
-        LOG.debug(f"Updating {dst} from {src}...")
-        shutil.copytree(src, dst, dirs_exist_ok=True)
-
-        src = manifest_tfplans.get(self.tfplan_grafana_agent).source
-        dst = self.snap.paths.user_common / "etc" / self.tfplan_grafana_agent_dir
-        LOG.debug(f"Updating {dst} from {src}...")
-        shutil.copytree(src, dst, dirs_exist_ok=True)
-
     def run_enable_plans(self):
         data_location = self.snap.paths.user_data
-        tfhelper_cos = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / self.tfplan_cos_dir,
-            plan=self.tfplan_cos,
-            backend="http",
-            data_location=data_location,
-        )
-        tfhelper_grafana_agent = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / self.tfplan_grafana_agent_dir,
-            plan=self.tfplan_grafana_agent,
-            backend="http",
-            data_location=data_location,
-        )
-        tfplan_openstack = f"{OPENSTACK_TERRAFORM_PLAN}-plan"
-        tfplan_openstack_dir = f"deploy-{OPENSTACK_TERRAFORM_PLAN}"
-        tfhelper_openstack = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / tfplan_openstack_dir,
-            plan=tfplan_openstack,
-            backend="http",
-            data_location=data_location,
-        )
-
         jhelper = JujuHelper(data_location)
+
+        tfhelper_cos = self.manifest.get_tfhelper(self.tfplan_cos)
+        tfhelper_grafana_agent = self.manifest.get_tfhelper(self.tfplan_grafana_agent)
+        tfhelper_openstack = self.manifest.get_tfhelper(
+            f"{OPENSTACK_TERRAFORM_PLAN}-plan"
+        )
 
         cos_plan = [
             TerraformInitStep(tfhelper_cos),
@@ -509,33 +489,15 @@ class ObservabilityPlugin(EnableDisablePlugin):
 
         click.echo("Observability enabled.")
 
-    def pre_disable(self):
-        self.pre_enable()
-
     def run_disable_plans(self):
         data_location = self.snap.paths.user_data
-        tfhelper_cos = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / self.tfplan_cos_dir,
-            plan=self.tfplan_cos,
-            backend="http",
-            data_location=data_location,
-        )
-        tfhelper_grafana_agent = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / self.tfplan_grafana_agent_dir,
-            plan=self.tfplan_grafana_agent,
-            backend="http",
-            data_location=data_location,
-        )
-        tfplan_openstack = f"{OPENSTACK_TERRAFORM_PLAN}-plan"
-        tfplan_openstack_dir = f"deploy-{OPENSTACK_TERRAFORM_PLAN}"
-        tfhelper_openstack = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / tfplan_openstack_dir,
-            plan=tfplan_openstack,
-            backend="http",
-            data_location=data_location,
-        )
-
         jhelper = JujuHelper(data_location)
+
+        tfhelper_cos = self.manifest.get_tfhelper(self.tfplan_cos)
+        tfhelper_grafana_agent = self.manifest.get_tfhelper(self.tfplan_grafana_agent)
+        tfhelper_openstack = self.manifest.get_tfhelper(
+            f"{OPENSTACK_TERRAFORM_PLAN}-plan"
+        )
 
         cos_plan = [
             TerraformInitStep(tfhelper_cos),

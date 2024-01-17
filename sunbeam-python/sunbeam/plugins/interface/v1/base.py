@@ -189,7 +189,7 @@ class BasePlugin(ABC):
 
         return Version(version)
 
-    def manifest(self) -> dict:
+    def manifest_part(self) -> dict:
         """Return manifest part of the plugin.
 
         Define manifest charms involved and default values for charm attributes

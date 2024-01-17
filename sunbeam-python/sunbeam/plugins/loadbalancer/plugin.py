@@ -36,8 +36,8 @@ class LoadbalancerPlugin(OpenStackControlPlanePlugin):
             tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO,
         )
 
-    def manifest(self) -> dict:
-        """Manifest in dict format."""
+    def manifest_part(self) -> dict:
+        """Manifest plugin part in dict format."""
         return {"charms": {"octavia": {"channel": OPENSTACK_CHANNEL}}}
 
     def charm_manifest_tfvar_map(self) -> dict:
@@ -63,7 +63,6 @@ class LoadbalancerPlugin(OpenStackControlPlanePlugin):
     def set_tfvars_on_enable(self) -> dict:
         """Set terraform variables to enable the application."""
         return {
-            "octavia-channel": "2023.2/edge",
             "enable-octavia": True,
             **self.add_horizon_plugin_to_tfvars("octavia"),
         }

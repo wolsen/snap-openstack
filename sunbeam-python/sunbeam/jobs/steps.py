@@ -23,7 +23,7 @@ from sunbeam.clusterd.service import (
     ConfigItemNotFoundException,
     NodeNotExistInClusterException,
 )
-from sunbeam.commands.terraform import TerraformException, TerraformHelper
+from sunbeam.commands.terraform import TerraformException
 from sunbeam.jobs.common import BaseStep, Result, ResultType, read_config, update_config
 from sunbeam.jobs.juju import (
     ApplicationNotFoundException,
@@ -41,21 +41,23 @@ class DeployMachineApplicationStep(BaseStep):
 
     def __init__(
         self,
-        tfhelper: TerraformHelper,
+        manifest: Manifest,
         jhelper: JujuHelper,
         config: str,
         application: str,
         model: str,
+        tfplan: str,
         banner: str = "",
         description: str = "",
     ):
         super().__init__(banner, description)
-        self.tfhelper = tfhelper
+        self.manifest = manifest
         self.jhelper = jhelper
         self.config = config
         self.application = application
         self.model = model
         self.client = Client()
+        self.tfplan = tfplan
 
     def extra_tfvars(self) -> dict:
         return {}
@@ -86,19 +88,11 @@ class DeployMachineApplicationStep(BaseStep):
             LOG.debug(str(e))
 
         try:
-            tfvars = read_config(self.client, self.config)
-        except ConfigItemNotFoundException:
-            tfvars = {}
-
-        tfvars.update(self.extra_tfvars())
-        m = Manifest.load_latest_from_clusterdb(on_default=True)
-        tfvars.update(m.get_tfvars(self.tfhelper.plan))
-        tfvars.update({"machine_ids": machine_ids})
-        update_config(self.client, self.config, tfvars)
-        self.tfhelper.write_tfvars(tfvars)
-
-        try:
-            self.tfhelper.apply()
+            extra_tfvars = self.extra_tfvars()
+            extra_tfvars.update({"machine_ids": machine_ids})
+            self.manifest.update_tfvar_and_apply_tf(
+                tfplan=self.tfplan, tfvar_config=self.config, extra_tfvars=extra_tfvars
+            )
         except TerraformException as e:
             return Result(ResultType.FAILED, str(e))
 

@@ -15,7 +15,6 @@
 
 
 import logging
-import shutil
 from pathlib import Path
 from typing import List, Optional
 
@@ -62,7 +61,7 @@ from sunbeam.commands.sunbeam_machine import (
     AddSunbeamMachineUnitStep,
     DeploySunbeamMachineApplicationStep,
 )
-from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
+from sunbeam.commands.terraform import TerraformInitStep
 from sunbeam.jobs.checks import (
     DaemonGroupCheck,
     JujuSnapCheck,
@@ -82,7 +81,6 @@ from sunbeam.jobs.common import (
 )
 from sunbeam.jobs.juju import CONTROLLER, JujuHelper
 from sunbeam.jobs.manifest import AddManifestStep, Manifest
-from sunbeam.versions import TERRAFORM_DIR_NAMES
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -172,24 +170,6 @@ def bootstrap(
 
     data_location = snap.paths.user_data
 
-    # NOTE: install to user writable location
-    tfplans = ["sunbeam-machine-plan"]
-    if is_control_node:
-        tfplans.extend(
-            [
-                "microk8s-plan",
-                "microceph-plan",
-                "openstack-plan",
-                "hypervisor-plan",
-            ]
-        )
-    manifest_tfplans = manifest_obj.terraform
-    for tfplan in tfplans:
-        src = manifest_tfplans.get(tfplan).source
-        dst = snap.paths.user_common / "etc" / TERRAFORM_DIR_NAMES.get(tfplan, tfplan)
-        LOG.debug(f"Updating {dst} from {src}...")
-        shutil.copytree(src, dst, dirs_exist_ok=True)
-
     preflight_checks = []
     preflight_checks.append(SystemRequirementsCheck())
     preflight_checks.append(JujuSnapCheck())
@@ -233,57 +213,27 @@ def bootstrap(
     plan3.append(SaveJujuUserLocallyStep(fqdn, data_location))
     run_plan(plan3, console)
 
-    tfhelper = TerraformHelper(
-        path=snap.paths.user_common / "etc" / "deploy-microk8s",
-        plan="microk8s-plan",
-        backend="http",
-        data_location=data_location,
-    )
-    tfhelper_openstack_deploy = TerraformHelper(
-        path=snap.paths.user_common / "etc" / "deploy-openstack",
-        plan="openstack-plan",
-        backend="http",
-        data_location=data_location,
-    )
-    tfhelper_hypervisor_deploy = TerraformHelper(
-        path=snap.paths.user_common / "etc" / "deploy-openstack-hypervisor",
-        plan="hypervisor-plan",
-        backend="http",
-        data_location=data_location,
-    )
-    tfhelper_microceph_deploy = TerraformHelper(
-        path=snap.paths.user_common / "etc" / "deploy-microceph",
-        plan="microceph-plan",
-        backend="http",
-        data_location=data_location,
-    )
-    tfhelper_sunbeam_machine = TerraformHelper(
-        path=snap.paths.user_common / "etc" / "deploy-sunbeam-machine",
-        plan="sunbeam-machine-plan",
-        backend="http",
-        data_location=data_location,
-    )
     jhelper = JujuHelper(data_location)
 
     plan4 = []
     plan4.append(RegisterJujuUserStep(fqdn, CONTROLLER, data_location, replace=True))
     # Deploy sunbeam machine charm
-    plan4.append(TerraformInitStep(tfhelper_sunbeam_machine))
-    plan4.append(DeploySunbeamMachineApplicationStep(tfhelper_sunbeam_machine, jhelper))
+    plan4.append(TerraformInitStep(manifest_obj.get_tfhelper("sunbeam-machine-plan")))
+    plan4.append(DeploySunbeamMachineApplicationStep(manifest_obj, jhelper))
     plan4.append(AddSunbeamMachineUnitStep(fqdn, jhelper))
     # Deploy Microk8s application during bootstrap irrespective of node role.
-    plan4.append(TerraformInitStep(tfhelper))
+    plan4.append(TerraformInitStep(manifest_obj.get_tfhelper("microk8s-plan")))
     plan4.append(
         DeployMicrok8sApplicationStep(
-            tfhelper, jhelper, accept_defaults=accept_defaults, preseed_file=preseed
+            manifest_obj, jhelper, accept_defaults=accept_defaults, preseed_file=preseed
         )
     )
     plan4.append(AddMicrok8sUnitStep(fqdn, jhelper))
     plan4.append(StoreMicrok8sConfigStep(jhelper))
     plan4.append(AddMicrok8sCloudStep(jhelper))
     # Deploy Microceph application during bootstrap irrespective of node role.
-    plan4.append(TerraformInitStep(tfhelper_microceph_deploy))
-    plan4.append(DeployMicrocephApplicationStep(tfhelper_microceph_deploy, jhelper))
+    plan4.append(TerraformInitStep(manifest_obj.get_tfhelper("microceph-plan")))
+    plan4.append(DeployMicrocephApplicationStep(manifest_obj, jhelper))
 
     if is_storage_node:
         plan4.append(AddMicrocephUnitStep(fqdn, jhelper))
@@ -294,12 +244,8 @@ def bootstrap(
         )
 
     if is_control_node:
-        plan4.append(TerraformInitStep(tfhelper_openstack_deploy))
-        plan4.append(
-            DeployControlPlaneStep(
-                tfhelper_openstack_deploy, jhelper, topology, database
-            )
-        )
+        plan4.append(TerraformInitStep(manifest_obj.get_tfhelper("openstack-plan")))
+        plan4.append(DeployControlPlaneStep(manifest_obj, jhelper, topology, database))
 
     run_plan(plan4, console)
 
@@ -312,12 +258,8 @@ def bootstrap(
     # NOTE(jamespage):
     # As with MicroCeph, always deploy the openstack-hypervisor charm
     # and add a unit to the bootstrap node if required.
-    plan5.append(TerraformInitStep(tfhelper_hypervisor_deploy))
-    plan5.append(
-        DeployHypervisorApplicationStep(
-            tfhelper_hypervisor_deploy, tfhelper_openstack_deploy, jhelper
-        )
-    )
+    plan5.append(TerraformInitStep(manifest_obj.get_tfhelper("hypervisor-plan")))
+    plan5.append(DeployHypervisorApplicationStep(manifest_obj, jhelper))
     if is_compute_node:
         plan5.append(AddHypervisorUnitStep(fqdn, jhelper))
 

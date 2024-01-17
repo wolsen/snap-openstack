@@ -14,7 +14,6 @@
 # limitations under the License.
 
 import logging
-import shutil
 from pathlib import Path
 from typing import List, Optional
 
@@ -59,7 +58,7 @@ from sunbeam.commands.sunbeam_machine import (
     AddSunbeamMachineUnitStep,
     RemoveSunbeamMachineStep,
 )
-from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
+from sunbeam.commands.terraform import TerraformInitStep
 from sunbeam.jobs.checks import (
     DaemonGroupCheck,
     JujuSnapCheck,
@@ -84,7 +83,6 @@ from sunbeam.jobs.common import (
 )
 from sunbeam.jobs.juju import CONTROLLER, JujuHelper
 from sunbeam.jobs.manifest import Manifest
-from sunbeam.versions import TERRAFORM_DIR_NAMES
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -208,37 +206,8 @@ def join(
 
     controller = CONTROLLER
     data_location = snap.paths.user_data
-
-    manifest_obj = Manifest.load_latest_from_cluserdb_on_default()
-
-    # NOTE: install to user writable location
-    tfplans = ["sunbeam-machine-plan"]
-    if is_control_node:
-        tfplans.extend(["microk8s-plan", "microceph-plan", "openstack-plan"])
-    if is_compute_node:
-        tfplans.extend(["hypervisor-plan"])
-    manifest_tfplans = manifest_obj.terraform
-    for tfplan in tfplans:
-        src = manifest_tfplans.get(tfplan).source
-        dst = snap.paths.user_common / "etc" / TERRAFORM_DIR_NAMES.get(tfplan, tfplan)
-        LOG.debug(f"Updating {dst} from {src}...")
-        shutil.copytree(src, dst, dirs_exist_ok=True)
-
-    tfhelper_openstack_deploy = TerraformHelper(
-        path=snap.paths.user_common / "etc" / TERRAFORM_DIR_NAMES.get("openstack-plan"),
-        plan="openstack-plan",
-        backend="http",
-        data_location=data_location,
-    )
-    tfhelper_hypervisor_deploy = TerraformHelper(
-        path=snap.paths.user_common
-        / "etc"  # noqa: W503
-        / TERRAFORM_DIR_NAMES.get("hypervisor-plan"),  # noqa: W503
-        plan="hypervisor-plan",
-        backend="http",
-        data_location=data_location,
-    )
     jhelper = JujuHelper(data_location)
+    manifest_obj = Manifest.load_latest_from_cluserdb(on_default=True)
 
     plan1 = [
         JujuLoginStep(data_location),
@@ -275,10 +244,8 @@ def join(
     if is_compute_node:
         plan2.extend(
             [
-                TerraformInitStep(tfhelper_hypervisor_deploy),
-                DeployHypervisorApplicationStep(
-                    tfhelper_hypervisor_deploy, tfhelper_openstack_deploy, jhelper
-                ),
+                TerraformInitStep(manifest_obj.get_tfhelper("hypervisor-plan")),
+                DeployHypervisorApplicationStep(manifest_obj, jhelper),
                 AddHypervisorUnitStep(name, jhelper),
                 SetLocalHypervisorOptions(
                     name, jhelper, join_mode=True, preseed_file=preseed

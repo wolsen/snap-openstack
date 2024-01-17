@@ -36,8 +36,8 @@ class OrchestrationPlugin(OpenStackControlPlanePlugin):
             tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO,
         )
 
-    def manifest(self) -> dict:
-        """Manifest in dict format."""
+    def manifest_part(self) -> dict:
+        """Manifest plugin part in dict format."""
         return {"charms": {"heat": {"channel": OPENSTACK_CHANNEL}}}
 
     def charm_manifest_tfvar_map(self) -> dict:
@@ -63,7 +63,6 @@ class OrchestrationPlugin(OpenStackControlPlanePlugin):
     def set_tfvars_on_enable(self) -> dict:
         """Set terraform variables to enable the application."""
         return {
-            "heat-channel": "2023.2/edge",
             "enable-heat": True,
             **self.add_horizon_plugin_to_tfvars("heat"),
         }

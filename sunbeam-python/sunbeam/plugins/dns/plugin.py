@@ -22,7 +22,7 @@ from rich.console import Console
 
 from sunbeam.clusterd.service import ClusterServiceUnavailableException
 from sunbeam.commands.openstack import OPENSTACK_MODEL, PatchLoadBalancerServicesStep
-from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
+from sunbeam.commands.terraform import TerraformInitStep
 from sunbeam.jobs.common import run_plan
 from sunbeam.jobs.juju import JujuHelper, run_sync
 from sunbeam.plugins.interface.v1.openstack import (
@@ -52,8 +52,8 @@ class DnsPlugin(OpenStackControlPlanePlugin):
         )
         self.nameservers = None
 
-    def manifest(self) -> dict:
-        """Manifest in dict format."""
+    def manifest_part(self) -> dict:
+        """Manifest plugin part in dict format."""
         return {
             "charms": {
                 "designate": {"channel": OPENSTACK_CHANNEL},
@@ -81,16 +81,10 @@ class DnsPlugin(OpenStackControlPlanePlugin):
     def run_enable_plans(self) -> None:
         """Run plans to enable plugin."""
         data_location = self.snap.paths.user_data
-        tfhelper = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / self.tfplan_dir,
-            plan=self.tfplan,
-            backend="http",
-            data_location=data_location,
-        )
         jhelper = JujuHelper(data_location)
         plan = [
-            TerraformInitStep(tfhelper),
-            EnableOpenStackApplicationStep(tfhelper, jhelper, self),
+            TerraformInitStep(self.manifest.get_tfhelper(self.tfplan)),
+            EnableOpenStackApplicationStep(jhelper, self),
             PatchBindLoadBalancerStep(),
         ]
 

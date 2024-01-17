@@ -20,7 +20,7 @@ from packaging.version import Version
 from rich.console import Console
 
 from sunbeam.commands.hypervisor import ReapplyHypervisorTerraformPlanStep
-from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
+from sunbeam.commands.terraform import TerraformInitStep
 from sunbeam.jobs.common import run_plan
 from sunbeam.jobs.juju import JujuHelper, ModelNotFoundException, run_sync
 from sunbeam.plugins.interface.v1.openstack import (
@@ -44,8 +44,8 @@ class TelemetryPlugin(OpenStackControlPlanePlugin):
             tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO,
         )
 
-    def manifest(self) -> dict:
-        """Manifest in dict format."""
+    def manifest_part(self) -> dict:
+        """Manifest plugin part in dict format."""
         return {
             "charms": {
                 "aodh": {"channel": OPENSTACK_CHANNEL},
@@ -79,24 +79,12 @@ class TelemetryPlugin(OpenStackControlPlanePlugin):
     def run_enable_plans(self) -> None:
         """Run plans to enable plugin."""
         data_location = self.snap.paths.user_data
-        tfhelper = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / self.tfplan_dir,
-            plan=self.tfplan,
-            backend="http",
-            data_location=data_location,
-        )
-        tfhelper_hypervisor_deploy = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / "deploy-openstack-hypervisor",
-            plan="hypervisor-plan",
-            backend="http",
-            data_location=data_location,
-        )
         jhelper = JujuHelper(data_location)
         plan = [
-            TerraformInitStep(tfhelper),
-            EnableOpenStackApplicationStep(tfhelper, jhelper, self),
+            TerraformInitStep(self.manifest.get_tfhelper(self.tfplan)),
+            EnableOpenStackApplicationStep(jhelper, self),
             # No need to pass any extra terraform vars for this plugin
-            ReapplyHypervisorTerraformPlanStep(tfhelper_hypervisor_deploy, jhelper),
+            ReapplyHypervisorTerraformPlanStep(self.manifest, jhelper),
         ]
 
         run_plan(plan, console)
@@ -105,23 +93,11 @@ class TelemetryPlugin(OpenStackControlPlanePlugin):
     def run_disable_plans(self) -> None:
         """Run plans to disable the plugin."""
         data_location = self.snap.paths.user_data
-        tfhelper = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / self.tfplan_dir,
-            plan=self.tfplan,
-            backend="http",
-            data_location=data_location,
-        )
-        tfhelper_hypervisor_deploy = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / "deploy-openstack-hypervisor",
-            plan="hypervisor-plan",
-            backend="http",
-            data_location=data_location,
-        )
         jhelper = JujuHelper(data_location)
         plan = [
-            TerraformInitStep(tfhelper),
-            DisableOpenStackApplicationStep(tfhelper, jhelper, self),
-            ReapplyHypervisorTerraformPlanStep(tfhelper_hypervisor_deploy, jhelper),
+            TerraformInitStep(self.manifest.get_tfhelper(self.tfplan)),
+            DisableOpenStackApplicationStep(jhelper, self),
+            ReapplyHypervisorTerraformPlanStep(self.manifest, jhelper),
         ]
 
         run_plan(plan, console)
@@ -162,7 +138,6 @@ class TelemetryPlugin(OpenStackControlPlanePlugin):
     def set_tfvars_on_enable(self) -> dict:
         """Set terraform variables to enable the application."""
         return {
-            "telemetry-channel": "2023.2/edge",
             "enable-telemetry": True,
             **self._get_observability_offer_endpoints(),
         }

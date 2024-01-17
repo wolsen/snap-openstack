@@ -38,8 +38,8 @@ class SecretsPlugin(OpenStackControlPlanePlugin):
             tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO,
         )
 
-    def manifest(self) -> dict:
-        """Manifest in dict format."""
+    def manifest_part(self) -> dict:
+        """Manifest plugin part in dict format."""
         return {"charms": {"barbican": {"channel": OPENSTACK_CHANNEL}}}
 
     def charm_manifest_tfvar_map(self) -> dict:
@@ -66,7 +66,6 @@ class SecretsPlugin(OpenStackControlPlanePlugin):
         """Set terraform variables to enable the application."""
         return {
             "enable-barbican": True,
-            "barbican-channel": "2023.2/edge",
         }
 
     def set_tfvars_on_disable(self) -> dict:

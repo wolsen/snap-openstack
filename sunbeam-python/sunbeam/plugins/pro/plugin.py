@@ -16,7 +16,6 @@
 """Ubuntu Pro subscription management plugin."""
 
 import logging
-import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -27,11 +26,7 @@ from rich.status import Status
 from snaphelpers import Snap
 
 from sunbeam.commands.juju import JujuStepHelper
-from sunbeam.commands.terraform import (
-    TerraformException,
-    TerraformHelper,
-    TerraformInitStep,
-)
+from sunbeam.commands.terraform import TerraformException, TerraformInitStep
 from sunbeam.jobs.common import BaseStep, Result, ResultType, run_plan
 from sunbeam.jobs.juju import MODEL, JujuHelper, TimeoutException, run_sync
 from sunbeam.jobs.manifest import Manifest
@@ -50,14 +45,16 @@ class EnableUbuntuProApplicationStep(BaseStep, JujuStepHelper):
 
     def __init__(
         self,
-        tfhelper: TerraformHelper,
+        manifest: Manifest,
         jhelper: JujuHelper,
         token: str,
+        tfplan: str,
     ):
         super().__init__("Enable Ubuntu Pro", "Enabling Ubuntu Pro support")
-        self.tfhelper = tfhelper
+        self.manifest = manifest
         self.jhelper = jhelper
         self.token = token
+        self.tfplan = tfplan
 
     def has_prompts(self) -> bool:
         """Returns true if the step has prompts that it can ask the user."""
@@ -73,9 +70,11 @@ class EnableUbuntuProApplicationStep(BaseStep, JujuStepHelper):
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Apply terraform configuration to deploy ubuntu-pro"""
-        self.tfhelper.write_tfvars({"token": self.token})
+        extra_tfvars = {"token": self.token}
         try:
-            self.tfhelper.apply()
+            self.manifest.update_tfvar_and_apply_tf(
+                tfplan=self.tfplan, tfvar_config=None, extra_tfvars=extra_tfvars
+            )
         except TerraformException as e:
             return Result(ResultType.FAILED, str(e))
 
@@ -117,10 +116,12 @@ class DisableUbuntuProApplicationStep(BaseStep, JujuStepHelper):
 
     def __init__(
         self,
-        tfhelper: TerraformHelper,
+        manifest: Manifest,
+        tfplan: str,
     ):
         super().__init__("Disable Ubuntu Pro", "Disabling Ubuntu Pro support")
-        self.tfhelper = tfhelper
+        self.manifest = manifest
+        self.tfplan = tfplan
 
     def has_prompts(self) -> bool:
         """Returns true if the step has prompts that it can ask the user."""
@@ -136,9 +137,11 @@ class DisableUbuntuProApplicationStep(BaseStep, JujuStepHelper):
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Apply terraform configuration to disable ubuntu-pro"""
-        self.tfhelper.write_tfvars({"token": ""})
+        extra_tfvars = {"token": ""}
         try:
-            self.tfhelper.apply()
+            self.manifest.update_tfvar_and_apply_tf(
+                tfplan=self.tfplan, tfvar_config=None, extra_tfvars=extra_tfvars
+            )
         except TerraformException as e:
             return Result(ResultType.FAILED, str(e))
 
@@ -154,35 +157,32 @@ class ProPlugin(EnableDisablePlugin):
         self.snap = Snap()
         self.tfplan = "ubuntu-pro-plan"
         self.tfplan_dir = f"deploy-{self.name}"
+        self._manifest = None
 
-    def manifest(self) -> dict:
-        """Manifest in dict format."""
+    @property
+    def manifest(self) -> Manifest:
+        if self._manifest:
+            return self._manifest
+
+        self._manifest = Manifest.load_latest_from_clusterdb(on_default=True)
+        return self._manifest
+
+    def manifest_part(self) -> dict:
+        """Manifest plugin part in dict format."""
         return {
             "terraform": {
                 self.tfplan: {"source": Path(__file__).parent / "etc" / self.tfplan_dir}
             }
         }
 
-    def pre_enable(self):
-        manifest_obj = Manifest.load_latest_from_clusterdb(on_default=True)
-        manifest_tfplans = manifest_obj.terraform
-        src = manifest_tfplans.get(self.tfplan).source
-        dst = self.snap.paths.user_common / "etc" / self.tfplan_dir
-        LOG.debug(f"Updating {dst} from {src}...")
-        shutil.copytree(src, dst, dirs_exist_ok=True)
-
     def run_enable_plans(self):
         data_location = self.snap.paths.user_data
-        tfhelper = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / self.tfplan_dir,
-            plan=self.tfplan,
-            backend="http",
-            data_location=data_location,
-        )
         jhelper = JujuHelper(data_location)
         plan = [
-            TerraformInitStep(tfhelper),
-            EnableUbuntuProApplicationStep(tfhelper, jhelper, self.token),
+            TerraformInitStep(self.manifest.get_tfhelper(self.tfplan)),
+            EnableUbuntuProApplicationStep(
+                self.manifest, jhelper, self.token, self.tfplan
+            ),
         ]
 
         run_plan(plan, console)
@@ -193,20 +193,10 @@ class ProPlugin(EnableDisablePlugin):
         )
         click.echo("Ubuntu Pro enabled.")
 
-    def pre_disable(self):
-        self.pre_enable()
-
     def run_disable_plans(self):
-        data_location = self.snap.paths.user_data
-        tfhelper = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / self.tfplan_dir,
-            plan=self.tfplan,
-            backend="http",
-            data_location=data_location,
-        )
         plan = [
-            TerraformInitStep(tfhelper),
-            DisableUbuntuProApplicationStep(tfhelper),
+            TerraformInitStep(self.manifest.get_tfhelper(self.tfplan)),
+            DisableUbuntuProApplicationStep(self.manifest, self.tfplan),
         ]
 
         run_plan(plan, console)

@@ -42,8 +42,8 @@ class VaultPlugin(OpenStackControlPlanePlugin):
             tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO,
         )
 
-    def manifest(self) -> dict:
-        """Manifest in dict format."""
+    def manifest_part(self) -> dict:
+        """Manifest pluing part in dict format."""
         return {"charms": {"vault": {"channel": VAULT_CHANNEL}}}
 
     def charm_manifest_tfvar_map(self) -> dict:
@@ -66,7 +66,6 @@ class VaultPlugin(OpenStackControlPlanePlugin):
         """Set terraform variables to enable the application."""
         return {
             "enable-vault": True,
-            "vault-channel": "latest/edge",
         }
 
     def set_tfvars_on_disable(self) -> dict:
