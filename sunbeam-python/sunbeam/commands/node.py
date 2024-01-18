@@ -14,7 +14,6 @@
 # limitations under the License.
 
 import logging
-import shutil
 from pathlib import Path
 from typing import List, Optional
 
@@ -59,7 +58,7 @@ from sunbeam.commands.sunbeam_machine import (
     AddSunbeamMachineUnitStep,
     RemoveSunbeamMachineStep,
 )
-from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
+from sunbeam.commands.terraform import TerraformInitStep
 from sunbeam.jobs.checks import (
     DaemonGroupCheck,
     JujuSnapCheck,
@@ -207,38 +206,8 @@ def join(
 
     controller = CONTROLLER
     data_location = snap.paths.user_data
-
-    manifest_obj = Manifest.load_latest_from_cluserdb()
-
-    # NOTE: install to user writable location
-    tfplan_dirs = ["deploy-sunbeam-machine"]
-    if is_control_node:
-        tfplan_dirs.extend(["deploy-microk8s", "deploy-microceph", "deploy-openstack"])
-    if is_compute_node:
-        tfplan_dirs.extend(["deploy-openstack-hypervisor"])
-    manifest_tfplans = manifest_obj.terraform
-    for tfplan_dir in tfplan_dirs:
-        if manifest_tfplans and manifest_tfplans.get(tfplan_dir):
-            src = manifest_tfplans.get(tfplan_dir).source
-        else:
-            src = snap.paths.snap / "etc" / tfplan_dir
-        dst = snap.paths.user_common / "etc" / tfplan_dir
-        LOG.debug(f"Updating {dst} from {src}...")
-        shutil.copytree(src, dst, dirs_exist_ok=True)
-
-    tfhelper_openstack_deploy = TerraformHelper(
-        path=snap.paths.user_common / "etc" / "deploy-openstack",
-        plan="openstack-plan",
-        backend="http",
-        data_location=data_location,
-    )
-    tfhelper_hypervisor_deploy = TerraformHelper(
-        path=snap.paths.user_common / "etc" / "deploy-openstack-hypervisor",
-        plan="hypervisor-plan",
-        backend="http",
-        data_location=data_location,
-    )
     jhelper = JujuHelper(data_location)
+    manifest_obj = Manifest.load_latest_from_cluserdb(include_defaults=True)
 
     plan1 = [
         JujuLoginStep(data_location),
@@ -275,10 +244,8 @@ def join(
     if is_compute_node:
         plan2.extend(
             [
-                TerraformInitStep(tfhelper_hypervisor_deploy),
-                DeployHypervisorApplicationStep(
-                    tfhelper_hypervisor_deploy, tfhelper_openstack_deploy, jhelper
-                ),
+                TerraformInitStep(manifest_obj.get_tfhelper("hypervisor-plan")),
+                DeployHypervisorApplicationStep(manifest_obj, jhelper),
                 AddHypervisorUnitStep(name, jhelper),
                 SetLocalHypervisorOptions(
                     name, jhelper, join_mode=True, preseed_file=preseed

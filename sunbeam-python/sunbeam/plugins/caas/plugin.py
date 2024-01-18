@@ -14,7 +14,6 @@
 # limitations under the License.
 
 import logging
-import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -43,6 +42,7 @@ from sunbeam.plugins.interface.v1.openstack import (
 )
 from sunbeam.plugins.orchestration.plugin import OrchestrationPlugin
 from sunbeam.plugins.secrets.plugin import SecretsPlugin
+from sunbeam.versions import OPENSTACK_CHANNEL
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -87,9 +87,30 @@ class CaasPlugin(OpenStackControlPlanePlugin):
         )
         self.configure_plan = "caas-setup"
 
-    def get_terraform_plan_dir_names(self) -> set:
-        """Return all terraform plan directory names."""
-        return {f"deploy-{self.tfplan}", self.configure_plan}
+    def manifest_defaults(self) -> dict:
+        """Manifest plugin part in dict format."""
+        return {
+            "charms": {
+                "magnum": {"channel": OPENSTACK_CHANNEL},
+            },
+            "terraform": {
+                self.configure_plan: {
+                    "source": Path(__file__).parent / "etc" / self.configure_plan
+                },
+            },
+        }
+
+    def charm_manifest_tfvar_map(self) -> dict:
+        """Charm manifest terraformvars map."""
+        return {
+            self.tfplan: {
+                "magnum": {
+                    "channel": "magnum-channel",
+                    "revision": "magnum-revision",
+                    "config": "magnum-config",
+                }
+            }
+        }
 
     def set_application_names(self) -> list:
         """Application names handled by the terraform plan."""
@@ -102,7 +123,6 @@ class CaasPlugin(OpenStackControlPlanePlugin):
     def set_tfvars_on_enable(self) -> dict:
         """Set terraform variables to enable the application."""
         return {
-            "magnum-channel": "2023.2/edge",
             "enable-magnum": True,
             **self.add_horizon_plugin_to_tfvars("magnum"),
         }
@@ -157,21 +177,12 @@ class CaasPlugin(OpenStackControlPlanePlugin):
     @click.command()
     def configure(self):
         """Configure Cloud for Container as a Service use."""
-        src = Path(__file__).parent / "etc" / self.configure_plan
-        dst = self.snap.paths.user_common / "etc" / self.configure_plan
-        LOG.debug(f"Updating {dst} from {src}...")
-        shutil.copytree(src, dst, dirs_exist_ok=True)
-
         data_location = self.snap.paths.user_data
         jhelper = JujuHelper(data_location)
         admin_credentials = retrieve_admin_credentials(jhelper, OPENSTACK_MODEL)
-        tfhelper = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / self.configure_plan,
-            env=admin_credentials,
-            plan="caas-plan",
-            backend="http",
-            data_location=data_location,
-        )
+
+        tfhelper = self.manifest.get_tfplan(self.configure_plan)
+        tfhelper.env = admin_credentials
         plan = [
             TerraformInitStep(tfhelper),
             CaasConfigureStep(tfhelper),

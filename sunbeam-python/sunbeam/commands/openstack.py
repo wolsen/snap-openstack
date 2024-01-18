@@ -32,7 +32,7 @@ from sunbeam.commands.microk8s import (
     MICROK8S_DEFAULT_STORAGECLASS,
     MICROK8S_KUBECONFIG_KEY,
 )
-from sunbeam.commands.terraform import TerraformException, TerraformHelper
+from sunbeam.commands.terraform import TerraformException
 from sunbeam.jobs.common import (
     RAM_32_GB_IN_KB,
     BaseStep,
@@ -51,7 +51,7 @@ from sunbeam.jobs.juju import (
     TimeoutException,
     run_sync,
 )
-from sunbeam.versions import OPENSTACK_CHANNEL, OVN_CHANNEL, RABBITMQ_CHANNEL
+from sunbeam.jobs.manifest import Manifest
 
 LOG = logging.getLogger(__name__)
 OPENSTACK_MODEL = "openstack"
@@ -130,7 +130,7 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
 
     def __init__(
         self,
-        tfhelper: TerraformHelper,
+        manifest: Manifest,
         jhelper: JujuHelper,
         topology: str,
         database: str,
@@ -139,13 +139,14 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
             "Deploying OpenStack Control Plane",
             "Deploying OpenStack Control Plane to Kubernetes (this may take a while)",
         )
-        self.tfhelper = tfhelper
+        self.manifest = manifest
         self.jhelper = jhelper
         self.topology = topology
         self.database = database
         self.model = OPENSTACK_MODEL
         self.cloud = MICROK8S_CLOUD
         self.client = Client()
+        self.tfplan = "openstack-plan"
 
     def get_storage_tfvars(self) -> dict:
         """Create terraform variables related to storage."""
@@ -203,40 +204,30 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
             {"topology": self.topology, "database": self.database},
         )
 
-        # Always get terraform variables from cluster database and
-        # update them. This is to ensure not to skip the terraform
-        # variables updated by plugins.
-        try:
-            tfvars = read_config(self.client, self._CONFIG)
-        except ConfigItemNotFoundException:
-            tfvars = {}
-
-        tfvars.update(
+        extra_tfvars = self.get_storage_tfvars()
+        extra_tfvars.update(
             {
                 "model": self.model,
-                # Make these channel options configurable by the user
-                "openstack-channel": OPENSTACK_CHANNEL,
-                "ovn-channel": OVN_CHANNEL,
-                "rabbitmq-channel": RABBITMQ_CHANNEL,
                 "cloud": self.cloud,
                 "credential": f"{self.cloud}{CREDENTIAL_SUFFIX}",
                 "config": {"workload-storage": MICROK8S_DEFAULT_STORAGECLASS},
                 "many-mysql": self.database == "multi",
             }
         )
-        tfvars.update(self.get_storage_tfvars())
-        update_config(self.client, self._CONFIG, tfvars)
-        self.tfhelper.write_tfvars(tfvars)
-        self.update_status(status, "deploying services")
         try:
-            self.tfhelper.apply()
+            self.update_status(status, "deploying services")
+            self.manifest.update_tfvars_and_apply_tf(
+                tfplan=self.tfplan,
+                tfvar_config=self._CONFIG,
+                override_tfvars=extra_tfvars,
+            )
         except TerraformException as e:
             LOG.exception("Error configuring cloud")
             return Result(ResultType.FAILED, str(e))
 
         # Remove cinder-ceph from apps to wait on if ceph is not enabled
         apps = run_sync(self.jhelper.get_application_names(self.model))
-        if not tfvars.get("enable-ceph") and "cinder-ceph" in apps:
+        if not extra_tfvars.get("enable-ceph") and "cinder-ceph" in apps:
             apps.remove("cinder-ceph")
         LOG.debug(f"Application monitored for readiness: {apps}")
         task = run_sync(update_status_background(self, apps, status))
@@ -265,7 +256,7 @@ class ResizeControlPlaneStep(BaseStep, JujuStepHelper):
 
     def __init__(
         self,
-        tfhelper: TerraformHelper,
+        manifest: Manifest,
         jhelper: JujuHelper,
         topology: str,
         force: bool,
@@ -274,11 +265,12 @@ class ResizeControlPlaneStep(BaseStep, JujuStepHelper):
             "Resizing OpenStack Control Plane",
             "Resizing OpenStack Control Plane to match appropriate topology",
         )
-        self.tfhelper = tfhelper
+        self.manifest = manifest
         self.jhelper = jhelper
         self.topology = topology
         self.force = force
         self.model = OPENSTACK_MODEL
+        self.tfplan = "openstack-plan"
 
     def is_skip(self, status: Optional[Status] = None) -> Result:
         """Determines if the step should be skipped or not.
@@ -322,30 +314,29 @@ class ResizeControlPlaneStep(BaseStep, JujuStepHelper):
             TOPOLOGY_KEY,
             topology_dict,
         )
-        tf_vars = read_config(client, self._CONFIG)
         control_nodes = client.cluster.list_nodes_by_role("control")
         storage_nodes = client.cluster.list_nodes_by_role("storage")
         # NOTE(jamespage)
         # When dedicated control nodes are used, ceph is not enabled during
         # bootstrap - however storage nodes may be added later so re-assess
-        tf_vars.update(
-            {
-                "ha-scale": compute_ha_scale(topology, len(control_nodes)),
-                "os-api-scale": compute_os_api_scale(topology, len(control_nodes)),
-                "ingress-scale": compute_ingress_scale(topology, len(control_nodes)),
-                "ceph-osd-replication-count": compute_ceph_replica_scale(
-                    topology, len(storage_nodes)
-                ),
-                "enable-ceph": len(storage_nodes) > 0,
-                "ceph-offer-url": f"{CONTROLLER_MODEL}.{MICROCEPH_APPLICATION}",
-            }
-        )
+        extra_tfvars = {
+            "ha-scale": compute_ha_scale(topology, len(control_nodes)),
+            "os-api-scale": compute_os_api_scale(topology, len(control_nodes)),
+            "ingress-scale": compute_ingress_scale(topology, len(control_nodes)),
+            "ceph-osd-replication-count": compute_ceph_replica_scale(
+                topology, len(storage_nodes)
+            ),
+            "enable-ceph": len(storage_nodes) > 0,
+            "ceph-offer-url": f"{CONTROLLER_MODEL}.{MICROCEPH_APPLICATION}",
+        }
 
-        update_config(client, self._CONFIG, tf_vars)
         self.update_status(status, "scaling services")
-        self.tfhelper.write_tfvars(tf_vars)
         try:
-            self.tfhelper.apply()
+            self.manifest.update_tfvars_and_apply_tf(
+                tfplan=self.tfplan,
+                tfvar_config=self._CONFIG,
+                override_tfvars=extra_tfvars,
+            )
         except TerraformException as e:
             LOG.exception("Error resizing control plane")
             return Result(ResultType.FAILED, str(e))

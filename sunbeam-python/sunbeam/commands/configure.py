@@ -53,6 +53,7 @@ from sunbeam.jobs.juju import (
     run_sync,
 )
 from sunbeam.jobs.manifest import Manifest
+from sunbeam.versions import TERRAFORM_DIR_NAMES
 
 CLOUD_CONFIG_SECTION = "CloudConfig"
 LOG = logging.getLogger(__name__)
@@ -728,16 +729,15 @@ def _configure(
     preflight_checks.append(VerifyBootstrappedCheck())
     run_preflight_checks(preflight_checks, console)
 
-    manifest_obj = Manifest.load_latest_from_clusterdb()
+    manifest_obj = Manifest.load_latest_from_clusterdb(include_defaults=True)
 
     name = utils.get_fqdn()
+    tfplan = "demo-setup"
+    tfplan_dir = TERRAFORM_DIR_NAMES.get(tfplan)
     snap = Snap()
     manifest_tfplans = manifest_obj.terraform
-    if manifest_tfplans and manifest_tfplans.get("demo-setup"):
-        src = manifest_tfplans.get("demo-setup").source
-    else:
-        src = snap.paths.snap / "etc" / "demo-setup"
-    dst = snap.paths.user_common / "etc" / "demo-setup"
+    src = manifest_tfplans.get(tfplan).source
+    dst = snap.paths.user_common / "etc" / tfplan_dir
     try:
         os.mkdir(dst)
     except FileExistsError:
@@ -755,9 +755,9 @@ def _configure(
         raise click.ClickException("Please run `sunbeam cluster bootstrap` first")
     admin_credentials = retrieve_admin_credentials(jhelper, OPENSTACK_MODEL)
     tfhelper = TerraformHelper(
-        path=snap.paths.user_common / "etc" / "demo-setup",
+        path=snap.paths.user_common / "etc" / tfplan_dir,
         env=admin_credentials,
-        plan="demo-setup",
+        plan=tfplan,
         backend="http",
         data_location=data_location,
     )

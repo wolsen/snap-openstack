@@ -22,7 +22,7 @@ from rich.console import Console
 
 from sunbeam.clusterd.service import ClusterServiceUnavailableException
 from sunbeam.commands.openstack import OPENSTACK_MODEL, PatchLoadBalancerServicesStep
-from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
+from sunbeam.commands.terraform import TerraformInitStep
 from sunbeam.jobs.common import run_plan
 from sunbeam.jobs.juju import JujuHelper, run_sync
 from sunbeam.plugins.interface.v1.openstack import (
@@ -31,7 +31,7 @@ from sunbeam.plugins.interface.v1.openstack import (
     OpenStackControlPlanePlugin,
     TerraformPlanLocation,
 )
-from sunbeam.versions import OPENSTACK_CHANNEL
+from sunbeam.versions import BIND_CHANNEL, OPENSTACK_CHANNEL
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -52,19 +52,39 @@ class DnsPlugin(OpenStackControlPlanePlugin):
         )
         self.nameservers = None
 
+    def manifest_defaults(self) -> dict:
+        """Manifest plugin part in dict format."""
+        return {
+            "charms": {
+                "designate": {"channel": OPENSTACK_CHANNEL},
+                "bind": {"channel": BIND_CHANNEL},
+            }
+        }
+
+    def charm_manifest_tfvar_map(self) -> dict:
+        """Charm manifest terraformvars map."""
+        return {
+            self.tfplan: {
+                "designate": {
+                    "channel": "desginate-channel",
+                    "revision": "designate-revision",
+                    "config": "designate-config",
+                },
+                "bind": {
+                    "channel": "bind-channel",
+                    "revision": "bind-revision",
+                    "config": "bind-config",
+                },
+            }
+        }
+
     def run_enable_plans(self) -> None:
         """Run plans to enable plugin."""
         data_location = self.snap.paths.user_data
-        tfhelper = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / f"deploy-{self.tfplan}",
-            plan=self._get_plan_name(),
-            backend="http",
-            data_location=data_location,
-        )
         jhelper = JujuHelper(data_location)
         plan = [
-            TerraformInitStep(tfhelper),
-            EnableOpenStackApplicationStep(tfhelper, jhelper, self),
+            TerraformInitStep(self.manifest.get_tfhelper(self.tfplan)),
+            EnableOpenStackApplicationStep(jhelper, self),
             PatchBindLoadBalancerStep(),
         ]
 

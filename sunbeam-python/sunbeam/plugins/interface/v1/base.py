@@ -189,9 +189,49 @@ class BasePlugin(ABC):
 
         return Version(version)
 
-    def get_terraform_plan_dir_names(self) -> set:
-        """Return all terraform plan directory names."""
-        return set()
+    def manifest_defaults(self) -> dict:
+        """Return manifest part of the plugin.
+
+        Define manifest charms involved and default values for charm attributes
+        and terraform plan.
+        Sample manifest:
+        {
+            "charms": {
+                "heat": {
+                    "channel": <>.
+                    "revision": <>,
+                    "config": <>,
+                }
+            },
+            "terraform": {
+                "<plugin>-plan": {
+                    "source": <Path of terraform plan>,
+                }
+            }
+        }
+
+        The plugins that uses terraform plan should override this function.
+        """
+        return {}
+
+    def charm_manifest_tfvar_map(self) -> dict:
+        """Return terraform var map for the manifest.
+
+        Map terraform variable for each Charm manifest attribute.
+        Sample return value:
+        {
+            <tf plan>: {
+                "heat": {
+                    "channel": <tfvar for heat channel>,
+                    "revision": <tfvar for heat revision>,
+                    "config": <tfvar for heat config>,
+                }
+            }
+        }
+
+        The plugins that uses terraform plan should override this function.
+        """
+        return {}
 
     def get_terraform_plans_base_path(self) -> Path:
         """Return Terraform plan base location."""

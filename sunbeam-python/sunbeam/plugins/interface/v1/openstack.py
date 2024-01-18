@@ -14,9 +14,7 @@
 # limitations under the License.
 
 
-import inspect
 import logging
-import shutil
 from abc import abstractmethod
 from enum import Enum
 from pathlib import Path
@@ -35,11 +33,7 @@ from sunbeam.commands.openstack import (
     OPENSTACK_MODEL,
     determine_target_topology_at_bootstrap,
 )
-from sunbeam.commands.terraform import (
-    TerraformException,
-    TerraformHelper,
-    TerraformInitStep,
-)
+from sunbeam.commands.terraform import TerraformException, TerraformInitStep
 from sunbeam.jobs.checks import VerifyBootstrappedCheck
 from sunbeam.jobs.common import (
     BaseStep,
@@ -116,28 +110,22 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         # Based on terraform plan location, tfplan will be either
         # openstack or plugin name
         if self.tf_plan_location == TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO:
-            self.tfplan = OPENSTACK_TERRAFORM_PLAN
+            self.tfplan = f"{OPENSTACK_TERRAFORM_PLAN}-plan"
+            self.tfplan_dir = f"deploy-{OPENSTACK_TERRAFORM_PLAN}"
         else:
-            self.tfplan = self.name
+            self.tfplan = f"{self.name}-plan"
+            self.tfplan_dir = f"deploy-{self.name}"
 
         self.snap = Snap()
+        self._manifest = None
 
-    def _get_tf_plan_full_path(self) -> Path:
-        """Returns terraform plan absolute path."""
-        manifest_obj = Manifest.load_latest_from_clusterdb()
-        manifest_tfplans = manifest_obj.terraform
-        tfplan_dir = f"deploy-{self.tfplan}"
-        if manifest_tfplans and manifest_tfplans.get(tfplan_dir):
-            return manifest_tfplans.get(tfplan_dir).source
-        elif self.tf_plan_location == TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO:
-            return self.snap.paths.snap / "etc" / tfplan_dir
-        else:
-            plugin_class_dir = Path(inspect.getfile(self.__class__)).parent
-            return plugin_class_dir / "etc" / tfplan_dir
+    @property
+    def manifest(self) -> Manifest:
+        if self._manifest:
+            return self._manifest
 
-    def _get_plan_name(self) -> str:
-        """Returns plan name in format defined in cluster db."""
-        return f"{self.tfplan}-plan"
+        self._manifest = Manifest.load_latest_from_clusterdb(include_defaults=True)
+        return self._manifest
 
     def is_openstack_control_plane(self) -> bool:
         """Is plugin deploys openstack control plane.
@@ -150,10 +138,6 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         """Return Terraform OpenStack plan location."""
         return self.get_terraform_plans_base_path() / "etc" / "deploy-openstack"
 
-    def get_terraform_plan_dir_names(self) -> set:
-        """Return all terraform plan directory names."""
-        return {f"deploy-{self.tfplan}"}
-
     def pre_checks(self) -> None:
         """Perform preflight checks before enabling the plugin.
 
@@ -162,34 +146,19 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         preflight_checks = []
         preflight_checks.append(VerifyBootstrappedCheck())
         run_preflight_checks(preflight_checks, console)
-        src = self._get_tf_plan_full_path()
-        dst = self.snap.paths.user_common / "etc" / f"deploy-{self.tfplan}"
-        LOG.debug(f"Updating {dst} from {src}...")
-        shutil.copytree(src, dst, dirs_exist_ok=True)
 
     def pre_enable(self) -> None:
         """Handler to perform tasks before enabling the plugin."""
         self.pre_checks()
         super().pre_enable()
 
-    def get_tfhelper(self):
-        data_location = self.snap.paths.user_data
-        tfhelper = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / f"deploy-{self.tfplan}",
-            plan=self._get_plan_name(),
-            backend="http",
-            data_location=data_location,
-        )
-        return tfhelper
-
     def run_enable_plans(self) -> None:
         """Run plans to enable plugin."""
         data_location = self.snap.paths.user_data
-        tfhelper = self.get_tfhelper()
         jhelper = JujuHelper(data_location)
         plan = [
-            TerraformInitStep(tfhelper),
-            EnableOpenStackApplicationStep(tfhelper, jhelper, self),
+            TerraformInitStep(self.manifest.get_tfhelper(self.tfplan)),
+            EnableOpenStackApplicationStep(jhelper, self),
         ]
 
         run_plan(plan, console)
@@ -203,11 +172,10 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
     def run_disable_plans(self) -> None:
         """Run plans to disable the plugin."""
         data_location = self.snap.paths.user_data
-        tfhelper = self.get_tfhelper()
         jhelper = JujuHelper(data_location)
         plan = [
-            TerraformInitStep(tfhelper),
-            DisableOpenStackApplicationStep(tfhelper, jhelper, self),
+            TerraformInitStep(self.manifest.get_tfhelper(self.tfplan)),
+            DisableOpenStackApplicationStep(jhelper, self),
         ]
 
         run_plan(plan, console)
@@ -327,10 +295,9 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         :param upgrade_release: Whether to upgrade release
         """
         data_location = self.snap.paths.user_data
-        tfhelper = self.get_tfhelper()
         jhelper = JujuHelper(data_location)
         plan = [
-            UpgradeApplicationStep(tfhelper, jhelper, self, upgrade_release),
+            UpgradeApplicationStep(jhelper, self, upgrade_release),
         ]
 
         run_plan(plan, console)
@@ -339,14 +306,12 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
 class UpgradeApplicationStep(BaseStep, JujuStepHelper):
     def __init__(
         self,
-        tfhelper: TerraformHelper,
         jhelper: JujuHelper,
         plugin: OpenStackControlPlanePlugin,
         upgrade_release: bool = False,
     ) -> None:
         """Constructor for the generic plan.
 
-        :param tfhelper: Terraform helper pointing to terraform plan
         :param jhelper: Juju helper with loaded juju credentials
         :param plugin: Plugin that uses this plan to perform callbacks to
                        plugin.
@@ -355,11 +320,11 @@ class UpgradeApplicationStep(BaseStep, JujuStepHelper):
             f"Refresh OpenStack {plugin.name}",
             f"Refresh OpenStack {plugin.name} application",
         )
-        self.tfhelper = tfhelper
         self.jhelper = jhelper
         self.plugin = plugin
         self.model = OPENSTACK_MODEL
         self.upgrade_release = upgrade_release
+        self.tfhelper = self.plugin.manifest.get_tfhelper(self.plugin.tfplan)
 
     def terraform_sync(self, config_key: str, tfvars_delta: dict):
         """Sync the running state back to the Terraform state file.
@@ -433,13 +398,11 @@ class EnableOpenStackApplicationStep(BaseStep, JujuStepHelper):
 
     def __init__(
         self,
-        tfhelper: TerraformHelper,
         jhelper: JujuHelper,
         plugin: OpenStackControlPlanePlugin,
     ) -> None:
         """Constructor for the generic plan.
 
-        :param tfhelper: Terraform helper pointing to terraform plan
         :param jhelper: Juju helper with loaded juju credentials
         :param plugin: Plugin that uses this plan to perform callbacks to
                        plugin.
@@ -448,7 +411,6 @@ class EnableOpenStackApplicationStep(BaseStep, JujuStepHelper):
             f"Enable OpenStack {plugin.name}",
             f"Enabling OpenStack {plugin.name} application",
         )
-        self.tfhelper = tfhelper
         self.jhelper = jhelper
         self.plugin = plugin
         self.model = OPENSTACK_MODEL
@@ -457,17 +419,14 @@ class EnableOpenStackApplicationStep(BaseStep, JujuStepHelper):
     def run(self, status: Optional[Status] = None) -> Result:
         """Apply terraform configuration to deploy openstack application"""
         config_key = self.plugin.get_tfvar_config_key()
+        extra_tfvars = self.plugin.set_tfvars_on_enable()
 
         try:
-            tfvars = read_config(self.client, config_key)
-        except ConfigItemNotFoundException:
-            tfvars = {}
-        tfvars.update(self.plugin.set_tfvars_on_enable())
-        update_config(self.client, config_key, tfvars)
-        self.tfhelper.write_tfvars(tfvars)
-
-        try:
-            self.tfhelper.apply()
+            self.plugin.manifest.update_tfvars_and_apply_tf(
+                tfplan=self.plugin.tfplan,
+                tfvar_config=config_key,
+                override_tfvars=extra_tfvars,
+            )
         except TerraformException as e:
             return Result(ResultType.FAILED, str(e))
 
@@ -493,13 +452,11 @@ class DisableOpenStackApplicationStep(BaseStep, JujuStepHelper):
 
     def __init__(
         self,
-        tfhelper: TerraformHelper,
         jhelper: JujuHelper,
         plugin: OpenStackControlPlanePlugin,
     ) -> None:
         """Constructor for the generic plan.
 
-        :param tfhelper: Terraform helper pointing to terraform plan
         :param jhelper: Juju helper with loaded juju credentials
         :param plugin: Plugin that uses this plan to perform callbacks to
                        plugin.
@@ -508,7 +465,6 @@ class DisableOpenStackApplicationStep(BaseStep, JujuStepHelper):
             f"Disable OpenStack {plugin.name}",
             f"Disabling OpenStack {plugin.name} application",
         )
-        self.tfhelper = tfhelper
         self.jhelper = jhelper
         self.plugin = plugin
         self.model = OPENSTACK_MODEL
@@ -519,21 +475,19 @@ class DisableOpenStackApplicationStep(BaseStep, JujuStepHelper):
         config_key = self.plugin.get_tfvar_config_key()
 
         try:
-            tfvars = read_config(self.client, config_key)
-        except ConfigItemNotFoundException:
-            tfvars = {}
-
-        try:
             if self.plugin.tf_plan_location == TerraformPlanLocation.PLUGIN_REPO:
                 # Just destroy the terraform plan
-                self.tfhelper.destroy()
+                tfhelper = self.manifest.get_tfhelper(self.plugin.tfplan)
+                tfhelper.destroy()
                 delete_config(self.client, config_key)
             else:
                 # Update terraform variables to disable the application
-                tfvars.update(self.plugin.set_tfvars_on_disable())
-                update_config(self.client, config_key, tfvars)
-                self.tfhelper.write_tfvars(tfvars)
-                self.tfhelper.apply()
+                extra_tfvars = self.plugin.set_tfvars_on_disable()
+                self.plugin.manifest.update_tfvars_and_apply_tf(
+                    tfplan=self.plugin.tfplan,
+                    tfvar_config=config_key,
+                    override_tfvars=extra_tfvars,
+                )
         except TerraformException as e:
             return Result(ResultType.FAILED, str(e))
 

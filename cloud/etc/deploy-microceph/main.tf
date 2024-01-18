@@ -37,14 +37,15 @@ resource "juju_application" "microceph" {
   units = length(var.machine_ids) # need to manage the number of units
 
   charm {
-    name    = "microceph"
-    channel = var.charm_microceph_channel
-    series  = "jammy"
+    name     = "microceph"
+    channel  = var.charm_microceph_channel
+    revision = var.charm_microceph_revision
+    series   = "jammy"
   }
 
-  config = {
+  config = merge({
     snap-channel = var.microceph_channel
-  }
+  }, var.charm_microceph_config)
 }
 
 # juju_offer.microceph_offer will be created

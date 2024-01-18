@@ -38,14 +38,15 @@ resource "juju_application" "openstack-hypervisor" {
   units = length(var.machine_ids) # need to manage the number of units
 
   charm {
-    name    = "openstack-hypervisor"
-    channel = var.charm_channel
-    series  = "jammy"
+    name     = "openstack-hypervisor"
+    channel  = var.charm_channel
+    revision = var.charm_revision
+    series   = "jammy"
   }
 
-  config = {
+  config = merge({
     snap-channel = var.snap_channel
-  }
+  }, var.charm_config)
 
 }
 
