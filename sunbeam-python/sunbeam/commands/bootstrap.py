@@ -145,7 +145,7 @@ def bootstrap(
     # Validate manifest file
     manifest_obj = None
     if manifest:
-        manifest_obj = Manifest.load(manifest_file=manifest, on_default=True)
+        manifest_obj = Manifest.load(manifest_file=manifest, include_defaults=True)
     else:
         manifest_obj = Manifest.get_default_manifest()
 

@@ -444,10 +444,10 @@ class ObservabilityPlugin(EnableDisablePlugin):
         if self._manifest:
             return self._manifest
 
-        self._manifest = Manifest.load_latest_from_clusterdb(on_default=True)
+        self._manifest = Manifest.load_latest_from_clusterdb(include_defaults=True)
         return self._manifest
 
-    def manifest_part(self) -> dict:
+    def manifest_defaults(self) -> dict:
         """Manifest plugin part in dict format."""
         return {
             "terraform": {

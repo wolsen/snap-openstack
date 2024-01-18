@@ -52,7 +52,7 @@ class DnsPlugin(OpenStackControlPlanePlugin):
         )
         self.nameservers = None
 
-    def manifest_part(self) -> dict:
+    def manifest_defaults(self) -> dict:
         """Manifest plugin part in dict format."""
         return {
             "charms": {

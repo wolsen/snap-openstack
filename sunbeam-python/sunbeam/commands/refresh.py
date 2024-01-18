@@ -80,7 +80,7 @@ def refresh(
         run_plan([AddManifestStep(manifest)], console)
     else:
         LOG.debug("Getting latest manifest")
-        manifest_obj = Manifest.load_latest_from_cluserdb(on_default=True)
+        manifest_obj = Manifest.load_latest_from_cluserdb(include_defaults=True)
         LOG.debug(f"Manifest object created with no errors: {manifest_obj}")
 
     tfplan = "openstack-plan"

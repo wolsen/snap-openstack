@@ -87,7 +87,7 @@ class CaasPlugin(OpenStackControlPlanePlugin):
         )
         self.configure_plan = "caas-setup"
 
-    def manifest_part(self) -> dict:
+    def manifest_defaults(self) -> dict:
         """Manifest plugin part in dict format."""
         return {
             "charms": {

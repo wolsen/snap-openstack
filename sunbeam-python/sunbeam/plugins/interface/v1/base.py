@@ -189,7 +189,7 @@ class BasePlugin(ABC):
 
         return Version(version)
 
-    def manifest_part(self) -> dict:
+    def manifest_defaults(self) -> dict:
         """Return manifest part of the plugin.
 
         Define manifest charms involved and default values for charm attributes
@@ -209,6 +209,8 @@ class BasePlugin(ABC):
                 }
             }
         }
+
+        The plugins that uses terraform plan should override this function.
         """
         return {}
 
@@ -226,6 +228,8 @@ class BasePlugin(ABC):
                 }
             }
         }
+
+        The plugins that uses terraform plan should override this function.
         """
         return {}
 

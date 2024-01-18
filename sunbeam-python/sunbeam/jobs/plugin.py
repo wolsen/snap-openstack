@@ -260,7 +260,7 @@ class PluginManager:
         plugins = cls.get_all_plugin_classes()
         for klass in plugins:
             plugin = klass()
-            m_dict = plugin.manifest_part()
+            m_dict = plugin.manifest_defaults()
             utils.merge_dict(manifest, m_dict)
 
         return manifest

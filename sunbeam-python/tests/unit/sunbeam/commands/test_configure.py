@@ -462,7 +462,6 @@ class TestNicPrompt:
         )
         assert name == "eth1"
         output = console.file.getvalue()
-        print(repr(output))
         assert output == self.short_question
 
     def test_good_choice_default(
@@ -478,7 +477,6 @@ class TestNicPrompt:
         )
         assert name == "eth2"
         output = console.file.getvalue()
-        print(repr(output))
         expected = "Short Question [eth1/eth2] (eth2): "
         assert output == expected
 
@@ -496,5 +494,4 @@ class TestNicPrompt:
         # The default eth3 does not exist so it was discarded.
         assert name == "eth1"
         output = console.file.getvalue()
-        print(repr(output))
         assert output == self.short_question

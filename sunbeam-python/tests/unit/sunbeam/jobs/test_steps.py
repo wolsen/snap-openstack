@@ -98,7 +98,7 @@ class TestDeployMachineApplicationStep:
         result = step.run()
 
         jhelper.get_application.assert_called_once()
-        manifest.update_tfvar_and_apply_tf.assert_called_once()
+        manifest.update_tfvars_and_apply_tf.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
 
     def test_run_already_deployed(self, cclient, jhelper, manifest):
@@ -114,13 +114,15 @@ class TestDeployMachineApplicationStep:
         result = step.run()
 
         jhelper.get_application.assert_called_once()
-        manifest.update_tfvar_and_apply_tf.assert_called_with(
-            tfplan=tfplan, tfvar_config=tfconfig, extra_tfvars={"machine_ids": machines}
+        manifest.update_tfvars_and_apply_tf.assert_called_with(
+            tfplan=tfplan,
+            tfvar_config=tfconfig,
+            override_tfvars={"machine_ids": machines},
         )
         assert result.result_type == ResultType.COMPLETED
 
     def test_run_tf_apply_failed(self, cclient, jhelper, manifest):
-        manifest.update_tfvar_and_apply_tf.side_effect = TerraformException(
+        manifest.update_tfvars_and_apply_tf.side_effect = TerraformException(
             "apply failed..."
         )
 
@@ -129,7 +131,7 @@ class TestDeployMachineApplicationStep:
         )
         result = step.run()
 
-        manifest.update_tfvar_and_apply_tf.assert_called_once()
+        manifest.update_tfvars_and_apply_tf.assert_called_once()
         assert result.result_type == ResultType.FAILED
         assert result.message == "apply failed..."
 

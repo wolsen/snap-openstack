@@ -124,7 +124,7 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         if self._manifest:
             return self._manifest
 
-        self._manifest = Manifest.load_latest_from_clusterdb(on_default=True)
+        self._manifest = Manifest.load_latest_from_clusterdb(include_defaults=True)
         return self._manifest
 
     def is_openstack_control_plane(self) -> bool:
@@ -422,10 +422,10 @@ class EnableOpenStackApplicationStep(BaseStep, JujuStepHelper):
         extra_tfvars = self.plugin.set_tfvars_on_enable()
 
         try:
-            self.plugin.manifest.update_tfvar_and_apply_tf(
+            self.plugin.manifest.update_tfvars_and_apply_tf(
                 tfplan=self.plugin.tfplan,
                 tfvar_config=config_key,
-                extra_tfvars=extra_tfvars,
+                override_tfvars=extra_tfvars,
             )
         except TerraformException as e:
             return Result(ResultType.FAILED, str(e))
@@ -483,10 +483,10 @@ class DisableOpenStackApplicationStep(BaseStep, JujuStepHelper):
             else:
                 # Update terraform variables to disable the application
                 extra_tfvars = self.plugin.set_tfvars_on_disable()
-                self.plugin.manifest.update_tfvar_and_apply_tf(
+                self.plugin.manifest.update_tfvars_and_apply_tf(
                     tfplan=self.plugin.tfplan,
                     tfvar_config=config_key,
-                    extra_tfvars=extra_tfvars,
+                    override_tfvars=extra_tfvars,
                 )
         except TerraformException as e:
             return Result(ResultType.FAILED, str(e))

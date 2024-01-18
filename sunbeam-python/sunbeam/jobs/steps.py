@@ -90,8 +90,10 @@ class DeployMachineApplicationStep(BaseStep):
         try:
             extra_tfvars = self.extra_tfvars()
             extra_tfvars.update({"machine_ids": machine_ids})
-            self.manifest.update_tfvar_and_apply_tf(
-                tfplan=self.tfplan, tfvar_config=self.config, extra_tfvars=extra_tfvars
+            self.manifest.update_tfvars_and_apply_tf(
+                tfplan=self.tfplan,
+                tfvar_config=self.config,
+                override_tfvars=extra_tfvars,
             )
         except TerraformException as e:
             return Result(ResultType.FAILED, str(e))

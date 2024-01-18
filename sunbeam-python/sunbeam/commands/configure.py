@@ -729,7 +729,7 @@ def _configure(
     preflight_checks.append(VerifyBootstrappedCheck())
     run_preflight_checks(preflight_checks, console)
 
-    manifest_obj = Manifest.load_latest_from_clusterdb(on_default=True)
+    manifest_obj = Manifest.load_latest_from_clusterdb(include_defaults=True)
 
     name = utils.get_fqdn()
     tfplan = "demo-setup"

@@ -67,14 +67,14 @@ class TestEnableUbuntuProApplicationStep(unittest.TestCase):
             self.manifest, self.jhelper, self.token, self.tfplan
         )
         result = step.run()
-        self.manifest.update_tfvar_and_apply_tf.assert_called_with(
-            tfplan=self.tfplan, tfvar_config=None, extra_tfvars={"token": self.token}
+        self.manifest.update_tfvars_and_apply_tf.assert_called_with(
+            tfplan=self.tfplan, tfvar_config=None, override_tfvars={"token": self.token}
         )
         self.jhelper.wait_application_ready.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
 
     def test_enable_tf_apply_failed(self):
-        self.manifest.update_tfvar_and_apply_tf.side_effect = TerraformException(
+        self.manifest.update_tfvars_and_apply_tf.side_effect = TerraformException(
             "apply failed..."
         )
 
@@ -83,7 +83,7 @@ class TestEnableUbuntuProApplicationStep(unittest.TestCase):
         )
         result = step.run()
 
-        self.manifest.update_tfvar_and_apply_tf.assert_called_once()
+        self.manifest.update_tfvars_and_apply_tf.assert_called_once()
         assert result.result_type == ResultType.FAILED
         assert result.message == "apply failed..."
 
@@ -118,19 +118,19 @@ class TestDisableUbuntuProApplicationStep(unittest.TestCase):
     def test_disable(self):
         step = DisableUbuntuProApplicationStep(self.manifest, self.tfplan)
         result = step.run()
-        self.manifest.update_tfvar_and_apply_tf.assert_called_with(
-            tfplan=self.tfplan, tfvar_config=None, extra_tfvars={"token": ""}
+        self.manifest.update_tfvars_and_apply_tf.assert_called_with(
+            tfplan=self.tfplan, tfvar_config=None, override_tfvars={"token": ""}
         )
         assert result.result_type == ResultType.COMPLETED
 
     def test_disable_tf_apply_failed(self):
-        self.manifest.update_tfvar_and_apply_tf.side_effect = TerraformException(
+        self.manifest.update_tfvars_and_apply_tf.side_effect = TerraformException(
             "apply failed..."
         )
 
         step = DisableUbuntuProApplicationStep(self.manifest, self.tfplan)
         result = step.run()
 
-        self.manifest.update_tfvar_and_apply_tf.assert_called_once()
+        self.manifest.update_tfvars_and_apply_tf.assert_called_once()
         assert result.result_type == ResultType.FAILED
         assert result.message == "apply failed..."

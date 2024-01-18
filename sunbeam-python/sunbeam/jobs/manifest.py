@@ -53,6 +53,12 @@ terraform-plans: {}
 """
 
 
+class MissingTerraformInfoException(Exception):
+    """An Exception raised when terraform information is missing in manifest"""
+
+    pass
+
+
 @dataclass
 class JujuManifest:
     bootstrap_args: List[str] = Field(
@@ -89,22 +95,25 @@ class Manifest:
     terraform: Optional[Dict[str, TerraformManifest]] = None
 
     @classmethod
-    def load(cls, manifest_file: Path, on_default: bool = False) -> "Manifest":
-        """Load the manifest with the provided file input"""
-        if on_default:
+    def load(cls, manifest_file: Path, include_defaults: bool = False) -> "Manifest":
+        """Load the manifest with the provided file input
+
+        If include_defaults is True, load the manifest over the defaut manifest.
+        """
+        if include_defaults:
             return cls.load_on_default(manifest_file)
 
         with manifest_file.open() as file:
             return Manifest(**yaml.safe_load(file))
 
     @classmethod
-    def load_latest_from_clusterdb(cls, on_default: bool = False) -> "Manifest":
+    def load_latest_from_clusterdb(cls, include_defaults: bool = False) -> "Manifest":
         """Load the latest manifest from clusterdb
 
-        If on_default is True, load this manifest data over the default
+        If include_defaults is True, load the manifest over the defaut manifest.
         values.
         """
-        if on_default:
+        if include_defaults:
             return cls.load_latest_from_clusterdb_on_default()
 
         try:
@@ -200,6 +209,11 @@ class Manifest:
         if self.tf_helpers.get(tfplan):
             return self.tf_helpers.get(tfplan)
 
+        if not (self.terraform and self.terraform.get(tfplan)):
+            raise MissingTerraformInfoException(
+                f"Terraform information missing in manifest for {tfplan}"
+            )
+
         tfplan_dir = TERRAFORM_DIR_NAMES.get(tfplan, tfplan)
         src = self.terraform.get(tfplan).source
         dst = self.snap.paths.user_common / "etc" / tfplan_dir
@@ -215,9 +229,27 @@ class Manifest:
 
         return self.tf_helpers[tfplan]
 
-    def update_tfvar_and_apply_tf(
-        self, tfplan: str, tfvar_config: Optional[str] = None, extra_tfvars: dict = {}
+    def update_tfvars_and_apply_tf(
+        self,
+        tfplan: str,
+        tfvar_config: Optional[str] = None,
+        override_tfvars: dict = {},
     ) -> None:
+        """Updates terraform vars and Apply the terraform.
+
+        Get tfvars from cluster db using tfvar_config key, Manifest file using
+        Charm Manifest tfvar map from core and plugins, User provided override_tfvars.
+        Merge the tfvars in the above order so that terraform vars in override_tfvars
+        will have highest priority.
+        Get tfhelper object for tfplan and write tfvars and apply the terraform plan.
+
+        :param tfplan: Terraform plan to use to get tfhelper
+        :type tfplan: str
+        :param tfvar_config: TerraformVar key name used to save tfvar in clusterdb
+        :type tfvar_config: str or None
+        :param override_tfvars: Terraform vars to override
+        :type override_tfvars: dict
+        """
         tfvars = {}
         if tfvar_config:
             try:
@@ -225,8 +257,12 @@ class Manifest:
             except ConfigItemNotFoundException:
                 pass
 
-        tfvars.update(extra_tfvars)
-        tfvars.update(self.get_tfvars(tfplan))
+        # NOTE: It is expected for Manifest to contain all previous changes
+        # So override tfvars from configdb to defaults if not specified in
+        # manifest file
+        tfvars.update(self._get_tfvars(tfplan))
+
+        tfvars.update(override_tfvars)
         if tfvar_config:
             update_config(self.client, tfvar_config, tfvars)
 
@@ -234,17 +270,28 @@ class Manifest:
         tfhelper.write_tfvars(tfvars)
         tfhelper.apply()
 
-    def get_tfvars(self, tfplan: str) -> dict:
+    def _get_tfvars(self, tfplan: str) -> dict:
+        """Get tfvars from the manifest.
+
+        CHARM_MANIFEST_TFVARS_MAP holds the mapping of CharmManifest and the
+        terraform variable name for each CharmManifest attribute.
+        For each terraform variable in CHARM_MANIFEST_TFVARS_MAP, get the
+        corresponding value from Manifest and return all terraform variables
+        as dict.
+        """
         tfvars = {}
         tfvar_map = copy.deepcopy(CHARM_MANIFEST_TFVARS_MAP)
         tfvar_map_plugin = PluginManager().get_all_plugin_manfiest_tfvar_map()
         utils.merge_dict(tfvar_map, tfvar_map_plugin)
 
-        for charm, value in tfvar_map.get(tfplan, {}).items():
-            manifest_charm = asdict(self.charms.get(charm))
-            for key, val in value.items():
-                if manifest_charm.get(key):
-                    tfvars[val] = manifest_charm.get(key)
+        for charm, per_charm_tfvar_map in tfvar_map.get(tfplan, {}).items():
+            charm_ = self.charms.get(charm)
+            if charm_:
+                manifest_charm = asdict(charm_)
+                for charm_attribute, tfvar_name in per_charm_tfvar_map.items():
+                    charm_attribute_ = manifest_charm.get(charm_attribute)
+                    if charm_attribute_:
+                        tfvars[tfvar_name] = charm_attribute_
 
         return tfvars
 

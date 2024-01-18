@@ -37,7 +37,7 @@ snap = Snap()
 def resize(topology: str, force: bool = False) -> None:
     """Expand the control plane to fit available nodes."""
 
-    manifest_obj = Manifest.load_latest_from_clusterdb(on_default=True)
+    manifest_obj = Manifest.load_latest_from_clusterdb(include_defaults=True)
 
     tfplan = "openstack-plan"
     data_location = snap.paths.user_data

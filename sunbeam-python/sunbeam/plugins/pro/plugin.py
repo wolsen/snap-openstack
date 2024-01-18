@@ -72,8 +72,8 @@ class EnableUbuntuProApplicationStep(BaseStep, JujuStepHelper):
         """Apply terraform configuration to deploy ubuntu-pro"""
         extra_tfvars = {"token": self.token}
         try:
-            self.manifest.update_tfvar_and_apply_tf(
-                tfplan=self.tfplan, tfvar_config=None, extra_tfvars=extra_tfvars
+            self.manifest.update_tfvars_and_apply_tf(
+                tfplan=self.tfplan, tfvar_config=None, override_tfvars=extra_tfvars
             )
         except TerraformException as e:
             return Result(ResultType.FAILED, str(e))
@@ -139,8 +139,8 @@ class DisableUbuntuProApplicationStep(BaseStep, JujuStepHelper):
         """Apply terraform configuration to disable ubuntu-pro"""
         extra_tfvars = {"token": ""}
         try:
-            self.manifest.update_tfvar_and_apply_tf(
-                tfplan=self.tfplan, tfvar_config=None, extra_tfvars=extra_tfvars
+            self.manifest.update_tfvars_and_apply_tf(
+                tfplan=self.tfplan, tfvar_config=None, override_tfvars=extra_tfvars
             )
         except TerraformException as e:
             return Result(ResultType.FAILED, str(e))
@@ -164,10 +164,10 @@ class ProPlugin(EnableDisablePlugin):
         if self._manifest:
             return self._manifest
 
-        self._manifest = Manifest.load_latest_from_clusterdb(on_default=True)
+        self._manifest = Manifest.load_latest_from_clusterdb(include_defaults=True)
         return self._manifest
 
-    def manifest_part(self) -> dict:
+    def manifest_defaults(self) -> dict:
         """Manifest plugin part in dict format."""
         return {
             "terraform": {

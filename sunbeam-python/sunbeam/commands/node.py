@@ -207,7 +207,7 @@ def join(
     controller = CONTROLLER
     data_location = snap.paths.user_data
     jhelper = JujuHelper(data_location)
-    manifest_obj = Manifest.load_latest_from_cluserdb(on_default=True)
+    manifest_obj = Manifest.load_latest_from_cluserdb(include_defaults=True)
 
     plan1 = [
         JujuLoginStep(data_location),

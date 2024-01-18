@@ -216,8 +216,10 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         )
         try:
             self.update_status(status, "deploying services")
-            self.manifest.update_tfvar_and_apply_tf(
-                tfplan=self.tfplan, tfvar_config=self._CONFIG, extra_tfvars=extra_tfvars
+            self.manifest.update_tfvars_and_apply_tf(
+                tfplan=self.tfplan,
+                tfvar_config=self._CONFIG,
+                override_tfvars=extra_tfvars,
             )
         except TerraformException as e:
             LOG.exception("Error configuring cloud")
@@ -330,8 +332,10 @@ class ResizeControlPlaneStep(BaseStep, JujuStepHelper):
 
         self.update_status(status, "scaling services")
         try:
-            self.manifest.update_tfvar_and_apply_tf(
-                tfplan=self.tfplan, tfvar_config=self._CONFIG, extra_tfvars=extra_tfvars
+            self.manifest.update_tfvars_and_apply_tf(
+                tfplan=self.tfplan,
+                tfvar_config=self._CONFIG,
+                override_tfvars=extra_tfvars,
             )
         except TerraformException as e:
             LOG.exception("Error resizing control plane")

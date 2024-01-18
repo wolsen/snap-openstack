@@ -38,7 +38,7 @@ class SecretsPlugin(OpenStackControlPlanePlugin):
             tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO,
         )
 
-    def manifest_part(self) -> dict:
+    def manifest_defaults(self) -> dict:
         """Manifest plugin part in dict format."""
         return {"charms": {"barbican": {"channel": OPENSTACK_CHANNEL}}}
 

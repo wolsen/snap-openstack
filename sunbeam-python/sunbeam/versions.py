@@ -105,6 +105,39 @@ TERRAFORM_DIR_NAMES = {
     "demo-setup": "demo-setup",
 }
 
+
+"""
+Format of CHARM_MANIFEST_TFVAR_MAP
+{
+    <plan>: {
+        <charm name>: {
+            <CharmManifest Attrbiute>: <Terraform variable name>
+            ...
+            ...
+        },
+        ...
+    },
+    ...
+}
+
+Example:
+{
+    "openstack-plan": {
+        "keystone": {
+            "channel": "keystone-channel",
+            "revision": "keystone-revision",
+            "config": "keystone-config"
+        },
+    },
+    "microk8s-plan": {
+        "microk8s": {
+            "channel": "charm_microk8s_channel",
+            "revision": "charm_microk8s_revision",
+            "config": "charm_microk8s_config",
+        },
+    },
+}
+"""
 K8S_CHARMS = {}
 K8S_CHARMS |= OPENSTACK_SERVICES_K8S
 K8S_CHARMS |= OVN_SERVICES_K8S

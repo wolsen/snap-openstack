@@ -261,7 +261,7 @@ class LDAPPlugin(OpenStackControlPlanePlugin):
         )
         self.config_flags = None
 
-    def manifest_part(self) -> dict:
+    def manifest_defaults(self) -> dict:
         """Manifest plugin part in dict format."""
         return {"charms": {"keystone-ldap": {"channel": OPENSTACK_CHANNEL}}}
 

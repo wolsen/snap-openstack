@@ -103,8 +103,10 @@ class DeployHypervisorApplicationStep(BaseStep, JujuStepHelper):
         }
 
         try:
-            self.manifest.update_tfvar_and_apply_tf(
-                tfplan=self.tfplan, tfvar_config=self._CONFIG, extra_tfvars=extra_tfvars
+            self.manifest.update_tfvars_and_apply_tf(
+                tfplan=self.tfplan,
+                tfvar_config=self._CONFIG,
+                override_tfvars=extra_tfvars,
             )
         except TerraformException as e:
             return Result(ResultType.FAILED, str(e))
@@ -345,10 +347,10 @@ class ReapplyHypervisorTerraformPlanStep(BaseStep):
     def run(self, status: Optional[Status] = None) -> Result:
         """Apply terraform configuration to deploy hypervisor"""
         try:
-            self.manifest.update_tfvar_and_apply_tf(
+            self.manifest.update_tfvars_and_apply_tf(
                 tfplan=self.tfplan,
                 tfvar_config=self._CONFIG,
-                extra_tfvars=self.extra_tfvars,
+                override_tfvars=self.extra_tfvars,
             )
         except TerraformException as e:
             return Result(ResultType.FAILED, str(e))

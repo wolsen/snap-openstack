@@ -99,18 +99,18 @@ class TestDeployHypervisorStep(unittest.TestCase):
         step = DeployHypervisorApplicationStep(self.manifest, self.jhelper)
         result = step.run()
 
-        self.manifest.update_tfvar_and_apply_tf.assert_called_once()
+        self.manifest.update_tfvars_and_apply_tf.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
 
     def test_run_tf_apply_failed(self):
-        self.manifest.update_tfvar_and_apply_tf.side_effect = TerraformException(
+        self.manifest.update_tfvars_and_apply_tf.side_effect = TerraformException(
             "apply failed..."
         )
 
         step = DeployHypervisorApplicationStep(self.manifest, self.jhelper)
         result = step.run()
 
-        self.manifest.update_tfvar_and_apply_tf.assert_called_once()
+        self.manifest.update_tfvars_and_apply_tf.assert_called_once()
         assert result.result_type == ResultType.FAILED
         assert result.message == "apply failed..."
 
@@ -386,18 +386,18 @@ class TestReapplyHypervisorTerraformPlanStep(unittest.TestCase):
         step = ReapplyHypervisorTerraformPlanStep(self.manifest, self.jhelper)
         result = step.run()
 
-        self.manifest.update_tfvar_and_apply_tf.assert_called_once()
+        self.manifest.update_tfvars_and_apply_tf.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
 
     def test_run_tf_apply_failed(self):
-        self.manifest.update_tfvar_and_apply_tf.side_effect = TerraformException(
+        self.manifest.update_tfvars_and_apply_tf.side_effect = TerraformException(
             "apply failed..."
         )
 
         step = ReapplyHypervisorTerraformPlanStep(self.manifest, self.jhelper)
         result = step.run()
 
-        self.manifest.update_tfvar_and_apply_tf.assert_called_once()
+        self.manifest.update_tfvars_and_apply_tf.assert_called_once()
         assert result.result_type == ResultType.FAILED
         assert result.message == "apply failed..."
 
