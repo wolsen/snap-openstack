@@ -18,7 +18,7 @@ terraform {
   required_providers {
     juju = {
       source  = "juju/juju"
-      version = "= 0.8.0"
+      version = "= 0.10.1"
     }
   }
 
@@ -35,7 +35,7 @@ resource "juju_application" "sunbeam-machine" {
   charm {
     name    = "sunbeam-machine"
     channel = var.charm_channel
-    series  = "jammy"
+    base    = "ubuntu@22.04"
   }
 
 }
