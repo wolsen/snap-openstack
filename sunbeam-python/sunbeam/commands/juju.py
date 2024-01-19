@@ -268,6 +268,7 @@ class BootstrapJujuStep(BaseStep, JujuStepHelper):
         cloud_name: str,
         cloud_type: str,
         controller: str,
+        bootstrap_args: list = [],
         preseed_file: Optional[Path] = None,
         accept_defaults: bool = False,
     ):
@@ -276,6 +277,7 @@ class BootstrapJujuStep(BaseStep, JujuStepHelper):
         self.cloud = cloud_name
         self.cloud_type = cloud_type
         self.controller = controller
+        self.bootstrap_args = bootstrap_args
         self.preseed_file = preseed_file
         self.accept_defaults = accept_defaults
         self.juju_clouds = []
@@ -356,12 +358,9 @@ class BootstrapJujuStep(BaseStep, JujuStepHelper):
                 if not result:
                     return Result(ResultType.FAILED, "Not able to create cloud")
 
-            cmd = [
-                self._get_juju_binary(),
-                "bootstrap",
-                self.cloud,
-                self.controller,
-            ]
+            cmd = [self._get_juju_binary(), "bootstrap"]
+            cmd.extend(self.bootstrap_args)
+            cmd.extend([self.cloud, self.controller])
             LOG.debug(f'Running command {" ".join(cmd)}')
             process = subprocess.run(cmd, capture_output=True, text=True, check=True)
             LOG.debug(
