@@ -61,8 +61,14 @@ class MissingTerraformInfoException(Exception):
 
 @dataclass
 class JujuManifest:
+    # Setting Field alias not supported in pydantic 1.10.0
+    # Old version of pydantic is used due to dependencies
+    # with older version of paramiko from python-libjuju
+    # Newer version of pydantic can be used once the below
+    # PR is released
+    # https://github.com/juju/python-libjuju/pull/1005
     bootstrap_args: List[str] = Field(
-        alias="bootstrap-args", description="Extra args for juju bootstrap"
+        default=[], description="Extra args for juju bootstrap"
     )
 
 
@@ -151,7 +157,7 @@ class Manifest:
     @classmethod
     def get_default_manifest_as_dict(cls) -> dict:
         snap = Snap()
-        m = {"juju": None, "charms": {}, "terraform": {}}
+        m = {"juju": {"bootstrap_args": []}, "charms": {}, "terraform": {}}
         m["charms"] = {
             charm: {"channel": channel}
             for charm, channel in MANIFEST_CHARM_VERSIONS.items()

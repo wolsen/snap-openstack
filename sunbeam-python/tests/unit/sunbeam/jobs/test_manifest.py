@@ -27,6 +27,9 @@ from sunbeam.jobs.common import ResultType
 from sunbeam.versions import OPENSTACK_CHANNEL, TERRAFORM_DIR_NAMES
 
 test_manifest = """
+juju:
+  bootstrap_args:
+    - --agent-version=3.2.4
 charms:
   keystone:
     channel: 2023.1/stable
@@ -116,6 +119,11 @@ class TestManifest:
 
         # Assert defaults does not exist
         assert "nova" not in manifest_obj.charms.keys()
+
+        test_manifest_dict = yaml.safe_load(test_manifest)
+        assert manifest_obj.juju.bootstrap_args == test_manifest_dict.get(
+            "juju", {}
+        ).get("bootstrap_args", [])
 
     def test_load_on_default(self, mocker, snap, cclient, pluginmanager, tmpdir):
         mocker.patch.object(manifest, "Snap", return_value=snap)

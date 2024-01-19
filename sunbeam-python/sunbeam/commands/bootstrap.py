@@ -167,6 +167,7 @@ def bootstrap(
 
     cloud_type = snap.config.get("juju.cloud.type")
     cloud_name = snap.config.get("juju.cloud.name")
+    juju_bootstrap_args = manifest_obj.juju.bootstrap_args
 
     data_location = snap.paths.user_data
 
@@ -194,6 +195,7 @@ def bootstrap(
             cloud_name,
             cloud_type,
             CONTROLLER,
+            bootstrap_args=juju_bootstrap_args,
             accept_defaults=accept_defaults,
             preseed_file=preseed,
         )
