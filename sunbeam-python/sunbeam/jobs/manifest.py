@@ -42,7 +42,7 @@ from sunbeam.jobs.common import (
 )
 from sunbeam.jobs.plugin import PluginManager
 from sunbeam.versions import (
-    CHARM_MANIFEST_TFVARS_MAP,
+    MANIFEST_ATTRIBUTES_TFVAR_MAP,
     MANIFEST_CHARM_VERSIONS,
     TERRAFORM_DIR_NAMES,
 )
@@ -94,7 +94,7 @@ class TerraformManifest:
     source: Path = Field(description="Path to Terraform plan")
 
 
-@dataclass
+@dataclass(config=dict(extra="allow"))
 class Manifest:
     juju: Optional[JujuManifest] = None
     charms: Optional[Dict[str, CharmsManifest]] = None
@@ -157,7 +157,11 @@ class Manifest:
     @classmethod
     def get_default_manifest_as_dict(cls) -> dict:
         snap = Snap()
-        m = {"juju": {"bootstrap_args": []}, "charms": {}, "terraform": {}}
+        m = {
+            "juju": {"bootstrap_args": []},
+            "charms": {},
+            "terraform": {},
+        }
         m["charms"] = {
             charm: {"channel": channel}
             for charm, channel in MANIFEST_CHARM_VERSIONS.items()
@@ -200,6 +204,7 @@ class Manifest:
 
     def __post_init__(self):
         LOG.debug("Calling __post__init__")
+        PluginManager().add_manifest_section(self)
         self.default_manifest_dict = self.get_default_manifest_as_dict()
         # Add custom validations
         self.validate_terraform_keys(self.default_manifest_dict)
@@ -273,24 +278,27 @@ class Manifest:
             update_config(self.client, tfvar_config, tfvars)
 
         tfhelper = self.get_tfhelper(tfplan)
+        LOG.debug(f"Writing tfvars {tfvars}")
         tfhelper.write_tfvars(tfvars)
         tfhelper.apply()
 
     def _get_tfvars(self, tfplan: str) -> dict:
         """Get tfvars from the manifest.
 
-        CHARM_MANIFEST_TFVARS_MAP holds the mapping of CharmManifest and the
-        terraform variable name for each CharmManifest attribute.
-        For each terraform variable in CHARM_MANIFEST_TFVARS_MAP, get the
-        corresponding value from Manifest and return all terraform variables
-        as dict.
+        MANIFEST_ATTRIBUTES_TFVAR_MAP holds the mapping of Manifest attributes
+        and the terraform variable name. For each terraform variable in
+        MANIFEST_ATTRIBUTES_TFVAR_MAP, get the corresponding value from Manifest
+        and return all terraform variables as dict.
         """
         tfvars = {}
-        tfvar_map = copy.deepcopy(CHARM_MANIFEST_TFVARS_MAP)
+        tfvar_map = copy.deepcopy(MANIFEST_ATTRIBUTES_TFVAR_MAP)
         tfvar_map_plugin = PluginManager().get_all_plugin_manfiest_tfvar_map()
         utils.merge_dict(tfvar_map, tfvar_map_plugin)
 
-        for charm, per_charm_tfvar_map in tfvar_map.get(tfplan, {}).items():
+        charms_tfvar_map = tfvar_map.get(tfplan, {}).get("charms", {})
+
+        # handle tfvars for charms section
+        for charm, per_charm_tfvar_map in charms_tfvar_map.items():
             charm_ = self.charms.get(charm)
             if charm_:
                 manifest_charm = asdict(charm_)

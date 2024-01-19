@@ -214,17 +214,34 @@ class BasePlugin(ABC):
         """
         return {}
 
-    def charm_manifest_tfvar_map(self) -> dict:
-        """Return terraform var map for the manifest.
+    def add_manifest_section(self, manifest) -> None:
+        """Add manifest section.
 
-        Map terraform variable for each Charm manifest attribute.
+        Any new attributes to the manifest introduced by the plugin will be read as
+        dict. This function should convert the new attribute to a dataclass if
+        required and reassign it to manifest object. This will also help in
+        validation of new attributes.
+        """
+        pass
+
+    def manifest_attributes_tfvar_map(self) -> dict:
+        """Return terraform var map for the manifest attributes.
+
+        Map terraform variable for each manifest attribute.
         Sample return value:
         {
-            <tf plan>: {
-                "heat": {
-                    "channel": <tfvar for heat channel>,
-                    "revision": <tfvar for heat revision>,
-                    "config": <tfvar for heat config>,
+            <tf plan1>: {
+                "charms": {
+                    "heat": {
+                        "channel": <tfvar for heat channel>,
+                        "revision": <tfvar for heat revision>,
+                        "config": <tfvar for heat config>,
+                    }
+                }
+            },
+            <tfplan2>: {
+                "caas-config": {
+                    "image-url": <tfvar map for caas image url>
                 }
             }
         }

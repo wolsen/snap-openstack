@@ -107,15 +107,22 @@ TERRAFORM_DIR_NAMES = {
 
 
 """
-Format of CHARM_MANIFEST_TFVAR_MAP
+Format of MANIFEST_ATTRIBUTES_TFVAR_MAP
 {
     <plan>: {
-        <charm name>: {
-            <CharmManifest Attrbiute>: <Terraform variable name>
+        "charms": {
+            <charm name>: {
+                <CharmManifest Attrbiute>: <Terraform variable name>
+                ...
+                ...
+            },
+            ...
+        },
+        "caas_config": {
+            <CaasConfig Attribute>: <Terraform variable name>
             ...
             ...
         },
-        ...
     },
     ...
 }
@@ -123,19 +130,29 @@ Format of CHARM_MANIFEST_TFVAR_MAP
 Example:
 {
     "openstack-plan": {
-        "keystone": {
-            "channel": "keystone-channel",
-            "revision": "keystone-revision",
-            "config": "keystone-config"
+        "charms": {
+            "keystone": {
+                "channel": "keystone-channel",
+                "revision": "keystone-revision",
+                "config": "keystone-config"
+            },
         },
     },
     "microk8s-plan": {
-        "microk8s": {
-            "channel": "charm_microk8s_channel",
-            "revision": "charm_microk8s_revision",
-            "config": "charm_microk8s_config",
+        "charms": {
+            "microk8s": {
+                "channel": "charm_microk8s_channel",
+                "revision": "charm_microk8s_revision",
+                "config": "charm_microk8s_config",
+            },
         },
     },
+    "caas-setup": {
+        "caas_config": {
+            "image_name": "image-name",
+            "image_url": "image-source-url"
+        }
+    }
 }
 """
 K8S_CHARMS = {}
@@ -144,51 +161,61 @@ K8S_CHARMS |= OVN_SERVICES_K8S
 K8S_CHARMS |= MYSQL_SERVICES_K8S
 K8S_CHARMS |= MISC_SERVICES_K8S
 DEPLOY_OPENSTACK_TFVAR_MAP = {
-    svc: {
-        "channel": f"{svc}-channel",
-        "revision": f"{svc}-revision",
-        "config": f"{svc}-config",
+    "charms": {
+        svc: {
+            "channel": f"{svc}-channel",
+            "revision": f"{svc}-revision",
+            "config": f"{svc}-config",
+        }
+        for svc, channel in K8S_CHARMS.items()
     }
-    for svc, channel in K8S_CHARMS.items()
 }
-DEPLOY_OPENSTACK_TFVAR_MAP.pop("traefik-public")
-DEPLOY_OPENSTACK_TFVAR_MAP["mysql-router"] = {
+DEPLOY_OPENSTACK_TFVAR_MAP.get("charms").pop("traefik-public")
+DEPLOY_OPENSTACK_TFVAR_MAP["charms"]["mysql-router"] = {
     "channel": "mysql-router-channel",
     "revision": "mysql-router-revision",
     "config": "mysql-router-config",
 }
 
 DEPLOY_MICROK8S_TFVAR_MAP = {
-    "microk8s": {
-        "channel": "charm_microk8s_channel",
-        "revision": "charm_microk8s_revision",
-        "config": "charm_microk8s_config",
+    "charms": {
+        "microk8s": {
+            "channel": "charm_microk8s_channel",
+            "revision": "charm_microk8s_revision",
+            "config": "charm_microk8s_config",
+        }
     }
 }
 DEPLOY_MICROCEPH_TFVAR_MAP = {
-    "microceph": {
-        "channel": "charm_microceph_channel",
-        "revision": "charm_microceph_revision",
-        "config": "charm_microceph_config",
+    "charms": {
+        "microceph": {
+            "channel": "charm_microceph_channel",
+            "revision": "charm_microceph_revision",
+            "config": "charm_microceph_config",
+        }
     }
 }
 DEPLOY_OPENSTACK_HYPERVISOR_TFVAR_MAP = {
-    "openstack-hypervisor": {
-        "channel": "charm_channel",
-        "revision": "charm_revision",
-        "config": "charm_config",
+    "charms": {
+        "openstack-hypervisor": {
+            "channel": "charm_channel",
+            "revision": "charm_revision",
+            "config": "charm_config",
+        }
     }
 }
 DEPLOY_SUNBEAM_MACHINE_TFVAR_MAP = {
-    "sunbeam-machine": {
-        "channel": "charm_channel",
-        "revision": "charm_revision",
-        "config": "charm_config",
+    "charms": {
+        "sunbeam-machine": {
+            "channel": "charm_channel",
+            "revision": "charm_revision",
+            "config": "charm_config",
+        }
     }
 }
 
 
-CHARM_MANIFEST_TFVARS_MAP = {
+MANIFEST_ATTRIBUTES_TFVAR_MAP = {
     "sunbeam-machine-plan": DEPLOY_SUNBEAM_MACHINE_TFVAR_MAP,
     "microk8s-plan": DEPLOY_MICROK8S_TFVAR_MAP,
     "microceph-plan": DEPLOY_MICROCEPH_TFVAR_MAP,
