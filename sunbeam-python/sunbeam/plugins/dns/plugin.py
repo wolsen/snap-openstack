@@ -66,7 +66,7 @@ class DnsPlugin(OpenStackControlPlanePlugin):
         return {
             self.tfplan: {
                 "designate": {
-                    "channel": "desginate-channel",
+                    "channel": "designate-channel",
                     "revision": "designate-revision",
                     "config": "designate-config",
                 },
