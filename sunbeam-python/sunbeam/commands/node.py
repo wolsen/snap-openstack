@@ -207,7 +207,6 @@ def join(
     controller = CONTROLLER
     data_location = snap.paths.user_data
     jhelper = JujuHelper(data_location)
-    manifest_obj = Manifest.load_latest_from_cluserdb(include_defaults=True)
 
     plan1 = [
         JujuLoginStep(data_location),
@@ -217,6 +216,9 @@ def join(
         AddJujuMachineStep(ip),
     ]
     plan1_results = run_plan(plan1, console)
+
+    # Get manifest object once the cluster is joined
+    manifest_obj = Manifest.load_latest_from_clusterdb(include_defaults=True)
 
     machine_id = -1
     machine_id_result = get_step_message(plan1_results, AddJujuMachineStep)
