@@ -26,6 +26,7 @@ from sunbeam.commands import generate_cloud_config as generate_cloud_config_cmds
 from sunbeam.commands import generate_preseed as generate_preseed_cmds
 from sunbeam.commands import inspect as inspect_cmds
 from sunbeam.commands import launch as launch_cmds
+from sunbeam.commands import manifest as manifest_commands
 from sunbeam.commands import node as node_cmds
 from sunbeam.commands import openrc as openrc_cmds
 from sunbeam.commands import prepare_node as prepare_node_cmds
@@ -62,6 +63,12 @@ def cli(ctx, quiet, verbose):
 @click.pass_context
 def cluster(ctx):
     """Manage the Sunbeam Cluster"""
+
+
+@click.group("manifest", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
+@click.pass_context
+def manifest(ctx):
+    """Manage manifests (read-only commands)"""
 
 
 @click.group("enable", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
@@ -104,6 +111,11 @@ def main():
     cluster.add_command(node_cmds.remove)
     cluster.add_command(refresh_cmds.refresh)
     cluster.add_command(resize_cmds.resize)
+
+    # Manifst management
+    cli.add_command(manifest)
+    manifest.add_command(manifest_commands.list)
+    manifest.add_command(manifest_commands.show)
 
     cli.add_command(enable)
     cli.add_command(disable)
