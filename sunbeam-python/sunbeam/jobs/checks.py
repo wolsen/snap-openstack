@@ -270,12 +270,12 @@ class SystemRequirementsCheck(Check):
 class VerifyBootstrappedCheck(Check):
     """Check deployment has been bootstrapped."""
 
-    def __init__(self):
+    def __init__(self, client: Client):
         super().__init__(
             "Check bootstrapped",
             "Checking the deployment has been bootstrapped",
         )
-        self.client = Client()
+        self.client = client
 
     def run(self) -> bool:
         bootstrapped = self.client.cluster.check_sunbeam_bootstrapped()

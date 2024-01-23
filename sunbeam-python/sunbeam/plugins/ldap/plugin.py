@@ -77,7 +77,7 @@ class DisableLDAPDomainStep(BaseStep, JujuStepHelper):
         self.plugin = plugin
         self.model = OPENSTACK_MODEL
         self.domain_name = domain_name
-        self.client = Client()
+        self.client = self.plugin.client
         self.tfhelper = self.plugin.manifest.get_tfhelper(self.plugin.tfplan)
 
     def run(self, status: Optional[Status] = None) -> Result:
@@ -144,7 +144,7 @@ class UpdateLDAPDomainStep(BaseStep, JujuStepHelper):
         self.plugin = plugin
         self.model = OPENSTACK_MODEL
         self.charm_config = charm_config
-        self.client = Client()
+        self.client = self.plugin.client
         self.tfhelper = self.plugin.manifest.get_tfhelper(self.plugin.tfplan)
 
     def run(self, status: Optional[Status] = None) -> Result:
@@ -210,7 +210,7 @@ class AddLDAPDomainStep(BaseStep, JujuStepHelper):
         self.plugin = plugin
         self.model = OPENSTACK_MODEL
         self.charm_config = charm_config
-        self.client = Client()
+        self.client = self.plugin.client
         self.tfhelper = self.plugin.manifest.get_tfhelper(self.plugin.tfplan)
 
     def run(self, status: Optional[Status] = None) -> Result:
@@ -254,9 +254,10 @@ class AddLDAPDomainStep(BaseStep, JujuStepHelper):
 class LDAPPlugin(OpenStackControlPlanePlugin):
     version = Version("0.0.1")
 
-    def __init__(self) -> None:
+    def __init__(self, client: Client) -> None:
         super().__init__(
-            name="ldap",
+            "ldap",
+            client,
             tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO,
         )
         self.config_flags = None
@@ -307,7 +308,6 @@ class LDAPPlugin(OpenStackControlPlanePlugin):
     @click.command()
     def list_domains(self) -> None:
         """List LDAP backed domains."""
-        self.client = Client()
         try:
             tfvars = read_config(self.client, self.get_tfvar_config_key())
         except ConfigItemNotFoundException:
@@ -348,7 +348,7 @@ class LDAPPlugin(OpenStackControlPlanePlugin):
             "tls-ca-ldap": ca,
         }
         data_location = self.snap.paths.user_data
-        jhelper = JujuHelper(data_location)
+        jhelper = JujuHelper(self.client, data_location)
         plan = [
             TerraformInitStep(self.manifest.get_tfhelper(self.tfplan)),
             AddLDAPDomainStep(jhelper, self, charm_config),
@@ -387,7 +387,7 @@ class LDAPPlugin(OpenStackControlPlanePlugin):
                 ca = f.read()
             charm_config["tls-ca-ldap"] = ca
         data_location = self.snap.paths.user_data
-        jhelper = JujuHelper(data_location)
+        jhelper = JujuHelper(self.client, data_location)
         plan = [
             TerraformInitStep(self.manifest.get_tfhelper(self.tfplan)),
             UpdateLDAPDomainStep(jhelper, self, charm_config),
@@ -400,7 +400,7 @@ class LDAPPlugin(OpenStackControlPlanePlugin):
     def remove_domain(self, domain_name: str) -> None:
         """Remove LDAP backed domain."""
         data_location = self.snap.paths.user_data
-        jhelper = JujuHelper(data_location)
+        jhelper = JujuHelper(self.client, data_location)
         plan = [
             TerraformInitStep(self.manifest.get_tfhelper(self.tfplan)),
             DisableLDAPDomainStep(jhelper, self, domain_name),

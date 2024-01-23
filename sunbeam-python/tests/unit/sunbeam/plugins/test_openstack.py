@@ -42,8 +42,7 @@ def mock_run_sync(mocker):
 
 @pytest.fixture()
 def cclient():
-    with patch("sunbeam.plugins.interface.v1.openstack.Client") as p:
-        yield p
+    yield Mock()
 
 
 @pytest.fixture()

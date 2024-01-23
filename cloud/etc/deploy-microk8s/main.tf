@@ -18,7 +18,7 @@ terraform {
   required_providers {
     juju = {
       source  = "juju/juju"
-      version = "= 0.8.0"
+      version = "= 0.10.1"
     }
   }
 
@@ -40,7 +40,7 @@ resource "juju_application" "microk8s" {
     name     = "microk8s"
     channel  = var.charm_microk8s_channel
     revision = var.charm_microk8s_revision
-    series   = "jammy"
+    base    = "ubuntu@22.04"
   }
 
   config = merge({
@@ -48,5 +48,6 @@ resource "juju_application" "microk8s" {
     addons                        = join(" ", [for key, value in var.addons : "${key}:${value}"])
     disable_cert_reissue          = true
     kubelet_serialize_image_pulls = false
+    skip_verify                   = true
   }, var.charm_microk8s_config)
 }

@@ -97,13 +97,15 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
 
     interface_version = Version("0.0.1")
 
-    def __init__(self, name: str, tf_plan_location: TerraformPlanLocation) -> None:
+    def __init__(
+        self, name: str, client: Client, tf_plan_location: TerraformPlanLocation
+    ) -> None:
         """Constructor for plugin interface.
 
         :param name: Name of the plugin
         :param tf_plan_location: Location where terraform plans are placed
         """
-        super().__init__(name=name)
+        super().__init__(name, client)
         self.app_name = self.name.capitalize()
         self.tf_plan_location = tf_plan_location
 
@@ -124,7 +126,9 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         if self._manifest:
             return self._manifest
 
-        self._manifest = Manifest.load_latest_from_clusterdb(include_defaults=True)
+        self._manifest = Manifest.load_latest_from_clusterdb(
+            self.client, include_defaults=True
+        )
         return self._manifest
 
     def is_openstack_control_plane(self) -> bool:
@@ -144,7 +148,7 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         Also copies terraform plans to required locations.
         """
         preflight_checks = []
-        preflight_checks.append(VerifyBootstrappedCheck())
+        preflight_checks.append(VerifyBootstrappedCheck(self.client))
         run_preflight_checks(preflight_checks, console)
 
     def pre_enable(self) -> None:
@@ -155,7 +159,7 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
     def run_enable_plans(self) -> None:
         """Run plans to enable plugin."""
         data_location = self.snap.paths.user_data
-        jhelper = JujuHelper(data_location)
+        jhelper = JujuHelper(self.client, data_location)
         plan = [
             TerraformInitStep(self.manifest.get_tfhelper(self.tfplan)),
             EnableOpenStackApplicationStep(jhelper, self),
@@ -172,7 +176,7 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
     def run_disable_plans(self) -> None:
         """Run plans to disable the plugin."""
         data_location = self.snap.paths.user_data
-        jhelper = JujuHelper(data_location)
+        jhelper = JujuHelper(self.client, data_location)
         plan = [
             TerraformInitStep(self.manifest.get_tfhelper(self.tfplan)),
             DisableOpenStackApplicationStep(jhelper, self),
@@ -295,7 +299,7 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         :param upgrade_release: Whether to upgrade release
         """
         data_location = self.snap.paths.user_data
-        jhelper = JujuHelper(data_location)
+        jhelper = JujuHelper(self.client, data_location)
         plan = [
             UpgradeApplicationStep(jhelper, self, upgrade_release),
         ]
@@ -325,6 +329,7 @@ class UpgradeApplicationStep(BaseStep, JujuStepHelper):
         self.model = OPENSTACK_MODEL
         self.upgrade_release = upgrade_release
         self.tfhelper = self.plugin.manifest.get_tfhelper(self.plugin.tfplan)
+        self.client = self.plugin.client
 
     def terraform_sync(self, config_key: str, tfvars_delta: dict):
         """Sync the running state back to the Terraform state file.
@@ -334,7 +339,6 @@ class UpgradeApplicationStep(BaseStep, JujuStepHelper):
         :param tfvars_delta: The delta of changes to be applied to the
                              terraform vars stored in microcluster.
         """
-        self.client = Client()
         tfvars = read_config(self.client, config_key)
         tfvars.update(tfvars_delta)
         update_config(self.client, config_key, tfvars)
@@ -414,7 +418,7 @@ class EnableOpenStackApplicationStep(BaseStep, JujuStepHelper):
         self.jhelper = jhelper
         self.plugin = plugin
         self.model = OPENSTACK_MODEL
-        self.client = Client()
+        self.client = self.plugin.client
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Apply terraform configuration to deploy openstack application"""
@@ -468,7 +472,7 @@ class DisableOpenStackApplicationStep(BaseStep, JujuStepHelper):
         self.jhelper = jhelper
         self.plugin = plugin
         self.model = OPENSTACK_MODEL
-        self.client = Client()
+        self.client = self.plugin.client
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Apply terraform configuration to remove openstack application"""

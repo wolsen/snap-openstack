@@ -18,6 +18,7 @@ import click
 from rich.console import Console
 from snaphelpers import Snap
 
+from sunbeam.clusterd.client import Client
 from sunbeam.commands.openstack import ResizeControlPlaneStep
 from sunbeam.commands.terraform import TerraformInitStep
 from sunbeam.jobs.common import click_option_topology, run_plan
@@ -34,17 +35,18 @@ snap = Snap()
 @click.option(
     "-f", "--force", help="Force resizing to incompatible topology.", is_flag=True
 )
-def resize(topology: str, force: bool = False) -> None:
+@click.pass_context
+def resize(ctx: click.Context, topology: str, force: bool = False) -> None:
     """Expand the control plane to fit available nodes."""
-
-    manifest_obj = Manifest.load_latest_from_clusterdb(include_defaults=True)
+    client: Client = ctx.obj
+    manifest_obj = Manifest.load_latest_from_clusterdb(client, include_defaults=True)
 
     tfplan = "openstack-plan"
     data_location = snap.paths.user_data
-    jhelper = JujuHelper(data_location)
+    jhelper = JujuHelper(client, data_location)
     plan = [
         TerraformInitStep(manifest_obj.get_tfhelper(tfplan)),
-        ResizeControlPlaneStep(manifest_obj, jhelper, topology, force),
+        ResizeControlPlaneStep(client, manifest_obj, jhelper, topology, force),
     ]
 
     run_plan(plan, console)
