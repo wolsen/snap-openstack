@@ -271,10 +271,17 @@ class PluginManager:
         plugins = cls.get_all_plugin_classes()
         for klass in plugins:
             plugin = klass()
-            m_dict = plugin.charm_manifest_tfvar_map()
+            m_dict = plugin.manifest_attributes_tfvar_map()
             utils.merge_dict(tfvar_map, m_dict)
 
         return tfvar_map
+
+    @classmethod
+    def add_manifest_section(cls, manifest) -> None:
+        plugins = cls.get_all_plugin_classes()
+        for klass in plugins:
+            plugin = klass()
+            plugin.add_manifest_section(manifest)
 
     @classmethod
     def register(cls, cli: click.Group) -> None:

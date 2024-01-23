@@ -40,14 +40,16 @@ class OrchestrationPlugin(OpenStackControlPlanePlugin):
         """Manifest plugin part in dict format."""
         return {"charms": {"heat": {"channel": OPENSTACK_CHANNEL}}}
 
-    def charm_manifest_tfvar_map(self) -> dict:
-        """Charm manifest terraformvars map."""
+    def manifest_attributes_tfvar_map(self) -> dict:
+        """Manifest attributes terraformvars map."""
         return {
             self.tfplan: {
-                "heat": {
-                    "channel": "heat-channel",
-                    "revision": "heat-revision",
-                    "config": "heat-config",
+                "charms": {
+                    "heat": {
+                        "channel": "heat-channel",
+                        "revision": "heat-revision",
+                        "config": "heat-config",
+                    }
                 }
             }
         }

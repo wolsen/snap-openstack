@@ -54,25 +54,27 @@ class TelemetryPlugin(OpenStackControlPlanePlugin):
             }
         }
 
-    def charm_manifest_tfvar_map(self) -> dict:
-        """Charm manifest terraformvars map."""
+    def manifest_attributes_tfvar_map(self) -> dict:
+        """Manifest attributes terraformvars map."""
         return {
             self.tfplan: {
-                "aodh": {
-                    "channel": "aodh-channel",
-                    "revision": "aodh-revision",
-                    "config": "aodh-config",
-                },
-                "gnocchi": {
-                    "channel": "gnocchi-channel",
-                    "revision": "gnocchi-revision",
-                    "config": "gnocchi-config",
-                },
-                "ceilometer": {
-                    "channel": "ceilometer-channel",
-                    "revision": "ceilometer-revision",
-                    "config": "ceilometer-config",
-                },
+                "charms": {
+                    "aodh": {
+                        "channel": "aodh-channel",
+                        "revision": "aodh-revision",
+                        "config": "aodh-config",
+                    },
+                    "gnocchi": {
+                        "channel": "gnocchi-channel",
+                        "revision": "gnocchi-revision",
+                        "config": "gnocchi-config",
+                    },
+                    "ceilometer": {
+                        "channel": "ceilometer-channel",
+                        "revision": "ceilometer-revision",
+                        "config": "ceilometer-config",
+                    },
+                }
             }
         }
 

@@ -61,20 +61,22 @@ class DnsPlugin(OpenStackControlPlanePlugin):
             }
         }
 
-    def charm_manifest_tfvar_map(self) -> dict:
-        """Charm manifest terraformvars map."""
+    def manifest_attributes_tfvar_map(self) -> dict:
+        """Manifest attributes terraformvars map."""
         return {
             self.tfplan: {
-                "designate": {
-                    "channel": "designate-channel",
-                    "revision": "designate-revision",
-                    "config": "designate-config",
-                },
-                "bind": {
-                    "channel": "bind-channel",
-                    "revision": "bind-revision",
-                    "config": "bind-config",
-                },
+                "charms": {
+                    "designate": {
+                        "channel": "designate-channel",
+                        "revision": "designate-revision",
+                        "config": "designate-config",
+                    },
+                    "bind": {
+                        "channel": "bind-channel",
+                        "revision": "bind-revision",
+                        "config": "bind-config",
+                    },
+                }
             }
         }
 

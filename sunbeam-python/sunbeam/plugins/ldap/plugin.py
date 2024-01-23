@@ -265,13 +265,15 @@ class LDAPPlugin(OpenStackControlPlanePlugin):
         """Manifest plugin part in dict format."""
         return {"charms": {"keystone-ldap": {"channel": OPENSTACK_CHANNEL}}}
 
-    def charm_manifest_tfvar_map(self) -> dict:
-        """Charm manifest terraformvars map."""
+    def manifest_attributes_tfvar_map(self) -> dict:
+        """Manifest attributes terraformvars map."""
         return {
             self.tfplan: {
-                "keystone-ldap": {
-                    "channel": "ldap-channel",
-                    "revision": "ldap-revision",
+                "charms": {
+                    "keystone-ldap": {
+                        "channel": "ldap-channel",
+                        "revision": "ldap-revision",
+                    }
                 }
             }
         }
