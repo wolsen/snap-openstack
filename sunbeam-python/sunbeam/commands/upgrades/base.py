@@ -23,6 +23,7 @@ from sunbeam.clusterd.client import Client
 from sunbeam.commands.terraform import TerraformHelper
 from sunbeam.jobs.common import BaseStep, Result, ResultType, run_plan
 from sunbeam.jobs.juju import JujuHelper
+from sunbeam.jobs.manifest import Manifest
 from sunbeam.jobs.plugin import PluginManager
 
 LOG = logging.getLogger(__name__)
@@ -62,7 +63,7 @@ class UpgradeCoordinator:
         self,
         client: Client,
         jhelper: JujuHelper,
-        tfhelper: TerraformHelper,
+        manifest: Manifest,
         channel: str | None = None,
     ):
         """Upgrade coordinator.
@@ -71,13 +72,14 @@ class UpgradeCoordinator:
 
         :client: Helper for interacting with clusterd
         :jhelper: Helper for interacting with pylibjuju
-        :tfhelper: Helper for interaction with Terraform
+        :manifest: Manifest object
         :channel: OpenStack channel to upgrade charms to
         """
         self.client = client
         self.channel = channel
         self.jhelper = jhelper
-        self.tfhelper = tfhelper
+        self.manifest = manifest
+        self.tfhelper = self.manifest.get_tfhelper("openstack-plan")
 
     def get_plan(self) -> list[BaseStep]:
         """Return the plan for this upgrade.

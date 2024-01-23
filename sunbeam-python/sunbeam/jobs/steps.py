@@ -50,6 +50,7 @@ class DeployMachineApplicationStep(BaseStep):
         tfplan: str,
         banner: str = "",
         description: str = "",
+        refresh: bool = False,
     ):
         super().__init__(banner, description)
         self.manifest = manifest
@@ -59,6 +60,8 @@ class DeployMachineApplicationStep(BaseStep):
         self.model = model
         self.client = client
         self.tfplan = tfplan
+        # Set refresh flag to True to redeploy the application
+        self.refresh = refresh
 
     def extra_tfvars(self) -> dict:
         return {}
@@ -72,6 +75,9 @@ class DeployMachineApplicationStep(BaseStep):
         :return: ResultType.SKIPPED if the Step should be skipped,
                 ResultType.COMPLETED or ResultType.FAILED otherwise
         """
+        if self.refresh:
+            return Result(ResultType.COMPLETED)
+
         try:
             run_sync(self.jhelper.get_application(self.application, self.model))
         except ApplicationNotFoundException:

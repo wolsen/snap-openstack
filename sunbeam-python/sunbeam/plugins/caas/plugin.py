@@ -124,7 +124,7 @@ class CaasPlugin(OpenStackControlPlanePlugin):
         """Manifest plugin part in dict format."""
         return {
             "charms": {
-                "magnum": {"channel": OPENSTACK_CHANNEL},
+                "magnum-k8s": {"channel": OPENSTACK_CHANNEL},
             },
             "terraform": {
                 self.configure_plan: {
@@ -138,7 +138,7 @@ class CaasPlugin(OpenStackControlPlanePlugin):
         return {
             self.tfplan: {
                 "charms": {
-                    "magnum": {
+                    "magnum-k8s": {
                         "channel": "magnum-channel",
                         "revision": "magnum-revision",
                         "config": "magnum-config",

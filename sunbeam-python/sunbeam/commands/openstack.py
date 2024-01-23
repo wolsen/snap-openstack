@@ -419,3 +419,61 @@ class PatchLoadBalancerServicesStep(BaseStep):
                 self.kube.patch(Service, service_name, obj=service)
 
         return Result(ResultType.COMPLETED)
+
+
+class ReapplyOpenStackTerraformPlanStep(BaseStep, JujuStepHelper):
+    """Reapply OpenStack Terraform plan"""
+
+    _CONFIG = CONFIG_KEY
+
+    def __init__(
+        self,
+        client: Client,
+        manifest: Manifest,
+        jhelper: JujuHelper,
+    ):
+        super().__init__(
+            "Applying Control plane Terraform plan",
+            "Applying Control plane Terraform plan (this may take a while)",
+        )
+        self.manifest = manifest
+        self.jhelper = jhelper
+        self.client = client
+        self.tfplan = "openstack-plan"
+        self.model = OPENSTACK_MODEL
+
+    def run(self, status: Optional[Status] = None) -> Result:
+        """Reapply Terraform plan if there are changes in tfvars."""
+        try:
+            self.update_status(status, "deploying services")
+            self.manifest.update_tfvars_and_apply_tf(
+                tfplan=self.tfplan,
+                tfvar_config=self._CONFIG,
+            )
+        except TerraformException as e:
+            LOG.exception("Error reconfiguring cloud")
+            return Result(ResultType.FAILED, str(e))
+
+        storage_nodes = self.client.cluster.list_nodes_by_role("storage")
+        # Remove cinder-ceph from apps to wait on if ceph is not enabled
+        apps = run_sync(self.jhelper.get_application_names(self.model))
+        if not storage_nodes and "cinder-ceph" in apps:
+            apps.remove("cinder-ceph")
+        LOG.debug(f"Application monitored for readiness: {apps}")
+        task = run_sync(update_status_background(self, apps, status))
+        try:
+            run_sync(
+                self.jhelper.wait_until_active(
+                    self.model,
+                    apps,
+                    timeout=OPENSTACK_DEPLOY_TIMEOUT,
+                )
+            )
+        except (JujuWaitException, TimeoutException) as e:
+            LOG.debug(str(e))
+            return Result(ResultType.FAILED, str(e))
+        finally:
+            if not task.done():
+                task.cancel()
+
+        return Result(ResultType.COMPLETED)

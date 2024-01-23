@@ -41,6 +41,7 @@ class DeploySunbeamMachineApplicationStep(DeployMachineApplicationStep):
         client: Client,
         manifest: Manifest,
         jhelper: JujuHelper,
+        refresh: bool = False,
     ):
         super().__init__(
             client,
@@ -52,6 +53,7 @@ class DeploySunbeamMachineApplicationStep(DeployMachineApplicationStep):
             "sunbeam-machine-plan",
             "Deploy sunbeam-machine",
             "Deploying Sunbeam Machine",
+            refresh,
         )
 
     def extra_tfvars(self) -> dict:

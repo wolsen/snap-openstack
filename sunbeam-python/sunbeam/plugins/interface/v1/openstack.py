@@ -298,6 +298,20 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
 
         :param upgrade_release: Whether to upgrade release
         """
+        # For Intra channel upgrade, if the plan is openstack-plan,
+        # upgrade already applied at core and not required at plugin
+        # level
+        if (
+            not upgrade_release
+            and self.tf_plan_location  # noqa W503
+            == TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO  # noqa: W503
+        ):
+            LOG.debug(
+                f"Ignore upgrade_hook for plugin {self.name}, the corresponding apps"
+                f" will be refreshed as part of Control plane refresh"
+            )
+            return
+
         data_location = self.snap.paths.user_data
         jhelper = JujuHelper(self.client, data_location)
         plan = [

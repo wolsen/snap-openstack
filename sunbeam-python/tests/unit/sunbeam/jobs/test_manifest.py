@@ -31,12 +31,12 @@ juju:
   bootstrap_args:
     - --agent-version=3.2.4
 charms:
-  keystone:
+  keystone-k8s:
     channel: 2023.1/stable
     revision: 234
     config:
       debug: True
-  glance:
+  glance-k8s:
     channel: 2023.1/stable
     revision: 134
 terraform:
@@ -48,7 +48,7 @@ terraform:
 
 malformed_test_manifest = """
 charms:
-  keystone:
+  keystone-k8s:
     channel: 2023.1/stable
     revision: 234
     conf
@@ -56,7 +56,7 @@ charms:
 
 test_manifest_invalid_values = """
 charms:
-  keystone:
+  keystone-k8s:
     channel: 2023.1/stable
     revision: 234
     # Config value should be dictionary but provided str
@@ -65,7 +65,7 @@ charms:
 
 test_manifest_incorrect_terraform_key = """
 charms:
-  keystone:
+  keystone-k8s:
     channel: 2023.1/stable
     revision: 234
     config:
@@ -111,7 +111,7 @@ class TestManifest:
         manifest_file = tmpdir.mkdir("manifests").join("test_manifest.yaml")
         manifest_file.write(test_manifest)
         manifest_obj = manifest.Manifest.load(cclient, manifest_file)
-        ks_manifest = manifest_obj.charms.get("keystone")
+        ks_manifest = manifest_obj.charms.get("keystone-k8s")
         assert ks_manifest.channel == "2023.1/stable"
         assert ks_manifest.revision == 234
         assert ks_manifest.config == {"debug": True}
@@ -133,13 +133,13 @@ class TestManifest:
         )
 
         # Check updates from manifest file
-        ks_manifest = manifest_obj.charms.get("keystone")
+        ks_manifest = manifest_obj.charms.get("keystone-k8s")
         assert ks_manifest.channel == "2023.1/stable"
         assert ks_manifest.revision == 234
         assert ks_manifest.config == {"debug": True}
 
         # Check default ones
-        nova_manifest = manifest_obj.charms.get("nova")
+        nova_manifest = manifest_obj.charms.get("nova-k8s")
         assert nova_manifest.channel == OPENSTACK_CHANNEL
         assert nova_manifest.revision is None
         assert nova_manifest.config is None
@@ -148,13 +148,13 @@ class TestManifest:
         mocker.patch.object(manifest, "Snap", return_value=snap)
         cclient.cluster.get_latest_manifest.return_value = {"data": test_manifest}
         manifest_obj = manifest.Manifest.load_latest_from_clusterdb(cclient)
-        ks_manifest = manifest_obj.charms.get("keystone")
+        ks_manifest = manifest_obj.charms.get("keystone-k8s")
         assert ks_manifest.channel == "2023.1/stable"
         assert ks_manifest.revision == 234
         assert ks_manifest.config == {"debug": True}
 
         # Assert defaults does not exist
-        assert "nova" not in manifest_obj.charms.keys()
+        assert "nova-k8s" not in manifest_obj.charms.keys()
 
     def test_load_latest_from_clusterdb_on_default(
         self, mocker, snap, cclient, pluginmanager
@@ -164,13 +164,13 @@ class TestManifest:
         manifest_obj = manifest.Manifest.load_latest_from_clusterdb(
             cclient, include_defaults=True
         )
-        ks_manifest = manifest_obj.charms.get("keystone")
+        ks_manifest = manifest_obj.charms.get("keystone-k8s")
         assert ks_manifest.channel == "2023.1/stable"
         assert ks_manifest.revision == 234
         assert ks_manifest.config == {"debug": True}
 
         # Check default ones
-        nova_manifest = manifest_obj.charms.get("nova")
+        nova_manifest = manifest_obj.charms.get("nova-k8s")
         assert nova_manifest.channel == OPENSTACK_CHANNEL
         assert nova_manifest.revision is None
         assert nova_manifest.config is None
@@ -178,7 +178,7 @@ class TestManifest:
     def test_get_default_manifest(self, mocker, snap, cclient, pluginmanager):
         mocker.patch.object(manifest, "Snap", return_value=snap)
         default_manifest = manifest.Manifest.get_default_manifest(cclient)
-        nova_manifest = default_manifest.charms.get("nova")
+        nova_manifest = default_manifest.charms.get("nova-k8s")
         assert nova_manifest.channel == OPENSTACK_CHANNEL
         assert nova_manifest.revision is None
         assert nova_manifest.config is None

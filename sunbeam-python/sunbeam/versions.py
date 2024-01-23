@@ -85,14 +85,46 @@ CHARM_VERSIONS |= MACHINE_SERVICES
 # but per charm. So all *-mysql-router wont be included
 # and instead only mysql-router is included. Same is the
 # case of traefik charm.
+OPENSTACK_CHARMS_K8S = {
+    "cinder-ceph-k8s": OPENSTACK_CHANNEL,
+    "cinder-k8s": OPENSTACK_CHANNEL,
+    "glance-k8s": OPENSTACK_CHANNEL,
+    "horizon-k8s": OPENSTACK_CHANNEL,
+    "keystone-k8s": OPENSTACK_CHANNEL,
+    "neutron-k8s": OPENSTACK_CHANNEL,
+    "nova-k8s": OPENSTACK_CHANNEL,
+    "placement-k8s": OPENSTACK_CHANNEL,
+}
+OVN_CHARMS_K8S = {
+    "ovn-central-k8s": OVN_CHANNEL,
+    "ovn-relay-k8s": OVN_CHANNEL,
+}
+MYSQL_CHARMS_K8S = {
+    "mysql-k8s": MYSQL_CHANNEL,
+    "mysql-router-k8s": MYSQL_CHANNEL,
+}
+MISC_CHARMS_K8S = {
+    "self-signed-certificates": CERT_AUTH_CHANNEL,
+    "rabbitmq-k8s": RABBITMQ_CHANNEL,
+    "traefik-k8s": TRAEFIK_CHANNEL,
+}
+MACHINE_CHARMS = {
+    "microceph": MICROCEPH_CHANNEL,
+    "microk8s": MICROK8S_CHANNEL,
+    "openstack-hypervisor": OPENSTACK_CHANNEL,
+    "sunbeam-machine": SUNBEAM_MACHINE_CHANNEL,
+}
+
+
+K8S_CHARMS = {}
+K8S_CHARMS |= OPENSTACK_CHARMS_K8S
+K8S_CHARMS |= OVN_CHARMS_K8S
+K8S_CHARMS |= MYSQL_CHARMS_K8S
+K8S_CHARMS |= MISC_CHARMS_K8S
+
 MANIFEST_CHARM_VERSIONS = {}
-MANIFEST_CHARM_VERSIONS |= OPENSTACK_SERVICES_K8S
-MANIFEST_CHARM_VERSIONS |= OVN_SERVICES_K8S
-MANIFEST_CHARM_VERSIONS |= MYSQL_SERVICES_K8S
-MANIFEST_CHARM_VERSIONS |= MISC_SERVICES_K8S
-MANIFEST_CHARM_VERSIONS |= MACHINE_SERVICES
-MANIFEST_CHARM_VERSIONS |= {"mysql-router": MYSQL_CHANNEL}
-MANIFEST_CHARM_VERSIONS.pop("traefik-public")
+MANIFEST_CHARM_VERSIONS |= K8S_CHARMS
+MANIFEST_CHARM_VERSIONS |= MACHINE_CHARMS
 
 
 # <TF plan>: <TF Plan dir>
@@ -131,7 +163,7 @@ Example:
 {
     "openstack-plan": {
         "charms": {
-            "keystone": {
+            "keystone-k8s": {
                 "channel": "keystone-channel",
                 "revision": "keystone-revision",
                 "config": "keystone-config"
@@ -155,26 +187,20 @@ Example:
     }
 }
 """
-K8S_CHARMS = {}
-K8S_CHARMS |= OPENSTACK_SERVICES_K8S
-K8S_CHARMS |= OVN_SERVICES_K8S
-K8S_CHARMS |= MYSQL_SERVICES_K8S
-K8S_CHARMS |= MISC_SERVICES_K8S
 DEPLOY_OPENSTACK_TFVAR_MAP = {
     "charms": {
-        svc: {
-            "channel": f"{svc}-channel",
-            "revision": f"{svc}-revision",
-            "config": f"{svc}-config",
+        charm: {
+            "channel": f"{charm.removesuffix('-k8s')}-channel",
+            "revision": f"{charm.removesuffix('-k8s')}-revision",
+            "config": f"{charm.removesuffix('-k8s')}-config",
         }
-        for svc, channel in K8S_CHARMS.items()
+        for charm, channel in K8S_CHARMS.items()
     }
 }
-DEPLOY_OPENSTACK_TFVAR_MAP.get("charms").pop("traefik-public")
-DEPLOY_OPENSTACK_TFVAR_MAP["charms"]["mysql-router"] = {
-    "channel": "mysql-router-channel",
-    "revision": "mysql-router-revision",
-    "config": "mysql-router-config",
+DEPLOY_OPENSTACK_TFVAR_MAP["charms"]["self-signed-certificates"] = {
+    "channel": "certificate-authority-channel",
+    "revision": "certificate-authority-revision",
+    "config": "certificate-authority-config",
 }
 
 DEPLOY_MICROK8S_TFVAR_MAP = {

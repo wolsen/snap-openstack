@@ -88,6 +88,22 @@ class TestDeployMachineApplicationStep:
         jhelper.get_application.assert_called_once()
         assert result.result_type == ResultType.SKIPPED
 
+    def test_is_skip_application_refresh(self, cclient, jhelper):
+        step = DeployMachineApplicationStep(
+            cclient,
+            manifest,
+            jhelper,
+            "tfconfig",
+            "app1",
+            "model1",
+            "fake-plan",
+            refresh=True,
+        )
+        result = step.is_skip()
+
+        jhelper.get_application.assert_not_called()
+        assert result.result_type == ResultType.COMPLETED
+
     def test_run_pristine_installation(self, cclient, jhelper, manifest):
         jhelper.get_application.side_effect = ApplicationNotFoundException("not found")
 

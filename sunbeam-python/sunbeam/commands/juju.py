@@ -202,6 +202,25 @@ class JujuStepHelper:
         )
         return bool(available_revision > deployed_revision)
 
+    def get_charm_deployed_versions(self, model: str) -> dict:
+        """Return charm deployed info for all the applications in model.
+
+        For each application, return a tuple of charm name, channel and revision.
+        Example output:
+        {"keystone": ("keystone-k8s", "2023.2/stable", 234)}
+        """
+        _status = run_sync(self.jhelper.get_model_status_full(model))
+        status = json.loads(_status.to_json())
+
+        apps = {}
+        for app_name, app_status in status.get("applications", {}).items():
+            charm_name = self._extract_charm_name(app_status["charm"])
+            deployed_channel = self.normalise_channel(app_status["charm-channel"])
+            deployed_revision = int(self._extract_charm_revision(app_status["charm"]))
+            apps[app_name] = (charm_name, deployed_channel, deployed_revision)
+
+        return apps
+
     def normalise_channel(self, channel: str) -> str:
         """Expand channel if it is using abbreviation.
 
