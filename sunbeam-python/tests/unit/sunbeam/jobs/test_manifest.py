@@ -14,7 +14,7 @@
 # limitations under the License.
 
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 import yaml
@@ -78,8 +78,7 @@ terraform:
 
 @pytest.fixture()
 def cclient():
-    with patch("sunbeam.jobs.manifest.clusterClient") as p:
-        yield p
+    yield Mock()
 
 
 @pytest.fixture()
@@ -111,7 +110,7 @@ class TestManifest:
         mocker.patch.object(manifest, "Snap", return_value=snap)
         manifest_file = tmpdir.mkdir("manifests").join("test_manifest.yaml")
         manifest_file.write(test_manifest)
-        manifest_obj = manifest.Manifest.load(manifest_file)
+        manifest_obj = manifest.Manifest.load(cclient, manifest_file)
         ks_manifest = manifest_obj.charms.get("keystone")
         assert ks_manifest.channel == "2023.1/stable"
         assert ks_manifest.revision == 234
@@ -129,7 +128,9 @@ class TestManifest:
         mocker.patch.object(manifest, "Snap", return_value=snap)
         manifest_file = tmpdir.mkdir("manifests").join("test_manifest.yaml")
         manifest_file.write(test_manifest)
-        manifest_obj = manifest.Manifest.load(manifest_file, include_defaults=True)
+        manifest_obj = manifest.Manifest.load(
+            cclient, manifest_file, include_defaults=True
+        )
 
         # Check updates from manifest file
         ks_manifest = manifest_obj.charms.get("keystone")
@@ -145,8 +146,8 @@ class TestManifest:
 
     def test_load_latest_from_clusterdb(self, mocker, snap, cclient, pluginmanager):
         mocker.patch.object(manifest, "Snap", return_value=snap)
-        cclient().cluster.get_latest_manifest.return_value = {"data": test_manifest}
-        manifest_obj = manifest.Manifest.load_latest_from_clusterdb()
+        cclient.cluster.get_latest_manifest.return_value = {"data": test_manifest}
+        manifest_obj = manifest.Manifest.load_latest_from_clusterdb(cclient)
         ks_manifest = manifest_obj.charms.get("keystone")
         assert ks_manifest.channel == "2023.1/stable"
         assert ks_manifest.revision == 234
@@ -159,9 +160,9 @@ class TestManifest:
         self, mocker, snap, cclient, pluginmanager
     ):
         mocker.patch.object(manifest, "Snap", return_value=snap)
-        cclient().cluster.get_latest_manifest.return_value = {"data": test_manifest}
+        cclient.cluster.get_latest_manifest.return_value = {"data": test_manifest}
         manifest_obj = manifest.Manifest.load_latest_from_clusterdb(
-            include_defaults=True
+            cclient, include_defaults=True
         )
         ks_manifest = manifest_obj.charms.get("keystone")
         assert ks_manifest.channel == "2023.1/stable"
@@ -176,7 +177,7 @@ class TestManifest:
 
     def test_get_default_manifest(self, mocker, snap, cclient, pluginmanager):
         mocker.patch.object(manifest, "Snap", return_value=snap)
-        default_manifest = manifest.Manifest.get_default_manifest()
+        default_manifest = manifest.Manifest.get_default_manifest(cclient)
         nova_manifest = default_manifest.charms.get("nova")
         assert nova_manifest.channel == OPENSTACK_CHANNEL
         assert nova_manifest.revision is None
@@ -187,7 +188,7 @@ class TestManifest:
         manifest_file = tmpdir.mkdir("manifests").join("test_manifest.yaml")
         manifest_file.write(malformed_test_manifest)
         with pytest.raises(yaml.scanner.ScannerError):
-            manifest.Manifest.load(manifest_file)
+            manifest.Manifest.load(cclient, manifest_file)
 
     def test_load_manifest_invalid_values(
         self, mocker, snap, cclient, pluginmanager, tmpdir
@@ -196,7 +197,7 @@ class TestManifest:
         manifest_file = tmpdir.mkdir("manifests").join("test_manifest.yaml")
         manifest_file.write(test_manifest_invalid_values)
         with pytest.raises(ValidationError):
-            manifest.Manifest.load(manifest_file)
+            manifest.Manifest.load(cclient, manifest_file)
 
     def test_validate_terraform_keys(
         self, mocker, snap, cclient, pluginmanager, tmpdir
@@ -205,15 +206,15 @@ class TestManifest:
         manifest_file = tmpdir.mkdir("manifests").join("test_manifest.yaml")
         manifest_file.write(test_manifest_incorrect_terraform_key)
         with pytest.raises(ValueError):
-            manifest.Manifest.load(manifest_file)
+            manifest.Manifest.load(cclient, manifest_file)
 
     def test_get_tfhelper(self, mocker, snap, copytree, cclient, pluginmanager):
         tfplan = "microk8s-plan"
         mocker.patch.object(manifest, "Snap", return_value=snap)
         mocker.patch.object(terraform, "Snap", return_value=snap)
-        cclient().cluster.get_latest_manifest.return_value = {"data": test_manifest}
+        cclient.cluster.get_latest_manifest.return_value = {"data": test_manifest}
         manifest_obj = manifest.Manifest.load_latest_from_clusterdb(
-            include_defaults=True
+            cclient, include_defaults=True
         )
         tfhelper = manifest_obj.get_tfhelper(tfplan)
         tfplan_dir = TERRAFORM_DIR_NAMES.get(tfplan)
@@ -230,9 +231,9 @@ class TestManifest:
         tfplan = "openstack-plan"
         mocker.patch.object(manifest, "Snap", return_value=snap)
         mocker.patch.object(terraform, "Snap", return_value=snap)
-        cclient().cluster.get_latest_manifest.return_value = {"data": test_manifest}
+        cclient.cluster.get_latest_manifest.return_value = {"data": test_manifest}
         manifest_obj = manifest.Manifest.load_latest_from_clusterdb(
-            include_defaults=True
+            cclient, include_defaults=True
         )
         tfhelper = manifest_obj.get_tfhelper(tfplan)
         tfplan_dir = TERRAFORM_DIR_NAMES.get(tfplan)
@@ -254,9 +255,9 @@ class TestManifest:
         tfplan = "openstack-plan"
         mocker.patch.object(manifest, "Snap", return_value=snap)
         mocker.patch.object(terraform, "Snap", return_value=snap)
-        cclient().cluster.get_latest_manifest.return_value = {"data": test_manifest}
+        cclient.cluster.get_latest_manifest.return_value = {"data": test_manifest}
         manifest_obj = manifest.Manifest.load_latest_from_clusterdb(
-            include_defaults=True
+            cclient, include_defaults=True
         )
         manifest_obj.get_tfhelper(tfplan)
         assert copytree.call_count == 1
@@ -271,9 +272,9 @@ class TestManifest:
         tfplan = "microk8s-plan"
         mocker.patch.object(manifest, "Snap", return_value=snap)
         mocker.patch.object(terraform, "Snap", return_value=snap)
-        cclient().cluster.get_latest_manifest.return_value = {"data": test_manifest}
+        cclient.cluster.get_latest_manifest.return_value = {"data": test_manifest}
         manifest_obj = manifest.Manifest.load_latest_from_clusterdb(
-            include_defaults=False
+            cclient, include_defaults=False
         )
         with pytest.raises(manifest.MissingTerraformInfoException):
             manifest_obj.get_tfhelper(tfplan)
@@ -303,9 +304,9 @@ class TestManifest:
         }
         mocker.patch.object(manifest, "Snap", return_value=snap)
         mocker.patch.object(terraform, "Snap", return_value=snap)
-        cclient().cluster.get_latest_manifest.return_value = {"data": test_manifest}
+        cclient.cluster.get_latest_manifest.return_value = {"data": test_manifest}
         manifest_obj = manifest.Manifest.load_latest_from_clusterdb(
-            include_defaults=True
+            cclient, include_defaults=True
         )
         manifest_obj.update_tfvars_and_apply_tf(tfplan, "fake-config", extra_tfvars)
         manifest_obj.tf_helpers.get(tfplan).write_tfvars.assert_called_once()
@@ -343,32 +344,32 @@ class TestAddManifestStep:
     def test_run(self, cclient, tmpdir):
         manifest_file = tmpdir.mkdir("manifests").join("test_manifest.yaml")
         manifest_file.write(test_manifest)
-        step = manifest.AddManifestStep(manifest_file)
+        step = manifest.AddManifestStep(cclient, manifest_file)
         result = step.run()
 
         test_manifest_dict = yaml.safe_load(test_manifest)
-        cclient().cluster.add_manifest.assert_called_once_with(
+        cclient.cluster.add_manifest.assert_called_once_with(
             data=yaml.safe_dump(test_manifest_dict)
         )
         assert result.result_type == ResultType.COMPLETED
 
     def test_run_with_no_manifest(self, cclient):
-        step = manifest.AddManifestStep()
+        step = manifest.AddManifestStep(cclient)
         result = step.run()
 
-        cclient().cluster.add_manifest.assert_called_once_with(
+        cclient.cluster.add_manifest.assert_called_once_with(
             data=yaml.safe_dump(manifest.EMPTY_MANIFEST)
         )
         assert result.result_type == ResultType.COMPLETED
 
     def test_run_with_no_connection_to_clusterdb(self, cclient):
-        cclient().cluster.add_manifest.side_effect = ClusterServiceUnavailableException(
+        cclient.cluster.add_manifest.side_effect = ClusterServiceUnavailableException(
             "Cluster unavailable.."
         )
-        step = manifest.AddManifestStep()
+        step = manifest.AddManifestStep(cclient)
         result = step.run()
 
-        cclient().cluster.add_manifest.assert_called_once_with(
+        cclient.cluster.add_manifest.assert_called_once_with(
             data=yaml.safe_dump(manifest.EMPTY_MANIFEST)
         )
         assert result.result_type == ResultType.FAILED

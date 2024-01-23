@@ -15,6 +15,7 @@
 
 import logging
 
+from sunbeam.clusterd.client import Client
 from sunbeam.jobs.juju import MODEL, JujuHelper
 from sunbeam.jobs.manifest import Manifest
 from sunbeam.jobs.steps import (
@@ -37,10 +38,12 @@ class DeploySunbeamMachineApplicationStep(DeployMachineApplicationStep):
 
     def __init__(
         self,
+        client: Client,
         manifest: Manifest,
         jhelper: JujuHelper,
     ):
         super().__init__(
+            client,
             manifest,
             jhelper,
             CONFIG_KEY,
@@ -61,8 +64,9 @@ class DeploySunbeamMachineApplicationStep(DeployMachineApplicationStep):
 class AddSunbeamMachineUnitStep(AddMachineUnitStep):
     """Add Sunbeam machine Unit."""
 
-    def __init__(self, name: str, jhelper: JujuHelper):
+    def __init__(self, client: Client, name: str, jhelper: JujuHelper):
         super().__init__(
+            client,
             name,
             jhelper,
             CONFIG_KEY,
@@ -79,8 +83,9 @@ class AddSunbeamMachineUnitStep(AddMachineUnitStep):
 class RemoveSunbeamMachineStep(RemoveMachineUnitStep):
     """Remove Sunbeam machine Unit."""
 
-    def __init__(self, name: str, jhelper: JujuHelper):
+    def __init__(self, client: Client, name: str, jhelper: JujuHelper):
         super().__init__(
+            client,
             name,
             jhelper,
             CONFIG_KEY,

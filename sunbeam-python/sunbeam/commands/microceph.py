@@ -63,10 +63,12 @@ class DeployMicrocephApplicationStep(DeployMachineApplicationStep):
 
     def __init__(
         self,
+        client: Client,
         manifest: Manifest,
         jhelper: JujuHelper,
     ):
         super().__init__(
+            client,
             manifest,
             jhelper,
             CONFIG_KEY,
@@ -84,8 +86,9 @@ class DeployMicrocephApplicationStep(DeployMachineApplicationStep):
 class AddMicrocephUnitStep(AddMachineUnitStep):
     """Add Microceph Unit."""
 
-    def __init__(self, name: str, jhelper: JujuHelper):
+    def __init__(self, client: Client, name: str, jhelper: JujuHelper):
         super().__init__(
+            client,
             name,
             jhelper,
             CONFIG_KEY,
@@ -102,8 +105,9 @@ class AddMicrocephUnitStep(AddMachineUnitStep):
 class RemoveMicrocephUnitStep(RemoveMachineUnitStep):
     """Remove Microceph Unit."""
 
-    def __init__(self, name: str, jhelper: JujuHelper):
+    def __init__(self, client: Client, name: str, jhelper: JujuHelper):
         super().__init__(
+            client,
             name,
             jhelper,
             CONFIG_KEY,
@@ -124,17 +128,18 @@ class ConfigureMicrocephOSDStep(BaseStep):
 
     def __init__(
         self,
+        client: Client,
         name: str,
         jhelper: JujuHelper,
         preseed_file: Optional[Path] = None,
         accept_defaults: bool = False,
     ):
         super().__init__("Configure MicroCeph storage", "Configuring MicroCeph storage")
+        self.client = client
         self.name = name
         self.jhelper = jhelper
         self.preseed_file = preseed_file
         self.accept_defaults = accept_defaults
-        self.client = Client()
         self.variables = {}
         self.machine_id = ""
         self.disks = ""

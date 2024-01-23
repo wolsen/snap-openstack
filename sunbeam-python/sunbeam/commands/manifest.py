@@ -41,9 +41,10 @@ console = Console()
     default=FORMAT_TABLE,
     help="Output format.",
 )
-def list(format: str) -> None:
+@click.pass_context
+def list(ctx: click.Context, format: str) -> None:
     """List manifests"""
-    client = Client()
+    client: Client = ctx.obj
     manifests = []
 
     preflight_checks = [DaemonGroupCheck()]
@@ -70,12 +71,13 @@ def list(format: str) -> None:
 
 @click.command()
 @click.option("--id", type=str, prompt=True, help="Manifest ID")
-def show(id: str) -> None:
+@click.pass_context
+def show(ctx: click.Context, id: str) -> None:
     """Show Manifest data.
 
     Use '--id=latest' to get the last committed manifest.
     """
-    client = Client()
+    client: Client = ctx.obj
 
     preflight_checks = [DaemonGroupCheck()]
     run_preflight_checks(preflight_checks, console)

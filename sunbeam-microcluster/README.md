@@ -11,7 +11,7 @@ This requires a few dependencies to be installed:
 
     sudo add-apt-repository -y ppa:dqlite/dev
     sudo apt install gcc make dqlite-tools libdqlite-dev libraft-dev -y
-    sudo snap install --channel 1.19 --classic go
+    sudo snap install --channel 1.21 --classic go
 
 after which is possible to build sunbeam-microcluster:
 

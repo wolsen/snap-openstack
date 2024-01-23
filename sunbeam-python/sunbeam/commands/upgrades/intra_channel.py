@@ -90,5 +90,7 @@ class LatestInChannelCoordinator(UpgradeCoordinator):
     def get_plan(self) -> list[BaseStep]:
         return [
             LatestInChannel(self.jhelper),
-            UpgradePlugins(self.jhelper, self.tfhelper, upgrade_release=False),
+            UpgradePlugins(
+                self.client, self.jhelper, self.tfhelper, upgrade_release=False
+            ),
         ]

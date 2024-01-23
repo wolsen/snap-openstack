@@ -23,6 +23,7 @@ from rich.console import Console
 from snaphelpers import Snap
 
 from sunbeam import utils
+from sunbeam.clusterd.client import Client
 from sunbeam.commands.bootstrap_state import SetBootstrapped
 from sunbeam.commands.clusterd import (
     ClusterAddJujuUserStep,
@@ -130,7 +131,9 @@ snap = Snap()
         "'multi' for a database per service, "
     ),
 )
+@click.pass_context
 def bootstrap(
+    ctx: click.Context,
     roles: List[Role],
     topology: str,
     database: str,
@@ -142,12 +145,16 @@ def bootstrap(
 
     Initialize the sunbeam cluster.
     """
+    client: Client = ctx.obj
+
     # Validate manifest file
     manifest_obj = None
     if manifest:
-        manifest_obj = Manifest.load(manifest_file=manifest, include_defaults=True)
+        manifest_obj = Manifest.load(
+            client, manifest_file=manifest, include_defaults=True
+        )
     else:
-        manifest_obj = Manifest.get_default_manifest()
+        manifest_obj = Manifest.get_default_manifest(client)
 
     LOG.debug(f"Manifest used for deployment: {manifest_obj}")
 
@@ -168,7 +175,6 @@ def bootstrap(
     cloud_type = snap.config.get("juju.cloud.type")
     cloud_name = snap.config.get("juju.cloud.name")
     juju_bootstrap_args = manifest_obj.juju.bootstrap_args
-
     data_location = snap.paths.user_data
 
     preflight_checks = []
@@ -187,11 +193,12 @@ def bootstrap(
 
     plan = []
     plan.append(JujuLoginStep(data_location))
-    plan.append(ClusterInitStep(roles_to_str_list(roles)))
+    plan.append(ClusterInitStep(client, roles_to_str_list(roles)))
     if manifest:
-        plan.append(AddManifestStep(manifest))
+        plan.append(AddManifestStep(client, manifest))
     plan.append(
         BootstrapJujuStep(
+            client,
             cloud_name,
             cloud_type,
             CONTROLLER,
@@ -204,50 +211,62 @@ def bootstrap(
 
     plan2 = []
     plan2.append(CreateJujuUserStep(fqdn))
-    plan2.append(ClusterUpdateJujuControllerStep(CONTROLLER))
+    plan2.append(ClusterUpdateJujuControllerStep(client, CONTROLLER))
     plan2_results = run_plan(plan2, console)
 
     token = get_step_message(plan2_results, CreateJujuUserStep)
 
     plan3 = []
-    plan3.append(ClusterAddJujuUserStep(fqdn, token))
+    plan3.append(ClusterAddJujuUserStep(client, fqdn, token))
     plan3.append(BackupBootstrapUserStep(fqdn, data_location))
     plan3.append(SaveJujuUserLocallyStep(fqdn, data_location))
     run_plan(plan3, console)
 
-    jhelper = JujuHelper(data_location)
+    jhelper = JujuHelper(client, data_location)
 
     plan4 = []
-    plan4.append(RegisterJujuUserStep(fqdn, CONTROLLER, data_location, replace=True))
+    plan4.append(
+        RegisterJujuUserStep(client, fqdn, CONTROLLER, data_location, replace=True)
+    )
     # Deploy sunbeam machine charm
     plan4.append(TerraformInitStep(manifest_obj.get_tfhelper("sunbeam-machine-plan")))
-    plan4.append(DeploySunbeamMachineApplicationStep(manifest_obj, jhelper))
-    plan4.append(AddSunbeamMachineUnitStep(fqdn, jhelper))
+    plan4.append(DeploySunbeamMachineApplicationStep(client, manifest_obj, jhelper))
+    plan4.append(AddSunbeamMachineUnitStep(client, fqdn, jhelper))
     # Deploy Microk8s application during bootstrap irrespective of node role.
     plan4.append(TerraformInitStep(manifest_obj.get_tfhelper("microk8s-plan")))
     plan4.append(
         DeployMicrok8sApplicationStep(
-            manifest_obj, jhelper, accept_defaults=accept_defaults, preseed_file=preseed
+            client,
+            manifest_obj,
+            jhelper,
+            accept_defaults=accept_defaults,
+            preseed_file=preseed,
         )
     )
-    plan4.append(AddMicrok8sUnitStep(fqdn, jhelper))
-    plan4.append(StoreMicrok8sConfigStep(jhelper))
-    plan4.append(AddMicrok8sCloudStep(jhelper))
+    plan4.append(AddMicrok8sUnitStep(client, fqdn, jhelper))
+    plan4.append(StoreMicrok8sConfigStep(client, jhelper))
+    plan4.append(AddMicrok8sCloudStep(client, jhelper))
     # Deploy Microceph application during bootstrap irrespective of node role.
     plan4.append(TerraformInitStep(manifest_obj.get_tfhelper("microceph-plan")))
-    plan4.append(DeployMicrocephApplicationStep(manifest_obj, jhelper))
+    plan4.append(DeployMicrocephApplicationStep(client, manifest_obj, jhelper))
 
     if is_storage_node:
-        plan4.append(AddMicrocephUnitStep(fqdn, jhelper))
+        plan4.append(AddMicrocephUnitStep(client, fqdn, jhelper))
         plan4.append(
             ConfigureMicrocephOSDStep(
-                fqdn, jhelper, accept_defaults=accept_defaults, preseed_file=preseed
+                client,
+                fqdn,
+                jhelper,
+                accept_defaults=accept_defaults,
+                preseed_file=preseed,
             )
         )
 
     if is_control_node:
         plan4.append(TerraformInitStep(manifest_obj.get_tfhelper("openstack-plan")))
-        plan4.append(DeployControlPlaneStep(manifest_obj, jhelper, topology, database))
+        plan4.append(
+            DeployControlPlaneStep(client, manifest_obj, jhelper, topology, database)
+        )
 
     run_plan(plan4, console)
 
@@ -255,17 +274,17 @@ def bootstrap(
 
     if is_control_node:
         plan5.append(ConfigureMySQLStep(jhelper))
-        plan5.append(PatchLoadBalancerServicesStep())
+        plan5.append(PatchLoadBalancerServicesStep(client))
 
     # NOTE(jamespage):
     # As with MicroCeph, always deploy the openstack-hypervisor charm
     # and add a unit to the bootstrap node if required.
     plan5.append(TerraformInitStep(manifest_obj.get_tfhelper("hypervisor-plan")))
-    plan5.append(DeployHypervisorApplicationStep(manifest_obj, jhelper))
+    plan5.append(DeployHypervisorApplicationStep(client, manifest_obj, jhelper))
     if is_compute_node:
-        plan5.append(AddHypervisorUnitStep(fqdn, jhelper))
+        plan5.append(AddHypervisorUnitStep(client, fqdn, jhelper))
 
-    plan5.append(SetBootstrapped())
+    plan5.append(SetBootstrapped(client))
     run_plan(plan5, console)
 
     click.echo(f"Node has been bootstrapped with roles: {pretty_roles}")

@@ -16,7 +16,7 @@
 import copy
 import logging
 import shutil
-from dataclasses import asdict
+from dataclasses import InitVar, asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -26,7 +26,7 @@ from pydantic.dataclasses import dataclass
 from snaphelpers import Snap
 
 from sunbeam import utils
-from sunbeam.clusterd.client import Client as clusterClient
+from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import (
     ConfigItemNotFoundException,
     ManifestItemNotFoundException,
@@ -96,66 +96,69 @@ class TerraformManifest:
 
 @dataclass(config=dict(extra="allow"))
 class Manifest:
+    client: InitVar[Client]
     juju: Optional[JujuManifest] = None
     charms: Optional[Dict[str, CharmsManifest]] = None
     terraform: Optional[Dict[str, TerraformManifest]] = None
 
     @classmethod
-    def load(cls, manifest_file: Path, include_defaults: bool = False) -> "Manifest":
+    def load(
+        cls, client: Client, manifest_file: Path, include_defaults: bool = False
+    ) -> "Manifest":
         """Load the manifest with the provided file input
 
         If include_defaults is True, load the manifest over the defaut manifest.
         """
         if include_defaults:
-            return cls.load_on_default(manifest_file)
+            return cls.load_on_default(client, manifest_file)
 
         with manifest_file.open() as file:
-            return Manifest(**yaml.safe_load(file))
+            return Manifest(client, **yaml.safe_load(file))
 
     @classmethod
-    def load_latest_from_clusterdb(cls, include_defaults: bool = False) -> "Manifest":
+    def load_latest_from_clusterdb(
+        cls, client: Client, include_defaults: bool = False
+    ) -> "Manifest":
         """Load the latest manifest from clusterdb
 
         If include_defaults is True, load the manifest over the defaut manifest.
         values.
         """
         if include_defaults:
-            return cls.load_latest_from_clusterdb_on_default()
+            return cls.load_latest_from_clusterdb_on_default(client)
 
         try:
-            manifest_latest = clusterClient().cluster.get_latest_manifest()
-            return Manifest(**yaml.safe_load(manifest_latest.get("data")))
+            manifest_latest = client.cluster.get_latest_manifest()
+            return Manifest(client, **yaml.safe_load(manifest_latest.get("data")))
         except ManifestItemNotFoundException as e:
             LOG.debug(f"Error in getting latest manifest from cluster DB: {str(e)}")
-            return Manifest()
+            return Manifest(client)
 
     @classmethod
-    def load_on_default(cls, manifest_file: Path) -> "Manifest":
+    def load_on_default(cls, client: Client, manifest_file: Path) -> "Manifest":
         """Load manifest and override the default manifest"""
         with manifest_file.open() as file:
             override = yaml.safe_load(file)
-            default = cls.get_default_manifest_as_dict()
+            default = cls.get_default_manifest_as_dict(client)
             utils.merge_dict(default, override)
-            return Manifest(**default)
+            return Manifest(client, **default)
 
     @classmethod
-    def load_latest_from_clusterdb_on_default(cls) -> "Manifest":
+    def load_latest_from_clusterdb_on_default(cls, client: Client) -> "Manifest":
         """Load the latest manifest from clusterdb"""
-        default = cls.get_default_manifest_as_dict()
+        default = cls.get_default_manifest_as_dict(client)
         try:
-            manifest_latest = clusterClient().cluster.get_latest_manifest()
+            manifest_latest = client.cluster.get_latest_manifest()
             override = yaml.safe_load(manifest_latest.get("data"))
         except ManifestItemNotFoundException as e:
             LOG.debug(f"Error in getting latest manifest from cluster DB: {str(e)}")
             override = {}
 
         utils.merge_dict(default, override)
-        m = Manifest(**default)
-        LOG.debug(f"Latest applied manifest with defaults: {m}")
-        return m
+        return Manifest(client, **default)
 
     @classmethod
-    def get_default_manifest_as_dict(cls) -> dict:
+    def get_default_manifest_as_dict(cls, client: Client) -> dict:
         snap = Snap()
         m = {
             "juju": {"bootstrap_args": []},
@@ -172,14 +175,14 @@ class Manifest:
         }
 
         # Update manifests from plugins
-        m_plugin = PluginManager().get_all_plugin_manifests()
+        m_plugin = PluginManager().get_all_plugin_manifests(client)
         utils.merge_dict(m, m_plugin)
 
         return copy.deepcopy(m)
 
     @classmethod
-    def get_default_manifest(cls) -> "Manifest":
-        return Manifest(**cls.get_default_manifest_as_dict())
+    def get_default_manifest(cls, client: Client) -> "Manifest":
+        return Manifest(client, **cls.get_default_manifest_as_dict(client))
 
     """
     # field_validator supported only in pydantix 2.x
@@ -202,10 +205,10 @@ class Manifest:
             if not tf_keys <= all_tfplans:
                 raise ValueError(f"Terraform keys should be one of {all_tfplans} ")
 
-    def __post_init__(self):
+    def __post_init__(self, client: Client):
         LOG.debug("Calling __post__init__")
-        PluginManager().add_manifest_section(self)
-        self.default_manifest_dict = self.get_default_manifest_as_dict()
+        PluginManager().add_manifest_section(client, self)
+        self.default_manifest_dict = self.get_default_manifest_as_dict(client)
         # Add custom validations
         self.validate_terraform_keys(self.default_manifest_dict)
 
@@ -213,12 +216,12 @@ class Manifest:
         self.tf_helpers = {}
         self.snap = Snap()
         self.data_location = self.snap.paths.user_data
-        self.client = clusterClient()
-        self.tfvar_map = self._get_all_tfvar_map()
+        self.tfvar_map = self._get_all_tfvar_map(client)
+        self.client = client
 
-    def _get_all_tfvar_map(self) -> dict:
+    def _get_all_tfvar_map(self, client: Client) -> dict:
         tfvar_map = copy.deepcopy(MANIFEST_ATTRIBUTES_TFVAR_MAP)
-        tfvar_map_plugin = PluginManager().get_all_plugin_manfiest_tfvar_map()
+        tfvar_map_plugin = PluginManager().get_all_plugin_manfiest_tfvar_map(client)
         utils.merge_dict(tfvar_map, tfvar_map_plugin)
         return tfvar_map
 
@@ -332,11 +335,11 @@ class Manifest:
 class AddManifestStep(BaseStep):
     """Add Manifest file to cluster database"""
 
-    def __init__(self, manifest: Optional[Path] = None):
+    def __init__(self, client: Client, manifest: Optional[Path] = None):
         super().__init__("Write Manifest to database", "Writing Manifest to database")
         # Write EMPTY_MANIFEST if manifest not provided
         self.manifest = manifest
-        self.client = clusterClient()
+        self.client = client
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Write manifest to cluster db"""

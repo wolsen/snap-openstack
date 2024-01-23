@@ -41,6 +41,7 @@ class DeployMachineApplicationStep(BaseStep):
 
     def __init__(
         self,
+        client: Client,
         manifest: Manifest,
         jhelper: JujuHelper,
         config: str,
@@ -56,7 +57,7 @@ class DeployMachineApplicationStep(BaseStep):
         self.config = config
         self.application = application
         self.model = model
-        self.client = Client()
+        self.client = client
         self.tfplan = tfplan
 
     def extra_tfvars(self) -> dict:
@@ -121,6 +122,7 @@ class AddMachineUnitStep(BaseStep):
 
     def __init__(
         self,
+        client: Client,
         name: str,
         jhelper: JujuHelper,
         config: str,
@@ -130,12 +132,12 @@ class AddMachineUnitStep(BaseStep):
         description: str = "",
     ):
         super().__init__(banner, description)
+        self.client = client
         self.name = name
         self.jhelper = jhelper
         self.config = config
         self.application = application
         self.model = model
-        self.client = Client()
         self.machine_id = ""
 
     def get_unit_timeout(self) -> int:
@@ -219,6 +221,7 @@ class RemoveMachineUnitStep(BaseStep):
 
     def __init__(
         self,
+        client: Client,
         name: str,
         jhelper: JujuHelper,
         config: str,
@@ -228,12 +231,12 @@ class RemoveMachineUnitStep(BaseStep):
         description: str = "",
     ):
         super().__init__(banner, description)
+        self.client = client
         self.name = name
         self.jhelper = jhelper
         self.config = config
         self.application = application
         self.model = model
-        self.client = Client()
         self.machine_id = ""
         self.unit = None
 

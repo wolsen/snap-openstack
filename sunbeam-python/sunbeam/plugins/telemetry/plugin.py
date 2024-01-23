@@ -19,6 +19,7 @@ import click
 from packaging.version import Version
 from rich.console import Console
 
+from sunbeam.clusterd.client import Client
 from sunbeam.commands.hypervisor import ReapplyHypervisorTerraformPlanStep
 from sunbeam.commands.terraform import TerraformInitStep
 from sunbeam.jobs.common import run_plan
@@ -38,9 +39,10 @@ console = Console()
 class TelemetryPlugin(OpenStackControlPlanePlugin):
     version = Version("0.0.1")
 
-    def __init__(self) -> None:
+    def __init__(self, client: Client) -> None:
         super().__init__(
-            name="telemetry",
+            "telemetry",
+            client,
             tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO,
         )
 
@@ -81,12 +83,12 @@ class TelemetryPlugin(OpenStackControlPlanePlugin):
     def run_enable_plans(self) -> None:
         """Run plans to enable plugin."""
         data_location = self.snap.paths.user_data
-        jhelper = JujuHelper(data_location)
+        jhelper = JujuHelper(self.client, data_location)
         plan = [
             TerraformInitStep(self.manifest.get_tfhelper(self.tfplan)),
             EnableOpenStackApplicationStep(jhelper, self),
             # No need to pass any extra terraform vars for this plugin
-            ReapplyHypervisorTerraformPlanStep(self.manifest, jhelper),
+            ReapplyHypervisorTerraformPlanStep(self.client, self.manifest, jhelper),
         ]
 
         run_plan(plan, console)
@@ -95,11 +97,11 @@ class TelemetryPlugin(OpenStackControlPlanePlugin):
     def run_disable_plans(self) -> None:
         """Run plans to disable the plugin."""
         data_location = self.snap.paths.user_data
-        jhelper = JujuHelper(data_location)
+        jhelper = JujuHelper(self.client, data_location)
         plan = [
             TerraformInitStep(self.manifest.get_tfhelper(self.tfplan)),
             DisableOpenStackApplicationStep(jhelper, self),
-            ReapplyHypervisorTerraformPlanStep(self.manifest, jhelper),
+            ReapplyHypervisorTerraformPlanStep(self.client, self.manifest, jhelper),
         ]
 
         run_plan(plan, console)
@@ -108,7 +110,7 @@ class TelemetryPlugin(OpenStackControlPlanePlugin):
     def _get_observability_offer_endpoints(self) -> dict:
         """Fetch observability offers."""
         data_location = self.snap.paths.user_data
-        jhelper = JujuHelper(data_location)
+        jhelper = JujuHelper(self.client, data_location)
         try:
             model = run_sync(jhelper.get_model("observability"))
         except ModelNotFoundException:

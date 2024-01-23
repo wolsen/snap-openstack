@@ -56,6 +56,7 @@ class DeployHypervisorApplicationStep(BaseStep, JujuStepHelper):
 
     def __init__(
         self,
+        client: Client,
         manifest: Manifest,
         jhelper: JujuHelper,
     ):
@@ -65,7 +66,7 @@ class DeployHypervisorApplicationStep(BaseStep, JujuStepHelper):
         )
         self.manifest = manifest
         self.jhelper = jhelper
-        self.client = Client()
+        self.client = client
         self.hypervisor_model = CONTROLLER_MODEL.split("/")[-1]
         self.openstack_model = OPENSTACK_MODEL
         self.tfplan = "hypervisor-plan"
@@ -130,7 +131,7 @@ class DeployHypervisorApplicationStep(BaseStep, JujuStepHelper):
 
 
 class AddHypervisorUnitStep(BaseStep, JujuStepHelper):
-    def __init__(self, name: str, jhelper: JujuHelper):
+    def __init__(self, client: Client, name: str, jhelper: JujuHelper):
         super().__init__(
             "Add OpenStack Hypervisor unit",
             "Adding OpenStack Hypervisor unit to machine",
@@ -139,7 +140,7 @@ class AddHypervisorUnitStep(BaseStep, JujuStepHelper):
         self.name = name
         self.jhelper = jhelper
         self.machine_id = ""
-        self.client = Client()
+        self.client = client
 
     def is_skip(self, status: Optional[Status] = None) -> Result:
         """Determines if the step should be skipped or not.
@@ -211,7 +212,13 @@ class AddHypervisorUnitStep(BaseStep, JujuStepHelper):
 
 
 class RemoveHypervisorUnitStep(BaseStep, JujuStepHelper):
-    def __init__(self, name: str, jhelper: JujuHelper, force: bool = False):
+    def __init__(
+        self,
+        client: Client,
+        name: str,
+        jhelper: JujuHelper,
+        force: bool = False,
+    ):
         super().__init__(
             "Remove openstack-hypervisor unit",
             "Remove openstack-hypervisor unit from machine",
@@ -221,7 +228,7 @@ class RemoveHypervisorUnitStep(BaseStep, JujuStepHelper):
         self.force = force
         self.unit = None
         self.machine_id = ""
-        self.client = Client()
+        self.client = client
 
     def is_skip(self, status: Optional[Status] = None) -> Result:
         """Determines if the step should be skipped or not.
@@ -319,6 +326,7 @@ class ReapplyHypervisorTerraformPlanStep(BaseStep):
 
     def __init__(
         self,
+        client: Client,
         manifest: Manifest,
         jhelper: JujuHelper,
         extra_tfvars: dict = {},
@@ -330,7 +338,7 @@ class ReapplyHypervisorTerraformPlanStep(BaseStep):
         self.manifest = manifest
         self.jhelper = jhelper
         self.extra_tfvars = extra_tfvars
-        self.client = Client()
+        self.client = client
         self.tfplan = "hypervisor-plan"
 
     def is_skip(self, status: Optional[Status] = None) -> Result:
