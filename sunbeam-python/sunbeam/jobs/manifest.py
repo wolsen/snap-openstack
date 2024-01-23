@@ -214,6 +214,13 @@ class Manifest:
         self.snap = Snap()
         self.data_location = self.snap.paths.user_data
         self.client = clusterClient()
+        self.tfvar_map = self._get_all_tfvar_map()
+
+    def _get_all_tfvar_map(self) -> dict:
+        tfvar_map = copy.deepcopy(MANIFEST_ATTRIBUTES_TFVAR_MAP)
+        tfvar_map_plugin = PluginManager().get_all_plugin_manfiest_tfvar_map()
+        utils.merge_dict(tfvar_map, tfvar_map_plugin)
+        return tfvar_map
 
     # Terraform helper classes
     def get_tfhelper(self, tfplan: str) -> TerraformHelper:
@@ -264,7 +271,13 @@ class Manifest:
         tfvars = {}
         if tfvar_config:
             try:
-                tfvars = read_config(self.client, tfvar_config)
+                tfvars_from_config = read_config(self.client, tfvar_config)
+                # Exclude all default tfvar keys from the previous terraform
+                # vars applied to the plan.
+                _tfvar_names = self._get_tfvar_names(tfplan)
+                tfvars = {
+                    k: v for k, v in tfvars_from_config.items() if k not in _tfvar_names
+                }
             except ConfigItemNotFoundException:
                 pass
 
@@ -291,11 +304,8 @@ class Manifest:
         and return all terraform variables as dict.
         """
         tfvars = {}
-        tfvar_map = copy.deepcopy(MANIFEST_ATTRIBUTES_TFVAR_MAP)
-        tfvar_map_plugin = PluginManager().get_all_plugin_manfiest_tfvar_map()
-        utils.merge_dict(tfvar_map, tfvar_map_plugin)
 
-        charms_tfvar_map = tfvar_map.get(tfplan, {}).get("charms", {})
+        charms_tfvar_map = self.tfvar_map.get(tfplan, {}).get("charms", {})
 
         # handle tfvars for charms section
         for charm, per_charm_tfvar_map in charms_tfvar_map.items():
@@ -308,6 +318,15 @@ class Manifest:
                         tfvars[tfvar_name] = charm_attribute_
 
         return tfvars
+
+    def _get_tfvar_names(self, tfplan: str) -> list:
+        return [
+            tfvar_name
+            for charm, per_charm_tfvar_map in self.tfvar_map.get(tfplan, {})
+            .get("charms", {})
+            .items()
+            for charm_attribute, tfvar_name in per_charm_tfvar_map.items()
+        ]
 
 
 class AddManifestStep(BaseStep):

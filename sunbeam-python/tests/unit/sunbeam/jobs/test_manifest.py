@@ -298,6 +298,7 @@ class TestManifest:
         read_config.return_value = {
             "keystone-channel": OPENSTACK_CHANNEL,
             "neutron-channel": "2023.1/stable",
+            "neutron-revision": 123,
             "ldap-apps": {"dom1": {"domain-name": "dom1"}},
         }
         mocker.patch.object(manifest, "Snap", return_value=snap)
@@ -332,6 +333,10 @@ class TestManifest:
 
         # Assert values coming from extra_tfvars and in manifest
         assert applied_tfvars.get("glance-revision") == 555
+
+        # Assert remove keys from read_config if not present in manifest+defaults
+        # or override
+        assert "neutron-revision" not in applied_tfvars.keys()
 
 
 class TestAddManifestStep:
