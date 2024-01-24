@@ -23,6 +23,7 @@ from sunbeam.commands.openstack import (
     METALLB_ANNOTATION,
     DeployControlPlaneStep,
     PatchLoadBalancerServicesStep,
+    ReapplyOpenStackTerraformPlanStep,
     ResizeControlPlaneStep,
     compute_ceph_replica_scale,
     compute_ha_scale,
@@ -421,3 +422,72 @@ def test_compute_ingress_scale(topology, control_nodes, scale):
 )
 def test_compute_ceph_replica_scale(topology, storage_nodes, scale):
     assert compute_ceph_replica_scale(topology, storage_nodes) == scale
+
+
+class TestReapplyOpenStackTerraformPlanStep(unittest.TestCase):
+    def __init__(self, methodName: str = "runTest") -> None:
+        super().__init__(methodName)
+        self.read_config = patch(
+            "sunbeam.commands.openstack.read_config",
+            Mock(return_value={"topology": "single", "database": "single"}),
+        )
+
+    def setUp(self):
+        self.client = Mock(
+            cluster=Mock(list_nodes_by_role=Mock(return_value=[1, 2, 3, 4]))
+        )
+        self.read_config.start()
+        self.jhelper = AsyncMock()
+        self.manifest = Mock()
+
+    def tearDown(self):
+        self.read_config.stop()
+
+    def test_run(self):
+        step = ReapplyOpenStackTerraformPlanStep(
+            self.client, self.manifest, self.jhelper
+        )
+        result = step.run()
+
+        self.manifest.update_tfvars_and_apply_tf.assert_called_once()
+        assert result.result_type == ResultType.COMPLETED
+
+    def test_run_tf_apply_failed(self):
+        self.manifest.update_tfvars_and_apply_tf.side_effect = TerraformException(
+            "apply failed..."
+        )
+
+        step = ReapplyOpenStackTerraformPlanStep(
+            self.client, self.manifest, self.jhelper
+        )
+        result = step.run()
+
+        self.manifest.update_tfvars_and_apply_tf.assert_called_once()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == "apply failed..."
+
+    def test_run_waiting_timed_out(self):
+        self.jhelper.wait_until_active.side_effect = TimeoutException("timed out")
+
+        step = ReapplyOpenStackTerraformPlanStep(
+            self.client, self.manifest, self.jhelper
+        )
+        result = step.run()
+
+        self.jhelper.wait_until_active.assert_called_once()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == "timed out"
+
+    def test_run_unit_in_error_state(self):
+        self.jhelper.wait_until_active.side_effect = JujuWaitException(
+            "Unit in error: placement/0"
+        )
+
+        step = ReapplyOpenStackTerraformPlanStep(
+            self.client, self.manifest, self.jhelper
+        )
+        result = step.run()
+
+        self.jhelper.wait_until_active.assert_called_once()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == "Unit in error: placement/0"

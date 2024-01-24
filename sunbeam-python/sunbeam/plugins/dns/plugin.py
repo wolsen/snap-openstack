@@ -58,8 +58,8 @@ class DnsPlugin(OpenStackControlPlanePlugin):
         """Manifest plugin part in dict format."""
         return {
             "charms": {
-                "designate": {"channel": OPENSTACK_CHANNEL},
-                "bind": {"channel": BIND_CHANNEL},
+                "designate-k8s": {"channel": OPENSTACK_CHANNEL},
+                "designate-bind-k8s": {"channel": BIND_CHANNEL},
             }
         }
 
@@ -68,12 +68,12 @@ class DnsPlugin(OpenStackControlPlanePlugin):
         return {
             self.tfplan: {
                 "charms": {
-                    "designate": {
+                    "designate-k8s": {
                         "channel": "designate-channel",
                         "revision": "designate-revision",
                         "config": "designate-config",
                     },
-                    "bind": {
+                    "designate-bind-k8s": {
                         "channel": "bind-channel",
                         "revision": "bind-revision",
                         "config": "bind-config",

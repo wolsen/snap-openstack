@@ -40,14 +40,14 @@ class LoadbalancerPlugin(OpenStackControlPlanePlugin):
 
     def manifest_defaults(self) -> dict:
         """Manifest plugin part in dict format."""
-        return {"charms": {"octavia": {"channel": OPENSTACK_CHANNEL}}}
+        return {"charms": {"octavia-k8s": {"channel": OPENSTACK_CHANNEL}}}
 
     def manifest_attributes_tfvar_map(self) -> dict:
         """Manifest attributes terraformvars map."""
         return {
             self.tfplan: {
                 "charms": {
-                    "octavia": {
+                    "octavia-k8s": {
                         "channel": "octavia-channel",
                         "revision": "octavia-revision",
                         "config": "octavia-config",

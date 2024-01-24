@@ -271,15 +271,16 @@ class Manifest:
         :param override_tfvars: Terraform vars to override
         :type override_tfvars: dict
         """
-        tfvars = {}
+        current_tfvars = {}
+        updated_tfvars = {}
         if tfvar_config:
             try:
-                tfvars_from_config = read_config(self.client, tfvar_config)
+                current_tfvars = read_config(self.client, tfvar_config)
                 # Exclude all default tfvar keys from the previous terraform
                 # vars applied to the plan.
                 _tfvar_names = self._get_tfvar_names(tfplan)
-                tfvars = {
-                    k: v for k, v in tfvars_from_config.items() if k not in _tfvar_names
+                updated_tfvars = {
+                    k: v for k, v in current_tfvars.items() if k not in _tfvar_names
                 }
             except ConfigItemNotFoundException:
                 pass
@@ -287,15 +288,21 @@ class Manifest:
         # NOTE: It is expected for Manifest to contain all previous changes
         # So override tfvars from configdb to defaults if not specified in
         # manifest file
-        tfvars.update(self._get_tfvars(tfplan))
+        updated_tfvars.update(self._get_tfvars(tfplan))
 
-        tfvars.update(override_tfvars)
+        updated_tfvars.update(override_tfvars)
+
+        # No need to apply plan if there is no change in terraform vars.
+        if current_tfvars == updated_tfvars:
+            LOG.debug(f"Not running plan {tfplan} as there is no change in tfvars")
+            return
+
         if tfvar_config:
-            update_config(self.client, tfvar_config, tfvars)
+            update_config(self.client, tfvar_config, updated_tfvars)
 
         tfhelper = self.get_tfhelper(tfplan)
-        LOG.debug(f"Writing tfvars {tfvars}")
-        tfhelper.write_tfvars(tfvars)
+        tfhelper.write_tfvars(updated_tfvars)
+        LOG.debug(f"Applying plan {tfplan} with tfvars {updated_tfvars}")
         tfhelper.apply()
 
     def _get_tfvars(self, tfplan: str) -> dict:

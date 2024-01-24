@@ -21,13 +21,11 @@ from rich.console import Console
 from snaphelpers import Snap
 
 from sunbeam.clusterd.client import Client
-from sunbeam.commands.terraform import TerraformHelper
 from sunbeam.commands.upgrades.inter_channel import ChannelUpgradeCoordinator
 from sunbeam.commands.upgrades.intra_channel import LatestInChannelCoordinator
 from sunbeam.jobs.common import run_plan
 from sunbeam.jobs.juju import JujuHelper
 from sunbeam.jobs.manifest import AddManifestStep, Manifest
-from sunbeam.versions import TERRAFORM_DIR_NAMES
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -80,28 +78,24 @@ def refresh(
     if clear_manifest:
         run_plan([AddManifestStep(client)], console)
     elif manifest:
-        manifest_obj = Manifest.load(client, manifest_file=manifest)
-        LOG.debug(f"Manifest object created with no errors: {manifest_obj}")
+        manifest_obj = Manifest.load(
+            client, manifest_file=manifest, include_defaults=True
+        )
         run_plan([AddManifestStep(client, manifest)], console)
-    else:
-        LOG.debug("Getting latest manifest")
-        manifest_obj = Manifest.load_latest_from_cluserdb(client, include_defaults=True)
-        LOG.debug(f"Manifest object created with no errors: {manifest_obj}")
 
-    tfplan = "openstack-plan"
-    tfplan_dir = TERRAFORM_DIR_NAMES.get(tfplan)
+    if not manifest_obj:
+        LOG.debug("Getting latest manifest from cluster db")
+        manifest_obj = Manifest.load_latest_from_clusterdb(
+            client, include_defaults=True
+        )
+
+    LOG.debug(f"Manifest object used for refresh: {manifest_obj}")
     data_location = snap.paths.user_data
-    tfhelper = TerraformHelper(
-        path=snap.paths.user_common / "etc" / tfplan_dir,
-        plan=tfplan,
-        backend="http",
-        data_location=data_location,
-    )
     jhelper = JujuHelper(client, data_location)
     if upgrade_release:
-        a = ChannelUpgradeCoordinator(client, jhelper, tfhelper)
+        a = ChannelUpgradeCoordinator(client, jhelper, manifest_obj)
         a.run_plan()
     else:
-        a = LatestInChannelCoordinator(client, jhelper, tfhelper)
+        a = LatestInChannelCoordinator(client, jhelper, manifest_obj)
         a.run_plan()
     click.echo("Refresh complete.")

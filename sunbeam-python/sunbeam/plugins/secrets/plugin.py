@@ -39,14 +39,14 @@ class SecretsPlugin(OpenStackControlPlanePlugin):
 
     def manifest_defaults(self) -> dict:
         """Manifest plugin part in dict format."""
-        return {"charms": {"barbican": {"channel": OPENSTACK_CHANNEL}}}
+        return {"charms": {"barbican-k8s": {"channel": OPENSTACK_CHANNEL}}}
 
     def manifest_attributes_tfvar_map(self) -> dict:
         """Manifest attributes terraformvars map."""
         return {
             self.tfplan: {
                 "charms": {
-                    "barbican": {
+                    "barbican-k8s": {
                         "channel": "barbican-channel",
                         "revision": "barbican-revision",
                         "config": "barbican-config",

@@ -40,14 +40,14 @@ class OrchestrationPlugin(OpenStackControlPlanePlugin):
 
     def manifest_defaults(self) -> dict:
         """Manifest plugin part in dict format."""
-        return {"charms": {"heat": {"channel": OPENSTACK_CHANNEL}}}
+        return {"charms": {"heat-k8s": {"channel": OPENSTACK_CHANNEL}}}
 
     def manifest_attributes_tfvar_map(self) -> dict:
         """Manifest attributes terraformvars map."""
         return {
             self.tfplan: {
                 "charms": {
-                    "heat": {
+                    "heat-k8s": {
                         "channel": "heat-channel",
                         "revision": "heat-revision",
                         "config": "heat-config",

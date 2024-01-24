@@ -66,6 +66,7 @@ class DeployMicrocephApplicationStep(DeployMachineApplicationStep):
         client: Client,
         manifest: Manifest,
         jhelper: JujuHelper,
+        refresh: bool = False,
     ):
         super().__init__(
             client,
@@ -77,6 +78,7 @@ class DeployMicrocephApplicationStep(DeployMachineApplicationStep):
             "microceph-plan",
             "Deploy MicroCeph",
             "Deploying MicroCeph",
+            refresh,
         )
 
     def get_application_timeout(self) -> int:

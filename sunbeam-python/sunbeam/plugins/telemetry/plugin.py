@@ -50,9 +50,9 @@ class TelemetryPlugin(OpenStackControlPlanePlugin):
         """Manifest plugin part in dict format."""
         return {
             "charms": {
-                "aodh": {"channel": OPENSTACK_CHANNEL},
-                "gnocchi": {"channel": OPENSTACK_CHANNEL},
-                "ceilometer": {"channel": OPENSTACK_CHANNEL},
+                "aodh-k8s": {"channel": OPENSTACK_CHANNEL},
+                "gnocchi-k8s": {"channel": OPENSTACK_CHANNEL},
+                "ceilometer-k8s": {"channel": OPENSTACK_CHANNEL},
             }
         }
 
@@ -61,17 +61,17 @@ class TelemetryPlugin(OpenStackControlPlanePlugin):
         return {
             self.tfplan: {
                 "charms": {
-                    "aodh": {
+                    "aodh-k8s": {
                         "channel": "aodh-channel",
                         "revision": "aodh-revision",
                         "config": "aodh-config",
                     },
-                    "gnocchi": {
+                    "gnocchi-k8s": {
                         "channel": "gnocchi-channel",
                         "revision": "gnocchi-revision",
                         "config": "gnocchi-config",
                     },
-                    "ceilometer": {
+                    "ceilometer-k8s": {
                         "channel": "ceilometer-channel",
                         "revision": "ceilometer-revision",
                         "config": "ceilometer-config",

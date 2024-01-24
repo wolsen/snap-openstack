@@ -198,7 +198,7 @@ class BasePlugin(ABC):
         Sample manifest:
         {
             "charms": {
-                "heat": {
+                "heat-k8s": {
                     "channel": <>.
                     "revision": <>,
                     "config": <>,
@@ -233,7 +233,7 @@ class BasePlugin(ABC):
         {
             <tf plan1>: {
                 "charms": {
-                    "heat": {
+                    "heat-k8s": {
                         "channel": <tfvar for heat channel>,
                         "revision": <tfvar for heat revision>,
                         "config": <tfvar for heat config>,

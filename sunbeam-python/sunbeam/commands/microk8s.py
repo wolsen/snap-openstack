@@ -96,6 +96,7 @@ class DeployMicrok8sApplicationStep(DeployMachineApplicationStep):
         jhelper: JujuHelper,
         preseed_file: Optional[Path] = None,
         accept_defaults: bool = False,
+        refresh: bool = False,
     ):
         super().__init__(
             client,
@@ -107,6 +108,7 @@ class DeployMicrok8sApplicationStep(DeployMachineApplicationStep):
             "microk8s-plan",
             "Deploy MicroK8S",
             "Deploying MicroK8S",
+            refresh,
         )
 
         self.preseed_file = preseed_file
@@ -156,6 +158,10 @@ class DeployMicrok8sApplicationStep(DeployMachineApplicationStep):
         :return: True if the step can ask the user for prompts,
                  False otherwise
         """
+        # No need to prompt for questions in case of refresh
+        if self.refresh:
+            return False
+
         return True
 
 

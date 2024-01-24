@@ -46,14 +46,14 @@ class VaultPlugin(OpenStackControlPlanePlugin):
 
     def manifest_defaults(self) -> dict:
         """Manifest pluing part in dict format."""
-        return {"charms": {"vault": {"channel": VAULT_CHANNEL}}}
+        return {"charms": {"vault-k8s": {"channel": VAULT_CHANNEL}}}
 
     def manifest_attributes_tfvar_map(self) -> dict:
         """Manifest attrbitues to terraformvars map."""
         return {
             self.tfplan: {
                 "charms": {
-                    "vault": {
+                    "vault-k8s": {
                         "channel": "vault-channel",
                         "revision": "vault-revision",
                         "config": "vault-config",
