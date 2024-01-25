@@ -25,12 +25,10 @@ from rich.table import Table
 from snaphelpers import Snap
 
 from sunbeam.commands.deployment import (
-    DeploymentType,
-    deployment_config,
+    DeploymentsConfig,
     deployment_path,
-    get_deployment,
     list_deployments,
-    switch_deployment,
+    register_deployment_type,
 )
 from sunbeam.jobs.checks import LocalShareCheck
 from sunbeam.jobs.common import (
@@ -39,37 +37,32 @@ from sunbeam.jobs.common import (
     FORMAT_YAML,
     run_preflight_checks,
 )
-from sunbeam.provider.local import LocalProvider
-from sunbeam.provider.maas import MaasProvider
+from sunbeam.provider.base import ProviderBase
+from sunbeam.provider.local import LOCAL_TYPE, LocalProvider
+from sunbeam.provider.maas import MAAS_TYPE, MaasProvider
 from sunbeam.utils import CatchGroup
 
 console = Console()
 LOG = logging.getLogger(__name__)
 
 
-DEFAULT = DeploymentType.LOCAL
+DEFAULT = LOCAL_TYPE
 
 
-def guess_provider(path: Path) -> DeploymentType:
+def guess_provider(path: Path) -> str:
     """Guess provider from environment."""
     provider = DEFAULT
 
     if not path.exists():
         return provider
 
-    deployment = deployment_config(path)
+    deployments = DeploymentsConfig.load(path)
 
-    active_deployment = deployment.get("active")
-
-    if active_deployment is None:
+    if deployments.active is None:
         LOG.debug("No active deployment found.")
         return provider
 
-    for deployment in deployment.get("deployments", []):
-        if deployment["name"] == active_deployment:
-            return DeploymentType(deployment["type"])
-
-    raise ValueError(f"Unknown provider: {provider}")
+    return deployments.get_active().type
 
 
 @click.group("deployment", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
@@ -97,8 +90,9 @@ def switch(name: str) -> None:
 
     snap = Snap()
     path = deployment_path(snap)
+    deployments_config = DeploymentsConfig.load(path)
     try:
-        switch_deployment(path, name)
+        deployments_config.switch(name)
         click.echo(f"Deployment switched to {name}.")
     except ValueError as e:
         click.echo(str(e))
@@ -121,7 +115,8 @@ def list(format: str) -> None:
 
     snap = Snap()
     path = deployment_path(snap)
-    deployment_list = list_deployments(path)
+    deployments_config = DeploymentsConfig.load(path)
+    deployment_list = list_deployments(deployments_config)
     if format == FORMAT_TABLE:
         table = Table()
         table.add_column("Deployment")
@@ -158,28 +153,33 @@ def show(name: str, format: str):
 
     snap = Snap()
     path = deployment_path(snap)
+    deployments_config = DeploymentsConfig.load(path)
     try:
-        deployment = get_deployment(path, name)
+        deployment = deployments_config.get_deployment(name)
     except ValueError as e:
         click.echo(str(e))
         sys.exit(1)
     if format == FORMAT_TABLE:
         table = Table(show_header=False)
-        for header, value in deployment.items():
+        for header, value in deployment.dict().items():
             table.add_row(f"[bold]{header.capitalize()}[/bold]", str(value))
         console.print(table)
     elif format == FORMAT_YAML:
         console.print(yaml.dump(deployment), end="")
 
 
-def register_cli(cli: click.Group, provider: DeploymentType):
+def register_cli(cli: click.Group, provider: str):
     """Register the CLI for the given provider."""
     cli.add_command(deployment)
-    providers = {
-        DeploymentType.LOCAL: LocalProvider(),
-        DeploymentType.MAAS: MaasProvider(),
+    providers: dict[str, ProviderBase] = {
+        LOCAL_TYPE: LocalProvider(),
+        # TODO(gboutry): hook to register deployment type automatically
+        MAAS_TYPE: MaasProvider(),
     }
     for provider_type, provider_obj in providers.items():
         provider_obj.register_add_cli(add)
+        deployment_type = provider_obj.deployment_type()
+        if deployment_type:
+            register_deployment_type(*deployment_type)
         if provider_type == provider:
             provider_obj.register_cli(cli, deployment)

@@ -14,10 +14,12 @@
 # limitations under the License.
 
 
-from collections import Counter
-from datetime import datetime
 import logging
 import sys
+from collections import Counter
+from datetime import datetime
+from pathlib import Path
+from typing import Tuple, Type
 
 import click
 import yaml
@@ -26,19 +28,29 @@ from rich.table import Table
 from snaphelpers import Snap
 
 from sunbeam.commands import resize as resize_cmds
-from sunbeam.commands.deployment import deployment_path, get_active_deployment
+from sunbeam.commands import utils
+from sunbeam.commands.clusterd import DeploySunbeamClusterdApplicationStep
+from sunbeam.commands.deployment import Deployment, DeploymentsConfig, deployment_path
+from sunbeam.commands.juju import AddCloudJujuStep, AddCredentialsJujuStep
 from sunbeam.commands.maas import (
     AddMaasDeployment,
-    DeploymentTopologyCheck,
-    MaasClient,
     DeploymentMachinesCheck,
+    DeploymentTopologyCheck,
+    MaasBootstrapJujuStep,
+    MaasClient,
+    MaasDeployment,
+    MaasSaveControllerStep,
+    MaasScaleJujuStep,
     MachineNetworkCheck,
     MachineRequirementsCheck,
     MachineRolesCheck,
     MachineStorageCheck,
+    NetworkMappingCompleteCheck,
     Networks,
+    RoleTags,
     get_machine,
     get_network_mapping,
+    is_maas_deployment,
     list_machines,
     list_machines_by_zone,
     list_spaces,
@@ -49,6 +61,7 @@ from sunbeam.commands.maas import (
 from sunbeam.jobs.checks import (
     DiagnosticsCheck,
     DiagnosticsResult,
+    JujuSnapCheck,
     LocalShareCheck,
     VerifyClusterdNotBootstrappedCheck,
 )
@@ -61,11 +74,14 @@ from sunbeam.jobs.common import (
     run_plan,
     run_preflight_checks,
 )
+from sunbeam.jobs.juju import JujuAccount, JujuHelper
 from sunbeam.provider.base import ProviderBase
 from sunbeam.utils import CatchGroup
 
 LOG = logging.getLogger(__name__)
 console = Console()
+
+MAAS_TYPE = "maas"
 
 
 @click.group("cluster", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
@@ -129,14 +145,100 @@ class MaasProvider(ProviderBase):
         network.add_command(list_networks_cmd)
         deployment.add_command(validate_deployment_cmd)
 
+    def deployment_type(self) -> Tuple[str, Type[Deployment]]:
+        return MAAS_TYPE, MaasDeployment
+
 
 @click.command()
-def bootstrap() -> None:
+@click.option("-a", "--accept-defaults", help="Accept all defaults.", is_flag=True)
+@click.option(
+    "-p",
+    "--preseed",
+    help="Preseed file.",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+def bootstrap(
+    preseed: Path | None = None,
+    accept_defaults: bool = False,
+) -> None:
     """Bootstrap the MAAS-backed deployment.
 
     Initialize the sunbeam cluster.
     """
-    raise NotImplementedError
+
+    snap = Snap()
+
+    preflight_checks = []
+    preflight_checks.append(JujuSnapCheck())
+    preflight_checks.append(LocalShareCheck())
+    preflight_checks.append(VerifyClusterdNotBootstrappedCheck())
+    run_preflight_checks(preflight_checks, console)
+
+    deployment_location = deployment_path(snap)
+    deployments = DeploymentsConfig.load(deployment_location)
+    deployment = deployments.get_active()
+    maas_client = MaasClient.from_deployment(deployment)
+
+    if not is_maas_deployment(deployment):
+        raise ValueError("Not a MAAS deployment.")
+
+    preflight_checks = []
+    preflight_checks.append(NetworkMappingCompleteCheck(deployment))
+    run_preflight_checks(preflight_checks, console)
+
+    cloud_definition = JujuHelper.maas_cloud(deployment.name, deployment.url)
+    credentials_definition = JujuHelper.maas_credential(
+        cloud=deployment.name,
+        credential=deployment.name,
+        maas_apikey=deployment.token,
+    )
+    if deployment.juju_account is None:
+        password = utils.random_string(32)
+        deployment.juju_account = JujuAccount(user="admin", password=password)
+        deployments.update_deployment(deployment)
+        deployments.write()
+
+    plan = []
+    plan.append(AddCloudJujuStep(deployment.name, cloud_definition))
+    plan.append(
+        AddCredentialsJujuStep(
+            cloud=deployment.name,
+            credentials=deployment.name,
+            definition=credentials_definition,
+        )
+    )
+    plan.append(
+        MaasBootstrapJujuStep(
+            deployment.name,
+            cloud_definition["clouds"][deployment.name]["type"],
+            deployment.controller,
+            deployment.juju_account.password,
+            accept_defaults=accept_defaults,
+            preseed_file=preseed,
+        )
+    )
+    plan.append(
+        MaasScaleJujuStep(
+            maas_client,
+            deployment.controller,
+        )
+    )
+    plan.append(
+        MaasSaveControllerStep(deployment.controller, deployment.name, deployments)
+    )
+    run_plan(plan, console)
+
+    if deployment.juju_account is None:
+        raise ValueError("Juju account should have been saved in previous step.")
+    if deployment.juju_controller is None:
+        raise ValueError("Controller should have been saved in previous step.")
+
+    jhelper = JujuHelper(Path())
+    jhelper.controller = deployment.get_connected_controller()
+    plan2 = []
+    plan2.append(DeploySunbeamClusterdApplicationStep(jhelper))
+    run_plan(plan2, console)
+    console.print("Bootstrap controller components complete.")
 
 
 @click.command("list")
@@ -167,8 +269,9 @@ def add_maas(name: str, token: str, url: str, resource_pool: str) -> None:
 
     snap = Snap()
     path = deployment_path(snap)
+    deployments = DeploymentsConfig.load(path)
     plan = []
-    plan.append(AddMaasDeployment(name, token, url, resource_pool, path))
+    plan.append(AddMaasDeployment(deployments, name, token, url, resource_pool))
     run_plan(plan, console)
     click.echo(f"MAAS deployment {name} added.")
 
@@ -189,7 +292,10 @@ def list_machines_cmd(format: str) -> None:
 
     snap = Snap()
 
-    client = MaasClient.active(snap)
+    deployment_location = deployment_path(snap)
+    deployments_config = DeploymentsConfig.load(deployment_location)
+
+    client = MaasClient.from_deployment(deployments_config.get_active())
     machines = list_machines(client)
     if format == FORMAT_TABLE:
         table = Table()
@@ -224,7 +330,10 @@ def show_machine_cmd(hostname: str, format: str) -> None:
     run_preflight_checks(preflight_checks, console)
 
     snap = Snap()
-    client = MaasClient.active(snap)
+    deployment_location = deployment_path(snap)
+    deployments_config = DeploymentsConfig.load(deployment_location)
+
+    client = MaasClient.from_deployment(deployments_config.get_active())
     machine = get_machine(client, hostname)
     header = "[bold]{}[/bold]"
     if format == FORMAT_TABLE:
@@ -273,24 +382,17 @@ def _zones_roles_table(zone_machines: dict[str, list[dict]]) -> Table:
         title_style="bold",
         expand=True,
     )
-    machine_table.add_column("control", justify="center")
-    machine_table.add_column("compute", justify="center")
-    machine_table.add_column("storage", justify="center")
+    for role in RoleTags.values():
+        machine_table.add_column(role, justify="center")
     machine_table.add_column("total", justify="center")
     for zone, machines in zone_machines.items():
         zone_table.add_row(zone)
         role_count = Counter()
         for machine in machines:
             role_count.update(machine["roles"])
-        control = role_count.get("control", 0)
-        compute = role_count.get("compute", 0)
-        storage = role_count.get("storage", 0)
-        machine_table.add_row(
-            str(control),
-            str(compute),
-            str(storage),
-            str(len(machines)),
-        )
+        role_nb = [str(role_count.get(role, 0)) for role in RoleTags.values()]
+        role_nb += [str(len(machines))]  # total
+        machine_table.add_row(*role_nb)
 
     table.add_row(zone_table, machine_table)
     return table
@@ -318,8 +420,11 @@ def list_zones_cmd(roles: bool, format: str) -> None:
     run_preflight_checks(preflight_checks, console)
 
     snap = Snap()
+    deployment_location = deployment_path(snap)
+    deployments_config = DeploymentsConfig.load(deployment_location)
 
-    client = MaasClient.active(snap)
+    client = MaasClient.from_deployment(deployments_config.get_active())
+
     zones_machines = list_machines_by_zone(client)
     if format == FORMAT_TABLE:
         if roles:
@@ -346,8 +451,10 @@ def list_spaces_cmd(format: str) -> None:
     run_preflight_checks(preflight_checks, console)
 
     snap = Snap()
+    deployment_location = deployment_path(snap)
+    deployments_config = DeploymentsConfig.load(deployment_location)
 
-    client = MaasClient.active(snap)
+    client = MaasClient.from_deployment(deployments_config.get_active())
     spaces = list_spaces(client)
     if format == FORMAT_TABLE:
         table = Table()
@@ -371,9 +478,11 @@ def map_space_cmd(space: str, network: str) -> None:
     run_preflight_checks(preflight_checks, console)
 
     snap = Snap()
+    deployment_location = deployment_path(snap)
+    deployments_config = DeploymentsConfig.load(deployment_location)
 
-    client = MaasClient.active(snap)
-    map_space(snap, client, space, network)
+    client = MaasClient.from_deployment(deployments_config.get_active())
+    map_space(deployments_config, client, space, Networks(network))
     console.print(f"Space {space} mapped to network {network}.")
 
 
@@ -387,8 +496,10 @@ def unmap_space_cmd(network: str) -> None:
     run_preflight_checks(preflight_checks, console)
 
     snap = Snap()
+    deployment_location = deployment_path(snap)
+    deployments_config = DeploymentsConfig.load(deployment_location)
 
-    unmap_space(snap, network)
+    unmap_space(deployments_config, Networks(network))
     console.print(f"Space unmapped from network {network}.")
 
 
@@ -407,8 +518,10 @@ def list_networks_cmd(format: str):
     run_preflight_checks(preflight_checks, console)
 
     snap = Snap()
+    deployment_location = deployment_path(snap)
+    deployments_config = DeploymentsConfig.load(deployment_location)
 
-    mapping = get_network_mapping(snap)
+    mapping = get_network_mapping(deployments_config)
     if format == FORMAT_TABLE:
         table = Table()
         table.add_column("Network")
@@ -497,7 +610,13 @@ def validate_machine_cmd(machine: str):
     run_preflight_checks(preflight_checks, console)
 
     snap = Snap()
-    client = MaasClient.active(snap)
+    deployment_location = deployment_path(snap)
+    deployments_config = DeploymentsConfig.load(deployment_location)
+    deployment = deployments_config.get_active()
+    if not is_maas_deployment(deployment):
+        raise ValueError("Not a MAAS deployment.")
+
+    client = MaasClient.from_deployment(deployment)
     with console.status(f"Fetching {machine} ..."):
         try:
             machine_obj = get_machine(client, machine)
@@ -507,7 +626,7 @@ def validate_machine_cmd(machine: str):
             sys.exit(1)
     validation_checks = [
         MachineRolesCheck(machine_obj),
-        MachineNetworkCheck(snap, machine_obj),
+        MachineNetworkCheck(deployment, machine_obj),
         MachineStorageCheck(machine_obj),
         MachineRequirementsCheck(machine_obj),
     ]
@@ -525,20 +644,21 @@ def validate_deployment_cmd():
     run_preflight_checks(preflight_checks, console)
     snap = Snap()
     path = deployment_path(snap)
-    deployment = get_active_deployment(path)
-    client = MaasClient.active(snap)
-    with console.status(f"Fetching {deployment['name']} machines ..."):
+    deployments_config = DeploymentsConfig.load(path)
+    deployment = deployments_config.get_active()
+    if not is_maas_deployment(deployment):
+        raise ValueError("Not a MAAS deployment.")
+    client = MaasClient.from_deployment(deployment)
+    with console.status(f"Fetching {deployment.name} machines ..."):
         try:
             machines = list_machines(client)
         except ValueError as e:
             console.print("Error:", e)
             sys.exit(1)
     validation_checks = [
-        DeploymentMachinesCheck(snap, machines),
-        DeploymentTopologyCheck(snap, machines),
+        DeploymentMachinesCheck(deployment, machines),
+        DeploymentTopologyCheck(machines),
     ]
     report = _run_maas_meta_checks(validation_checks, console)
-    report_path = _save_report(
-        snap, "validate-deployment-" + deployment["name"], report
-    )
+    report_path = _save_report(snap, "validate-deployment-" + deployment.name, report)
     console.print(f"Report saved to {report_path!r}")

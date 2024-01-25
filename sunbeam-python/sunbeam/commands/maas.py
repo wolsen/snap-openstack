@@ -22,36 +22,36 @@ import logging
 import ssl
 import textwrap
 from pathlib import Path
-from typing import Optional, TypeGuard
+from typing import TypeGuard, overload
 
+import pydantic
+import yaml
+from juju.controller import Controller
 from maas.client import bones, connect
 from rich.console import Console
 from rich.status import Status
-from snaphelpers import Snap
-import yaml
 
-from sunbeam.commands.deployment import (
-    Deployment,
-    DeploymentType,
-    add_deployment,
-    deployment_config,
-    deployment_path,
-    get_active_deployment,
-    update_deployment,
+from sunbeam.commands.deployment import Deployment, DeploymentsConfig
+from sunbeam.commands.juju import (
+    BootstrapJujuStep,
+    ControllerNotFoundException,
+    JujuStepHelper,
+    ScaleJujuStep,
 )
-from sunbeam.jobs.checks import DiagnosticsCheck, DiagnosticsResult
-from sunbeam.jobs.common import RAM_32_GB_IN_MB, BaseStep, Result, ResultType
+from sunbeam.jobs.checks import Check, DiagnosticsCheck, DiagnosticsResult
+from sunbeam.jobs.common import (
+    RAM_4_GB_IN_MB,
+    RAM_32_GB_IN_MB,
+    BaseStep,
+    Result,
+    ResultType,
+)
+from sunbeam.jobs.juju import JujuAccount, JujuController
 
 LOG = logging.getLogger(__name__)
 console = Console()
 
 MAAS_CONFIG = "maas.yaml"
-
-
-class MaasDeployment(Deployment):
-    token: str
-    resource_pool: str
-    network_mapping: dict[str, str | None]
 
 
 class Networks(enum.Enum):
@@ -66,13 +66,40 @@ class Networks(enum.Enum):
         """Return list of tag values."""
         return [tag.value for tag in cls]
 
-    def __repr__(self) -> str:
-        return self.value
+
+class MaasDeployment(Deployment):
+    type: str = "maas"
+    token: str
+    resource_pool: str
+    network_mapping: dict[str, str | None] = {}
+    juju_account: JujuAccount | None = None
+    juju_controller: JujuController | None = None
+
+    @property
+    def controller(self) -> str:
+        """Return controller name."""
+        return self.name + "-controller"
+
+    @pydantic.validator("type")
+    def type_validator(cls, v: str, values: dict) -> str:
+        if v != "maas":
+            raise ValueError("Deployment type must be MAAS.")
+        return v
+
+    def get_connected_controller(self) -> Controller:
+        """Return connected controller."""
+        if self.juju_account is None:
+            raise ValueError(f"No juju account configured for deployment {self.name}.")
+        if self.juju_controller is None:
+            raise ValueError(
+                f"No juju controller configured for deployment {self.name}."
+            )
+        return self.juju_controller.to_controller(self.juju_account)
 
 
 def is_maas_deployment(deployment: Deployment) -> TypeGuard[MaasDeployment]:
     """Check if deployment is a MAAS deployment."""
-    return deployment["type"] == DeploymentType.MAAS.value
+    return isinstance(deployment, MaasDeployment)
 
 
 class RoleTags(enum.Enum):
@@ -123,7 +150,7 @@ class StorageTags(enum.Enum):
 class MaasClient:
     """Facade to MAAS APIs."""
 
-    def __init__(self, url: str, token: str, resource_pool: Optional[str] = None):
+    def __init__(self, url: str, token: str, resource_pool: str | None = None):
         self._client = connect(url, apikey=token)
         self.resource_pool = resource_pool
 
@@ -131,9 +158,8 @@ class MaasClient:
         """Fetch resource pool from MAAS."""
         return self._client.resource_pools.get(name)  # type: ignore
 
-    def list_machines(self) -> list[dict]:
+    def list_machines(self, **kwargs) -> list[dict]:
         """List machines."""
-        kwargs = {}
         if self.resource_pool:
             kwargs["pool"] = self.resource_pool
         try:
@@ -162,16 +188,14 @@ class MaasClient:
         return self._client.spaces.list.__self__._handler.read()  # type: ignore
 
     @classmethod
-    def active(cls, snap: Snap) -> "MaasClient":
+    def from_deployment(cls, deployment: Deployment) -> "MaasClient":
         """Return client connected to active deployment."""
-        path = deployment_path(snap)
-        deployment = get_active_deployment(path)
         if not is_maas_deployment(deployment):
-            raise ValueError("Active deployment is not a MAAS deployment.")
+            raise ValueError("Deployment is not a MAAS deployment.")
         return cls(
-            deployment["url"],
-            deployment["token"],
-            deployment["resource_pool"],
+            deployment.url,
+            deployment.token,
+            deployment.resource_pool,
         )
 
 
@@ -195,9 +219,9 @@ def _convert_raw_machine(machine_raw: dict) -> dict:
     }
 
 
-def list_machines(client: MaasClient) -> list[dict]:
+def list_machines(client: MaasClient, **extra_args) -> list[dict]:
     """List machines in deployment, return consumable list of dicts."""
-    machines_raw = client.list_machines()
+    machines_raw = client.list_machines(**extra_args)
 
     machines = []
     for machine in machines_raw:
@@ -238,11 +262,13 @@ def list_spaces(client: MaasClient) -> list[dict]:
     return spaces
 
 
-def map_space(snap: Snap, client: MaasClient, space: str, network: str):
+def map_space(
+    deployments_config: DeploymentsConfig,
+    client: MaasClient,
+    space: str,
+    network: Networks,
+):
     """Map space to network."""
-    if network not in Networks.values():
-        raise ValueError(f"Network {network!r} is not a valid network.")
-
     spaces_raw = client.list_spaces()
     for space_raw in spaces_raw:
         if space_raw["name"] == space:
@@ -250,42 +276,45 @@ def map_space(snap: Snap, client: MaasClient, space: str, network: str):
     else:
         raise ValueError(f"Space {space!r} not found.")
 
-    path = deployment_path(snap)
-    deployment = get_active_deployment(path)
+    deployment = deployments_config.get_active()
     if not is_maas_deployment(deployment):
         raise ValueError("Active deployment is not a MAAS deployment.")
-    network_mapping = deployment.get("network_mapping", {})
-    network_mapping[network] = space
-    deployment["network_mapping"] = network_mapping
-
-    update_deployment(path, deployment)
+    deployment.network_mapping[network.value] = space
+    deployments_config.write()
 
 
-def unmap_space(snap: Snap, network: str):
+def unmap_space(deployments_config: DeploymentsConfig, network: Networks):
     """Unmap network."""
-    if network not in Networks.values():
-        raise ValueError(f"Network {network!r} is not a valid network.")
-
-    path = deployment_path(snap)
-    deployment = get_active_deployment(path)
+    deployment = deployments_config.get_active()
     if not is_maas_deployment(deployment):
         raise ValueError("Active deployment is not a MAAS deployment.")
-    network_mapping = deployment.get("network_mapping", {})
-    network_mapping.pop(network, None)
-    deployment["network_mapping"] = network_mapping
-
-    update_deployment(path, deployment)
+    deployment.network_mapping.pop(network.value, None)
+    deployments_config.write()
 
 
-def get_network_mapping(snap: Snap) -> dict[str, str | None]:
+@overload
+def get_network_mapping(deployment: MaasDeployment) -> dict[str, str | None]:
+    pass
+
+
+@overload
+def get_network_mapping(deployment: DeploymentsConfig) -> dict[str, str | None]:
+    pass
+
+
+def get_network_mapping(
+    deployment: MaasDeployment | DeploymentsConfig,
+) -> dict[str, str | None]:
     """Return network mapping."""
-    path = deployment_path(snap)
-    deployment = get_active_deployment(path)
-    if not is_maas_deployment(deployment):
-        raise ValueError("Active deployment is not a MAAS deployment.")
-    mapping = deployment.get("network_mapping", {})
-    for network in Networks.values():
-        mapping.setdefault(network, None)
+    if isinstance(deployment, DeploymentsConfig):
+        dep = deployment.get_active()
+    else:
+        dep = deployment
+    if not is_maas_deployment(dep):
+        raise ValueError(f"Deployment {dep.name} is not a MAAS deployment.")
+    mapping = dep.network_mapping.copy()
+    for network in Networks:
+        mapping.setdefault(network.value, None)
     return mapping
 
 
@@ -299,37 +328,37 @@ More on assigning tags: https://maas.io/docs/using-machine-tags
 class AddMaasDeployment(BaseStep):
     def __init__(
         self,
+        deployments_config: DeploymentsConfig,
         deployment: str,
         token: str,
         url: str,
         resource_pool: str,
-        config_path: Path,
     ) -> None:
         super().__init__(
             "Add MAAS-backed deployment",
             "Adding MAAS-backed deployment for OpenStack usage",
         )
+        self.deployments_config = deployments_config
         self.deployment = deployment
         self.token = token
         self.url = url
         self.resource_pool = resource_pool
-        self.path = config_path
 
-    def is_skip(self, status: Optional[Status] = None) -> Result:
+    def is_skip(self, status: Status | None = None) -> Result:
         """Check if deployment is already added."""
-        config = deployment_config(self.path)
-        if self.deployment in config:
-            return Result(
-                ResultType.FAILED, f"Deployment {self.deployment} already exists."
-            )
+        for deployment in self.deployments_config.deployments:
+            if deployment.name == self.deployment:
+                return Result(
+                    ResultType.FAILED, f"Deployment {self.deployment} already exists."
+                )
 
         current_deployments = set()
-        for deployment in config.get("deployments", []):
+        for deployment in self.deployments_config.deployments:
             if is_maas_deployment(deployment):
                 current_deployments.add(
                     (
-                        deployment["url"],
-                        deployment["resource_pool"],
+                        deployment.url,
+                        deployment.resource_pool,
                     )
                 )
 
@@ -341,7 +370,7 @@ class AddMaasDeployment(BaseStep):
 
         return Result(ResultType.COMPLETED)
 
-    def run(self, status: Optional[Status] = None) -> Result:
+    def run(self, status: Status | None = None) -> Result:
         """Check MAAS is working, Resource Pool exists, write to local configuration."""
         try:
             client = MaasClient(self.url, self.token)
@@ -383,11 +412,12 @@ class AddMaasDeployment(BaseStep):
             name=self.deployment,
             token=self.token,
             url=self.url,
-            type=DeploymentType.MAAS.value,
             resource_pool=self.resource_pool,
             network_mapping={},
+            juju_account=None,
+            juju_controller=None,
         )
-        add_deployment(self.path, data)
+        self.deployments_config.add_deployment(data)
         return Result(ResultType.COMPLETED)
 
 
@@ -424,17 +454,17 @@ class MachineRolesCheck(DiagnosticsCheck):
 class MachineNetworkCheck(DiagnosticsCheck):
     """Check machine has the right networks assigned."""
 
-    def __init__(self, snap: Snap, machine: dict):
+    def __init__(self, deployment: MaasDeployment, machine: dict):
         super().__init__(
             "Network check",
             "Checking networks",
         )
-        self.snap = snap
+        self.deployment = deployment
         self.machine = machine
 
     def run(self) -> DiagnosticsResult:
         """Check machine has access to required networks."""
-        network_to_space_mapping = get_network_mapping(self.snap)
+        network_to_space_mapping = get_network_mapping(self.deployment)
         spaces = network_to_space_mapping.values()
         if len(spaces) != len(Networks.values()) or not all(spaces):
             return DiagnosticsResult.fail(
@@ -548,9 +578,6 @@ class MachineStorageCheck(DiagnosticsCheck):
 class MachineRequirementsCheck(DiagnosticsCheck):
     """Check machine meets requirements."""
 
-    CORES = 16
-    MEMORY = RAM_32_GB_IN_MB
-
     def __init__(self, machine: dict):
         super().__init__(
             "Machine requirements check",
@@ -559,17 +586,25 @@ class MachineRequirementsCheck(DiagnosticsCheck):
         self.machine = machine
 
     def run(self) -> DiagnosticsResult:
-        if self.machine["memory"] < self.MEMORY or self.machine["cores"] < self.CORES:
+        """Check machine meets requirements."""
+        if [RoleTags.JUJU_CONTROLLER.value] == self.machine["roles"]:
+            memory_min = RAM_4_GB_IN_MB
+            core_min = 2
+        else:
+            memory_min = RAM_32_GB_IN_MB
+            core_min = 16
+        if self.machine["memory"] < memory_min or self.machine["cores"] < core_min:
             return DiagnosticsResult.fail(
                 self.name,
                 "machine does not meet requirements",
                 textwrap.dedent(
                     f"""\
-                    A machine needs to have at least {self.CORES} cores and
-                    {self.MEMORY}MB RAM to be a part of an openstack deployment.
+                    A machine needs to have at least {core_min} cores and
+                    {memory_min}MB RAM to be a part of an openstack deployment.
                     Either add more cores and memory to the machine or remove the
                     machine from the deployment.
                     {self.machine['hostname']}:
+                        roles: {self.machine["roles"]}
                         cores: {self.machine["cores"]}
                         memory: {self.machine["memory"]}MB"""
                 ),
@@ -609,12 +644,12 @@ def _run_check_list(checks: list[DiagnosticsCheck]) -> list[DiagnosticsResult]:
 class DeploymentMachinesCheck(DiagnosticsCheck):
     """Check all machines inside deployment."""
 
-    def __init__(self, snap: Snap, machines: list[dict]):
+    def __init__(self, deployment: MaasDeployment, machines: list[dict]):
         super().__init__(
             "Deployment check",
             "Checking machines, roles, networks and storage",
         )
-        self.snap = snap
+        self.deployment = deployment
         self.machines = machines
 
     def run(self) -> list[DiagnosticsResult]:
@@ -622,7 +657,7 @@ class DeploymentMachinesCheck(DiagnosticsCheck):
         checks = []
         for machine in self.machines:
             checks.append(MachineRolesCheck(machine))
-            checks.append(MachineNetworkCheck(self.snap, machine))
+            checks.append(MachineNetworkCheck(self.deployment, machine))
             checks.append(MachineStorageCheck(machine))
             checks.append(MachineRequirementsCheck(machine))
         results = _run_check_list(checks)
@@ -763,12 +798,11 @@ class ZoneBalanceCheck(DiagnosticsCheck):
 class DeploymentTopologyCheck(DiagnosticsCheck):
     """Check deployment topology."""
 
-    def __init__(self, snap: Snap, machines: list[dict]):
+    def __init__(self, machines: list[dict]):
         super().__init__(
             "Topology check",
             "Checking zone distribution",
         )
-        self.snap = snap
         self.machines = machines
 
     def run(self) -> list[DiagnosticsResult]:
@@ -797,3 +831,193 @@ class DeploymentTopologyCheck(DiagnosticsCheck):
             DiagnosticsResult(self.name, all(result.passed for result in results))
         )
         return results
+
+
+class NetworkMappingCompleteCheck(Check):
+    """Check network mapping is complete."""
+
+    def __init__(self, deployment: MaasDeployment):
+        super().__init__(
+            "NetworkMapping Check",
+            "Checking network mapping is complete",
+        )
+        self.deployment = deployment
+
+    def run(self) -> bool:
+        """Check network mapping is complete."""
+        network_to_space_mapping = self.deployment.network_mapping
+        spaces = network_to_space_mapping.values()
+        if len(spaces) != len(Networks.values()) or not all(spaces):
+            self.message = (
+                "A complete map of networks to spaces is required to proceed."
+                " Complete network mapping to using `sunbeam deployment space map...`."
+            )
+            return False
+        return True
+
+
+class MaasBootstrapJujuStep(BootstrapJujuStep):
+    """Bootstrap the Juju controller."""
+
+    def __init__(
+        self,
+        cloud: str,
+        cloud_type: str,
+        controller: str,
+        password: str,
+        bootstrap_args: list[str] | None = None,
+        preseed_file: Path | None = None,
+        accept_defaults: bool = False,
+    ):
+        bootstrap_args = bootstrap_args or []
+        bootstrap_args.extend(
+            (
+                "--bootstrap-constraints",
+                f"tags={RoleTags.JUJU_CONTROLLER.value}",
+                "--bootstrap-base",
+                "ubuntu@22.04",
+                "--config",
+                f"admin-secret={password}",
+                "--debug",
+            )
+        )
+        super().__init__(
+            cloud,
+            cloud_type,
+            controller,
+            bootstrap_args,
+            preseed_file,
+            accept_defaults,
+        )
+
+    def prompt(self, console: Console | None = None) -> None:
+        """Determines if the step can take input from the user.
+
+        Prompts are used by Steps to gather the necessary input prior to
+        running the step. Steps should not expect that the prompt will be
+        available and should provide a reasonable default where possible.
+        """
+
+    def has_prompts(self) -> bool:
+        """Returns true if the step has prompts that it can ask the user.
+
+        :return: True if the step can ask the user for prompts,
+                 False otherwise
+        """
+        return False
+
+
+class MaasScaleJujuStep(ScaleJujuStep):
+    """Scale Juju Controller on MAAS deployment."""
+
+    def __init__(
+        self,
+        maas_client: MaasClient,
+        controller: str,
+        extra_args: list[str] | None = None,
+    ):
+        extra_args = extra_args or []
+        extra_args.extend(
+            (
+                "--constraints",
+                f"tags={RoleTags.JUJU_CONTROLLER.value}",
+            )
+        )
+        super().__init__(controller, extra_args=extra_args)
+        self.client = maas_client
+
+    def is_skip(self, status: Status | None = None) -> Result:
+        """Determines if the step should be skipped or not."""
+        try:
+            controller = self.get_controller(self.controller)
+        except ControllerNotFoundException as e:
+            LOG.debug(str(e))
+            return Result(ResultType.FAILED, f"Controller {self.controller} not found")
+
+        controller_machines = controller.get("controller-machines")
+        if controller_machines is None:
+            return Result(
+                ResultType.FAILED,
+                f"Controller {self.controller} has no machines registered.",
+            )
+        nb_controllers = len(controller_machines)
+
+        if nb_controllers == self.n:
+            LOG.debug("Already the correct number of controllers, skipping scaling...")
+            return Result(ResultType.SKIPPED)
+
+        if nb_controllers > self.n:
+            return Result(
+                ResultType.FAILED,
+                f"Can't scale down controllers from {nb_controllers} to {self.n}.",
+            )
+
+        machines = list_machines(self.client, tags=RoleTags.JUJU_CONTROLLER.value)
+
+        if len(machines) < self.n:
+            LOG.debug(
+                f"Found {len(machines)} juju controllers,"
+                f" need {self.n} to scale, skipping..."
+            )
+            return Result(ResultType.SKIPPED)
+        return Result(ResultType.COMPLETED)
+
+
+class MaasSaveControllerStep(BaseStep, JujuStepHelper):
+    """Save maas controller information locally."""
+
+    def __init__(
+        self,
+        controller: str,
+        deployment_name: str,
+        deployments_config: DeploymentsConfig,
+    ):
+        super().__init__(
+            "Save controller information",
+            "Saving controller information locally",
+        )
+        self.controller = controller
+        self.deployment_name = deployment_name
+        self.deployments_config = deployments_config
+
+    def _get_controller(self, name: str) -> JujuController | None:
+        try:
+            controller = self.get_controller(name)["details"]
+        except ControllerNotFoundException as e:
+            LOG.debug(str(e))
+            return None
+        return JujuController(
+            api_endpoints=controller["api-endpoints"],
+            ca_cert=controller["ca-cert"],
+        )
+
+    def is_skip(self, status: Status | None = None) -> Result:
+        """Determines if the step should be skipped or not."""
+        deployment = self.deployments_config.get_deployment(self.deployment_name)
+        if not is_maas_deployment(deployment):
+            return Result(ResultType.SKIPPED)
+        if deployment.juju_controller is None:
+            return Result(ResultType.COMPLETED)
+
+        controller = self._get_controller(self.controller)
+        if controller is None:
+            return Result(ResultType.FAILED, f"Controller {self.controller} not found")
+
+        if controller == deployment.juju_controller:
+            return Result(ResultType.SKIPPED)
+
+        return Result(ResultType.COMPLETED)
+
+    def run(self, status: Status | None) -> Result:
+        """Save controller to deployment information."""
+        controller = self._get_controller(self.controller)
+        if controller is None:
+            return Result(ResultType.FAILED, f"Controller {self.controller} not found")
+
+        deployment = self.deployments_config.get_deployment(self.deployment_name)
+        if not is_maas_deployment(deployment):
+            return Result(ResultType.FAILED)
+
+        deployment.juju_controller = controller
+        self.deployments_config.write()
+        return Result(ResultType.COMPLETED)

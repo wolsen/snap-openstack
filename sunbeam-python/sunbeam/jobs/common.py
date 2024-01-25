@@ -33,6 +33,7 @@ LOG = logging.getLogger(__name__)
 RAM_16_GB_IN_KB = 16 * 1024 * 1024
 RAM_32_GB_IN_KB = 32 * 1024 * 1024
 RAM_32_GB_IN_MB = 32 * 1000
+RAM_4_GB_IN_MB = 4 * 1000
 
 # Formatting related constants
 FORMAT_TABLE = "table"

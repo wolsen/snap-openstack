@@ -13,35 +13,151 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import enum
+import logging
+import shutil
+import tempfile
 from pathlib import Path
-from typing import Optional, TypedDict
+from typing import Type
 
+import pydantic
 import yaml
 from rich.console import Console
 from snaphelpers import Snap
 
 from sunbeam.jobs.common import SHARE_PATH
 
+LOG = logging.getLogger(__name__)
 console = Console()
 
 DEPLOYMENT_CONFIG = SHARE_PATH / "deployment.yaml"
 
 
-class DeploymentType(enum.Enum):
-    LOCAL = "local"
-    MAAS = "maas"
-
-
-class Deployment(TypedDict):
+class Deployment(pydantic.BaseModel):
     name: str
     url: str
     type: str
 
 
-class DeploymentsConfig(TypedDict):
-    active: Optional[str]
-    deployments: list[Deployment]
+_cls_registry: dict[str, Type[Deployment]] = {}
+
+
+def register_deployment_type(type_: str, cls: Type[Deployment]):
+    global _cls_registry
+    _cls_registry[type_] = cls
+
+
+class DeploymentsConfig(pydantic.BaseModel):
+    active: str | None = None
+    deployments: list[Deployment] = []
+    _path: Path | None = pydantic.PrivateAttr(default=None)
+
+    @pydantic.validator("deployments", pre=True, each_item=True)
+    def _validate_deployments(cls, deployment: dict | Deployment) -> Deployment:
+        if isinstance(deployment, Deployment):
+            return deployment
+        if isinstance(deployment, dict):
+            if type_ := deployment.get("type"):
+                return _cls_registry.get(type_, Deployment)(**deployment)
+            raise ValueError("Deployment type not set.")
+        raise ValueError(f"Invalid deployment {deployment}.")
+
+    @classmethod
+    def load(cls, path: Path) -> "DeploymentsConfig":
+        """Load deployment configuration from file."""
+        LOG.debug(f"Loading deployment configuration from {str(path)!r}")
+        with path.open() as fd:
+            data = yaml.safe_load(fd)
+        if data is None:
+            config = cls()
+        elif not isinstance(data, dict):
+            raise ValueError(
+                f"{str(path)} is corrupted, delete it or restore from back-up."
+            )
+        else:
+            config = cls(**data)
+        config._path = path
+        return config
+
+    def write(self):
+        """Write deployment configuration to file.
+
+        Writing to temporary file first in case there's an error during write.
+        Not to lose the original file.
+        """
+        self_dict = self.dict()
+        LOG.debug(f"Writing deployment configuration to {str(self.path)!r}")
+        with tempfile.NamedTemporaryFile("w") as tmp:
+            yaml.safe_dump(self_dict, tmp)
+            tmp.flush()
+            shutil.copy(tmp.name, self.path)
+        self.path.chmod(0o600)
+
+    @property
+    def path(self) -> Path:
+        """Get path to deployment configuration."""
+        if self._path is None:
+            raise ValueError("Path not set.")
+        return self._path
+
+    @path.setter
+    def set_path(self, path: Path):
+        """Configure path for deployment configuration."""
+        self._path = path
+
+    def get_deployment(self, name: str) -> Deployment:
+        """Get deployment."""
+        for deployment in self.deployments:
+            if deployment.name == name:
+                return deployment
+        raise ValueError(f"Deployment {name} not found in deployments.")
+
+    def get_active(self) -> Deployment:
+        """Get active deployment."""
+        active = self.active
+        if not active:
+            raise ValueError("No active deployment found.")
+        try:
+            return self.get_deployment(active)
+        except ValueError as e:
+            raise ValueError(
+                f"Active deployment {active} not found in configuration."
+            ) from e
+
+    def add_deployment(self, deployment: Deployment) -> None:
+        """Add a deployment to configuration."""
+        existing_deployment = None
+        try:
+            existing_deployment = self.get_deployment(deployment.name)
+        except ValueError:
+            # deployment does not exist
+            pass
+        if existing_deployment is not None:
+            raise ValueError(f"Deployment {deployment.name} already exists.")
+        self.deployments.append(deployment)
+        self.active = deployment.name
+        self.write()
+
+    def update_deployment(self, deployment: Deployment) -> None:
+        """Update deployment in configuration."""
+        for i, dep in enumerate(self.deployments):
+            if dep.name == deployment.name:
+                self.deployments[i] = deployment
+                break
+        else:
+            raise ValueError(f"Deployment {deployment.name} not found in deployments.")
+        self.write()
+
+    def switch(self, name: str) -> None:
+        """Switch active deployment."""
+        if self.active == name:
+            return
+        for deployment in self.deployments:
+            if deployment.name == name:
+                break
+        else:
+            raise ValueError(f"Deployment {name} not found in deployments.")
+        self.active = name
+        self.write()
 
 
 def deployment_path(snap: Snap) -> Path:
@@ -55,90 +171,13 @@ def deployment_path(snap: Snap) -> Path:
     return path
 
 
-def deployment_config(path: Path) -> DeploymentsConfig:
-    """Read deployments configuration."""
-    with path.open() as fd:
-        data = yaml.safe_load(fd)
-    if data is None:
-        data = DeploymentsConfig(active=None, deployments=[])
-    return data
-
-
-def add_deployment(path: Path, new_deployment: Deployment) -> None:
-    """Add MAAS deployment to configuration."""
-    config = deployment_config(path)
-    deployments = config.get("deployments", [])
-    deployments.append(new_deployment)
-    config["deployments"] = deployments
-    config["active"] = new_deployment["name"]
-    write_deployment_config(path, config)
-
-
-def write_deployment_config(path: Path, config: DeploymentsConfig) -> None:
-    """Write deployment configuration."""
-    with path.open("w") as fd:
-        yaml.safe_dump(config, fd)
-    path.chmod(0o600)
-
-
-def switch_deployment(path: Path, name: str) -> None:
-    """Switch active deployment."""
-    config = deployment_config(path)
-    if config.get("active") == name:
-        return
-    for deployment in config.get("deployments", []):
-        if deployment["name"] == name:
-            break
-    else:
-        raise ValueError(f"Deployment {name} not found in deployments.")
-    config["active"] = name
-    with path.open("w") as fd:
-        yaml.safe_dump(config, fd)
-
-
-def list_deployments(path: Path) -> dict:
-    config = deployment_config(path)
+def list_deployments(config: DeploymentsConfig) -> dict:
     deployments = [
         {
             key: value
-            for key, value in deployment.items()
-            if key in Deployment.__required_keys__
+            for key, value in deployment.dict().items()
+            if key in ["name", "url", "type"]
         }
-        for deployment in config.get("deployments", [])
+        for deployment in config.deployments
     ]
-    return {"active": config.get("active"), "deployments": deployments}
-
-
-def get_deployment(path: Path, name: str) -> Deployment:
-    """Get deployment."""
-    config = deployment_config(path)
-    for deployment in config.get("deployments", []):
-        if deployment["name"] == name:
-            return deployment
-    raise ValueError(f"Deployment {name} not found in deployments.")
-
-
-def get_active_deployment(path: Path) -> Deployment:
-    """Get active deployment."""
-    config = deployment_config(path)
-    active = config.get("active")
-    if not active:
-        raise ValueError("No active deployment found.")
-    for deployment in config.get("deployments", []):
-        if deployment["name"] == active:
-            return deployment
-    raise ValueError(f"Active deployment {active} not found in configuration.")
-
-
-def update_deployment(path: Path, deployment: Deployment):
-    """Update deployment in deployments configuration."""
-    config = deployment_config(path)
-    deployments = config.get("deployments", [])
-    for dep in deployments:
-        if dep["name"] == deployment["name"]:
-            dep.update(deployment)
-            break
-    else:
-        raise ValueError(f"Deployment {deployment['name']} not found in deployments.")
-    config["deployments"] = deployments
-    write_deployment_config(path, config)
+    return {"active": config.active, "deployments": deployments}
