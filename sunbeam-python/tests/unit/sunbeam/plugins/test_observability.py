@@ -282,12 +282,9 @@ class TestDeployGrafanaAgentK8sStep:
 
 class TestRemoveGrafanaAgentK8sStep:
     def test_run(self, cclient, jhelper, tfhelper, observabilityplugin):
-        step = observability_plugin.RemoveGrafanaAgentK8sStep(
-            observabilityplugin, tfhelper, tfhelper, jhelper
-        )
+        step = observability_plugin.RemoveGrafanaAgentK8sStep(jhelper, tfhelper)
         result = step.run()
 
-        tfhelper.write_tfvars.assert_called_once()
         tfhelper.destroy.assert_called_once()
         jhelper.wait_application_gone.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
@@ -297,12 +294,9 @@ class TestRemoveGrafanaAgentK8sStep:
     ):
         tfhelper.destroy.side_effect = TerraformException("destroy failed...")
 
-        step = observability_plugin.RemoveGrafanaAgentK8sStep(
-            observabilityplugin, tfhelper, tfhelper, jhelper
-        )
+        step = observability_plugin.RemoveGrafanaAgentK8sStep(jhelper, tfhelper)
         result = step.run()
 
-        tfhelper.write_tfvars.assert_called_once()
         tfhelper.destroy.assert_called_once()
         jhelper.wait_application_gone.assert_not_called()
         assert result.result_type == ResultType.FAILED
@@ -313,12 +307,9 @@ class TestRemoveGrafanaAgentK8sStep:
     ):
         jhelper.wait_application_gone.side_effect = TimeoutException("timed out")
 
-        step = observability_plugin.RemoveGrafanaAgentK8sStep(
-            observabilityplugin, tfhelper, tfhelper, jhelper
-        )
+        step = observability_plugin.RemoveGrafanaAgentK8sStep(jhelper, tfhelper)
         result = step.run()
 
-        tfhelper.write_tfvars.assert_called_once()
         tfhelper.destroy.assert_called_once()
         jhelper.wait_application_gone.assert_called_once()
         assert result.result_type == ResultType.FAILED

@@ -499,60 +499,33 @@ class RemoveGrafanaAgentK8sStep(BaseStep, JujuStepHelper):
 
     def __init__(
         self,
-        plugin: "ObservabilityPlugin",
-        tfhelper: TerraformHelper,
-        tfhelper_cos: TerraformHelper,
         jhelper: JujuHelper,
+        tfhelper: TerraformHelper,
     ):
         super().__init__("Remove Grafana Agent k8s", "Removing Grafana Agent k8s")
-        self.tfhelper = tfhelper
-        self.tfhelper_cos = tfhelper_cos
         self.jhelper = jhelper
+        self.tfhelper = tfhelper
         self.model = OPENSTACK_MODEL
-        self.read_config = lambda: plugin.get_plugin_info().get(
-            "grafana-agent-k8s-config", {}
-        )
-        self.update_config = lambda c: plugin.update_plugin_info(
-            {"grafana-agent-k8s-config": c}
-        )
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Execute configuration using terraform."""
         app = "grafana-agent-k8s"
-        cos_backend = self.tfhelper_cos.backend
-        cos_backend_config = self.tfhelper_cos.backend_config()
-        try:
-            config = self.read_config()
-        except ConfigItemNotFoundException as e:
-            LOG.exception("Failed removing %s: unable to read config", app)
-            return Result(ResultType.FAILED, str(e))
-
-        tfvars = {
-            "cos-state-backend": cos_backend,
-            "cos-state-config": cos_backend_config,
-            "grafana-agent-k8s-channel": GRAFANA_AGENT_K8S_CHANNEL,
-            "model": self.model,
-        }
-        config.update(tfvars)
-        self.update_config(config)
-        self.tfhelper.write_tfvars(tfvars)
         try:
             self.tfhelper.destroy()
         except TerraformException as e:
             LOG.exception("Error destroying %s", app)
             return Result(ResultType.FAILED, str(e))
 
-        apps = [app]
         try:
             run_sync(
                 self.jhelper.wait_application_gone(
-                    apps,
+                    [app],
                     self.model,
                     timeout=OBSERVABILITY_DEPLOY_TIMEOUT,
                 )
             )
         except TimeoutException as e:
-            LOG.debug("Failed to destroy %s", apps, exc_info=True)
+            LOG.debug("Failed to destroy %s", app, exc_info=True)
             return Result(ResultType.FAILED, str(e))
 
         return Result(ResultType.COMPLETED)
@@ -695,9 +668,7 @@ class ObservabilityPlugin(EnableDisablePlugin):
 
         grafana_agent_k8s_plan = [
             TerraformInitStep(tfhelper_grafana_agent_k8s),
-            RemoveGrafanaAgentK8sStep(
-                self, tfhelper_grafana_agent_k8s, tfhelper_cos, jhelper
-            ),
+            RemoveGrafanaAgentK8sStep(jhelper, tfhelper_grafana_agent_k8s),
         ]
 
         run_plan(grafana_agent_k8s_plan, console)
