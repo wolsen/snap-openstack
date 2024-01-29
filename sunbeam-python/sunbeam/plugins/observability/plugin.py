@@ -74,6 +74,7 @@ console = Console()
 OBSERVABILITY_MODEL = "observability"
 OBSERVABILITY_DEPLOY_TIMEOUT = 1200  # 20 minutes
 CONTROLLER_MODEL = CONTROLLER_MODEL.split("/")[-1]
+GRAFANA_AGENT_K8S_CHANNEL = "latest/stable"
 
 
 class FillObservabilityOffersStep(BaseStep):
@@ -334,7 +335,7 @@ class DeployGrafanaAgentK8sStep(BaseStep, JujuStepHelper):
         tfvars = {
             "cos-state-backend": cos_backend,
             "cos-state-config": cos_backend_config,
-            "grafana-agent-k8s-channel": "latest/stable",
+            "grafana-agent-k8s-channel": GRAFANA_AGENT_K8S_CHANNEL,
             "model": self.model,
         }
         config.update(tfvars)
@@ -529,7 +530,7 @@ class RemoveGrafanaAgentK8sStep(BaseStep, JujuStepHelper):
         tfvars = {
             "cos-state-backend": cos_backend,
             "cos-state-config": cos_backend_config,
-            "grafana-agent-k8s-channel": "latest/stable",
+            "grafana-agent-k8s-channel": GRAFANA_AGENT_K8S_CHANNEL,
             "model": self.model,
         }
         config.update(tfvars)
