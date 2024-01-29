@@ -20,7 +20,7 @@ terraform {
   required_providers {
     juju = {
       source  = "juju/juju"
-      version = "= 0.8.0"
+      version = "= 0.10.1"
     }
   }
 }
@@ -45,7 +45,7 @@ resource "juju_application" "traefik" {
   charm {
     name    = "traefik-k8s"
     channel = var.cos-channel
-    series  = "focal"
+    base    = "ubuntu@20.04"
   }
 
   units = var.ingress-scale
@@ -59,7 +59,7 @@ resource "juju_application" "alertmanager" {
   charm {
     name    = "alertmanager-k8s"
     channel = var.cos-channel
-    series  = "focal"
+    base    = "ubuntu@20.04"
   }
 
   units = var.alertmanager-scale
@@ -73,7 +73,7 @@ resource "juju_application" "prometheus" {
   charm {
     name    = "prometheus-k8s"
     channel = var.cos-channel
-    series  = "focal"
+    base    = "ubuntu@20.04"
   }
 
   units = var.prometheus-scale
@@ -87,7 +87,7 @@ resource "juju_application" "grafana" {
   charm {
     name    = "grafana-k8s"
     channel = var.cos-channel
-    series  = "focal"
+    base    = "ubuntu@20.04"
   }
 
   units = var.grafana-scale
@@ -101,7 +101,7 @@ resource "juju_application" "catalogue" {
   charm {
     name    = "catalogue-k8s"
     channel = var.cos-channel
-    series  = "focal"
+    base    = "ubuntu@20.04"
   }
 
   config = {
@@ -121,7 +121,7 @@ resource "juju_application" "loki" {
   charm {
     name    = "loki-k8s"
     channel = var.cos-channel
-    series  = "focal"
+    base    = "ubuntu@20.04"
   }
 
   units = var.loki-scale
@@ -129,7 +129,7 @@ resource "juju_application" "loki" {
 
 # juju integrate traefik prometheus
 resource "juju_integration" "traefik-to-prometheus" {
-  model    = var.model
+  model = var.model
 
   application {
     name     = juju_application.traefik.name
@@ -144,7 +144,7 @@ resource "juju_integration" "traefik-to-prometheus" {
 
 # juju integrate traefik loki
 resource "juju_integration" "traefik-to-loki" {
-  model    = var.model
+  model = var.model
 
   application {
     name     = juju_application.traefik.name
@@ -159,7 +159,7 @@ resource "juju_integration" "traefik-to-loki" {
 
 # juju integrate traefik grafana
 resource "juju_integration" "traefik-to-grafana" {
-  model    = var.model
+  model = var.model
 
   application {
     name     = juju_application.traefik.name
@@ -174,7 +174,7 @@ resource "juju_integration" "traefik-to-grafana" {
 
 # juju integrate traefik alertmanager
 resource "juju_integration" "traefik-to-alertmanager" {
-  model    = var.model
+  model = var.model
 
   application {
     name     = juju_application.traefik.name
@@ -189,7 +189,7 @@ resource "juju_integration" "traefik-to-alertmanager" {
 
 # juju integrate prometheus alertmanager
 resource "juju_integration" "prometheus-to-alertmanager" {
-  model    = var.model
+  model = var.model
 
   application {
     name     = juju_application.prometheus.name
@@ -204,7 +204,7 @@ resource "juju_integration" "prometheus-to-alertmanager" {
 
 # juju integrate grafana prometheus on interface grafana-source
 resource "juju_integration" "grafana-to-prometheus-on-grafana-source" {
-  model    = var.model
+  model = var.model
 
   application {
     name     = juju_application.grafana.name
@@ -219,7 +219,7 @@ resource "juju_integration" "grafana-to-prometheus-on-grafana-source" {
 
 # juju integrate grafana loki on interface grafana-source
 resource "juju_integration" "grafana-to-loki-on-grafana-source" {
-  model    = var.model
+  model = var.model
 
   application {
     name     = juju_application.grafana.name
@@ -234,7 +234,7 @@ resource "juju_integration" "grafana-to-loki-on-grafana-source" {
 
 # juju integrate grafana alertmanager on interface grafana-source
 resource "juju_integration" "grafana-to-alertmanager-on-grafana-source" {
-  model    = var.model
+  model = var.model
 
   application {
     name     = juju_application.grafana.name
@@ -249,7 +249,7 @@ resource "juju_integration" "grafana-to-alertmanager-on-grafana-source" {
 
 # juju integrate loki alertmanager
 resource "juju_integration" "loki-to-alertmanager" {
-  model    = var.model
+  model = var.model
 
   application {
     name     = juju_application.loki.name
@@ -266,7 +266,7 @@ resource "juju_integration" "loki-to-alertmanager" {
 
 # juju integrate prometheus traefik on interface metrics-endpoint
 resource "juju_integration" "prometheus-to-traefik-on-metrics-endpoint" {
-  model    = var.model
+  model = var.model
 
   application {
     name     = juju_application.prometheus.name
@@ -281,7 +281,7 @@ resource "juju_integration" "prometheus-to-traefik-on-metrics-endpoint" {
 
 # juju integrate prometheus alertmanager on interface metrics-endpoint
 resource "juju_integration" "prometheus-to-alertmanager-on-metrics-endpoint" {
-  model    = var.model
+  model = var.model
 
   application {
     name     = juju_application.prometheus.name
@@ -296,7 +296,7 @@ resource "juju_integration" "prometheus-to-alertmanager-on-metrics-endpoint" {
 
 # juju integrate prometheus loki on interface metrics-endpoint
 resource "juju_integration" "prometheus-to-loki-on-metrics-endpoint" {
-  model    = var.model
+  model = var.model
 
   application {
     name     = juju_application.prometheus.name
@@ -311,7 +311,7 @@ resource "juju_integration" "prometheus-to-loki-on-metrics-endpoint" {
 
 # juju integrate prometheus grafana on interface metrics-endpoint
 resource "juju_integration" "prometheus-to-grafana-on-metrics-endpoint" {
-  model    = var.model
+  model = var.model
 
   application {
     name     = juju_application.prometheus.name
@@ -326,7 +326,7 @@ resource "juju_integration" "prometheus-to-grafana-on-metrics-endpoint" {
 
 # juju integrate grafana to loki on interface grafana-dashboard
 resource "juju_integration" "grafana-to-loki-on-grafana-dashboard" {
-  model    = var.model
+  model = var.model
 
   application {
     name     = juju_application.grafana.name
@@ -341,7 +341,7 @@ resource "juju_integration" "grafana-to-loki-on-grafana-dashboard" {
 
 # juju integrate grafana to prometheus on interface grafana-dashboard
 resource "juju_integration" "grafana-to-prometheus-on-grafana-dashboard" {
-  model    = var.model
+  model = var.model
 
   application {
     name     = juju_application.grafana.name
@@ -356,7 +356,7 @@ resource "juju_integration" "grafana-to-prometheus-on-grafana-dashboard" {
 
 # juju integrate grafana to alertmanager on interface grafana-dashboard
 resource "juju_integration" "grafana-to-alertmanager-on-grafana-dashboard" {
-  model    = var.model
+  model = var.model
 
   application {
     name     = juju_application.grafana.name
@@ -373,7 +373,7 @@ resource "juju_integration" "grafana-to-alertmanager-on-grafana-dashboard" {
 
 # juju integrate catalogue to traefik
 resource "juju_integration" "catalogue-to-traefik" {
-  model    = var.model
+  model = var.model
 
   application {
     name     = juju_application.catalogue.name
@@ -388,7 +388,7 @@ resource "juju_integration" "catalogue-to-traefik" {
 
 # juju integrate catalogue to grafana
 resource "juju_integration" "catalogue-to-grafana" {
-  model    = var.model
+  model = var.model
 
   application {
     name     = juju_application.catalogue.name
@@ -403,7 +403,7 @@ resource "juju_integration" "catalogue-to-grafana" {
 
 # juju integrate catalogue to prometheus
 resource "juju_integration" "catalogue-to-prometheus" {
-  model    = var.model
+  model = var.model
 
   application {
     name     = juju_application.catalogue.name
@@ -418,7 +418,7 @@ resource "juju_integration" "catalogue-to-prometheus" {
 
 # juju integrate catalogue to alertmanager
 resource "juju_integration" "catalogue-to-alertmanager" {
-  model    = var.model
+  model = var.model
 
   application {
     name     = juju_application.catalogue.name

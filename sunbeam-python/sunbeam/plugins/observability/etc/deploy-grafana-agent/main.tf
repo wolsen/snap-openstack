@@ -19,32 +19,32 @@ terraform {
   required_providers {
     juju = {
       source  = "juju/juju"
-      version = "= 0.8.0"
+      version = "= 0.10.1"
     }
   }
 }
 
 data "terraform_remote_state" "cos" {
   backend = var.cos-state-backend
-  config = var.cos-state-config
+  config  = var.cos-state-config
 }
 
 resource "juju_application" "grafana-agent" {
-  name = "grafana-agent"
+  name  = "grafana-agent"
   trust = false
   model = var.principal-application-model
   units = 0
 
   charm {
-    name = "grafana-agent"
+    name    = "grafana-agent"
     channel = var.grafana-agent-channel
-    series = "jammy"
+    base    = "ubuntu@22.04"
   }
 }
 
 # juju integrate <principal-application>:cos-agent grafana-agent:cos-agent
 resource "juju_integration" "principal-application-to-grafana-agent" {
-  model    = var.principal-application-model
+  model = var.principal-application-model
 
   application {
     name     = juju_application.grafana-agent.name
@@ -62,7 +62,7 @@ resource "juju_integration" "grafana-agent-to-cos-prometheus" {
   model = var.principal-application-model
 
   application {
-    name     = juju_application.grafana-agent.name
+    name = juju_application.grafana-agent.name
   }
 
   application {
@@ -75,7 +75,7 @@ resource "juju_integration" "grafana-agent-to-cos-loki" {
   model = var.principal-application-model
 
   application {
-    name     = juju_application.grafana-agent.name
+    name = juju_application.grafana-agent.name
   }
 
   application {
@@ -88,7 +88,7 @@ resource "juju_integration" "grafana-agent-to-cos-grafana" {
   model = var.principal-application-model
 
   application {
-    name     = juju_application.grafana-agent.name
+    name = juju_application.grafana-agent.name
   }
 
   application {

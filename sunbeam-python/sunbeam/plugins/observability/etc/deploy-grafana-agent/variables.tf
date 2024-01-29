@@ -21,7 +21,7 @@ variable "principal-application" {
 
 variable "principal-application-model" {
   description = "Name of the model principal application is deployed in"
-  default = "controller"
+  default     = "controller"
 }
 
 variable "grafana-agent-channel" {
@@ -33,8 +33,8 @@ variable "grafana-agent-channel" {
 
 variable "cos-state-backend" {
   description = "Backend type used for cos state"
-  type = string
-  default = "http"
+  type        = string
+  default     = "http"
 }
 
 variable "cos-state-config" {
