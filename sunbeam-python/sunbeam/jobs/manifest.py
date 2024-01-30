@@ -48,9 +48,7 @@ from sunbeam.versions import (
 )
 
 LOG = logging.getLogger(__name__)
-EMPTY_MANIFEST = """charms: {}
-terraform-plans: {}
-"""
+EMPTY_MANIFEST = {"charms": {}, "terraform": {}}
 
 
 class MissingTerraformInfoException(Exception):
@@ -250,6 +248,39 @@ class Manifest:
 
         return self.tf_helpers[tfplan]
 
+    def update_partial_tfvars_and_apply_tf(
+        self, charms: List[str], tfplan: str, tfvar_config: Optional[str] = None
+    ) -> None:
+        """Updates tfvars for specific charms and apply the plan."""
+        current_tfvars = {}
+        updated_tfvars = {}
+        if tfvar_config:
+            try:
+                current_tfvars = read_config(self.client, tfvar_config)
+                # Exclude all default tfvar keys from the previous terraform
+                # vars applied to the plan.
+                _tfvar_names = self._get_tfvar_names(tfplan, charms)
+                updated_tfvars = {
+                    k: v for k, v in current_tfvars.items() if k not in _tfvar_names
+                }
+            except ConfigItemNotFoundException:
+                pass
+
+        updated_tfvars.update(self._get_tfvars(tfplan, charms))
+
+        # No need to apply plan if there is no change in terraform vars.
+        if current_tfvars == updated_tfvars:
+            LOG.debug(f"Not running plan {tfplan} as there is no change in tfvars")
+            return
+
+        if tfvar_config:
+            update_config(self.client, tfvar_config, updated_tfvars)
+
+        tfhelper = self.get_tfhelper(tfplan)
+        tfhelper.write_tfvars(updated_tfvars)
+        LOG.debug(f"Applying plan {tfplan} with tfvars {updated_tfvars}")
+        tfhelper.apply()
+
     def update_tfvars_and_apply_tf(
         self,
         tfplan: str,
@@ -305,17 +336,24 @@ class Manifest:
         LOG.debug(f"Applying plan {tfplan} with tfvars {updated_tfvars}")
         tfhelper.apply()
 
-    def _get_tfvars(self, tfplan: str) -> dict:
+    def _get_tfvars(self, tfplan: str, charms: Optional[list] = None) -> dict:
         """Get tfvars from the manifest.
 
         MANIFEST_ATTRIBUTES_TFVAR_MAP holds the mapping of Manifest attributes
         and the terraform variable name. For each terraform variable in
         MANIFEST_ATTRIBUTES_TFVAR_MAP, get the corresponding value from Manifest
         and return all terraform variables as dict.
+
+        If charms is passed as input, filter the charms based on the list
+        provided.
         """
         tfvars = {}
 
         charms_tfvar_map = self.tfvar_map.get(tfplan, {}).get("charms", {})
+        if charms:
+            charms_tfvar_map = {
+                k: v for k, v in charms_tfvar_map.items() if k in charms
+            }
 
         # handle tfvars for charms section
         for charm, per_charm_tfvar_map in charms_tfvar_map.items():
@@ -329,14 +367,24 @@ class Manifest:
 
         return tfvars
 
-    def _get_tfvar_names(self, tfplan: str) -> list:
-        return [
-            tfvar_name
-            for charm, per_charm_tfvar_map in self.tfvar_map.get(tfplan, {})
-            .get("charms", {})
-            .items()
-            for charm_attribute, tfvar_name in per_charm_tfvar_map.items()
-        ]
+    def _get_tfvar_names(self, tfplan: str, charms: Optional[list] = None) -> list:
+        if charms:
+            return [
+                tfvar_name
+                for charm, per_charm_tfvar_map in self.tfvar_map.get(tfplan, {})
+                .get("charms", {})
+                .items()
+                for charm_attribute, tfvar_name in per_charm_tfvar_map.items()
+                if charm in charms
+            ]
+        else:
+            return [
+                tfvar_name
+                for charm, per_charm_tfvar_map in self.tfvar_map.get(tfplan, {})
+                .get("charms", {})
+                .items()
+                for charm_attribute, tfvar_name in per_charm_tfvar_map.items()
+            ]
 
 
 class AddManifestStep(BaseStep):

@@ -26,65 +26,7 @@ CERT_AUTH_CHANNEL = "latest/beta"
 BIND_CHANNEL = "9/edge"
 VAULT_CHANNEL = "latest/edge"
 
-# The lists of services are needed for switching charm channels outside
-# of the terraform provider. If it ok to upgrade in one big-bang and
-# the juju terraform provider supports it then the upgrades can be
-# done by simply updating the tfvars and these lists are not needed.
-OPENSTACK_SERVICES_K8S = {
-    "cinder-ceph": OPENSTACK_CHANNEL,
-    "cinder": OPENSTACK_CHANNEL,
-    "glance": OPENSTACK_CHANNEL,
-    "horizon": OPENSTACK_CHANNEL,
-    "keystone": OPENSTACK_CHANNEL,
-    "neutron": OPENSTACK_CHANNEL,
-    "nova": OPENSTACK_CHANNEL,
-    "placement": OPENSTACK_CHANNEL,
-}
-OVN_SERVICES_K8S = {
-    "ovn-central": OVN_CHANNEL,
-    "ovn-relay": OVN_CHANNEL,
-}
-MYSQL_SERVICES_K8S = {"mysql": MYSQL_CHANNEL}
-MYSQL_ROUTER_SERVICES_K8S = {
-    "cinder-ceph-mysql-router": MYSQL_CHANNEL,
-    "cinder-mysql-router": MYSQL_CHANNEL,
-    "glance-mysql-router": MYSQL_CHANNEL,
-    "horizon-mysql-router": MYSQL_CHANNEL,
-    "keystone-mysql-router": MYSQL_CHANNEL,
-    "neutron-mysql-router": MYSQL_CHANNEL,
-    "nova-api-mysql-router": MYSQL_CHANNEL,
-    "nova-cell-mysql-router": MYSQL_CHANNEL,
-    "nova-mysql-router": MYSQL_CHANNEL,
-    "placement-mysql-router": MYSQL_CHANNEL,
-}
-MISC_SERVICES_K8S = {
-    "certificate-authority": CERT_AUTH_CHANNEL,
-    "rabbitmq": RABBITMQ_CHANNEL,
-    "traefik": TRAEFIK_CHANNEL,
-    "traefik-public": TRAEFIK_CHANNEL,
-}
-MACHINE_SERVICES = {
-    "microceph": MICROCEPH_CHANNEL,
-    "microk8s": MICROK8S_CHANNEL,
-    "openstack-hypervisor": OPENSTACK_CHANNEL,
-    "sunbeam-machine": SUNBEAM_MACHINE_CHANNEL,
-}
-
-K8S_SERVICES = {}
-K8S_SERVICES |= OPENSTACK_SERVICES_K8S
-K8S_SERVICES |= OVN_SERVICES_K8S
-K8S_SERVICES |= MYSQL_SERVICES_K8S
-K8S_SERVICES |= MYSQL_ROUTER_SERVICES_K8S
-K8S_SERVICES |= MISC_SERVICES_K8S
-
-CHARM_VERSIONS = {}
-CHARM_VERSIONS |= K8S_SERVICES
-CHARM_VERSIONS |= MACHINE_SERVICES
-
-# Similar to CHARM_VERSIONS except this is not per service
-# but per charm. So all *-mysql-router wont be included
-# and instead only mysql-router is included. Same is the
-# case of traefik charm.
+# List of charms with default channels
 OPENSTACK_CHARMS_K8S = {
     "cinder-ceph-k8s": OPENSTACK_CHANNEL,
     "cinder-k8s": OPENSTACK_CHANNEL,

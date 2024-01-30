@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import asyncio
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -144,3 +145,84 @@ class TestDisableOpenStackApplicationStep:
         osplugin.manifest.update_tfvars_and_apply_tf.assert_called_once()
         assert result.result_type == ResultType.FAILED
         assert result.message == "apply failed..."
+
+
+class MockStatus:
+    def __init__(self, value: dict):
+        self.status = value
+
+    def to_json(self):
+        return json.dumps(self.status)
+
+
+class TestUpgradeOpenStackApplicationStep:
+    def test_run(
+        self,
+        cclient,
+        jhelper,
+        osplugin,
+    ):
+        jhelper.get_model_status_full.return_value = MockStatus(
+            {
+                "applications": {
+                    "keystone": {
+                        "charm": "ch:amd64/jammy/keystone-k8s-148",
+                        "charm-channel": "2023.2/stable",
+                    }
+                }
+            }
+        )
+        step = openstack.UpgradeOpenStackApplicationStep(jhelper, osplugin)
+        result = step.run()
+
+        osplugin.manifest.update_partial_tfvars_and_apply_tf.assert_called_once()
+        jhelper.wait_until_desired_status.assert_called_once()
+        assert result.result_type == ResultType.COMPLETED
+
+    def test_run_tf_apply_failed(
+        self, cclient, read_config, jhelper, tfhelper, osplugin, manifest, pluginmanager
+    ):
+        osplugin.manifest.update_partial_tfvars_and_apply_tf.side_effect = (
+            TerraformException("apply failed...")
+        )
+
+        jhelper.get_model_status_full.return_value = MockStatus(
+            {
+                "applications": {
+                    "keystone": {
+                        "charm": "ch:amd64/jammy/keystone-k8s-148",
+                        "charm-channel": "2023.2/stable",
+                    }
+                }
+            }
+        )
+        step = openstack.UpgradeOpenStackApplicationStep(jhelper, osplugin)
+        result = step.run()
+
+        osplugin.manifest.update_partial_tfvars_and_apply_tf.assert_called_once()
+        jhelper.wait_until_desired_status.assert_not_called()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == "apply failed..."
+
+    def test_run_waiting_timed_out(
+        self, cclient, read_config, jhelper, tfhelper, osplugin, manifest, pluginmanager
+    ):
+        jhelper.wait_until_desired_status.side_effect = TimeoutException("timed out")
+
+        jhelper.get_model_status_full.return_value = MockStatus(
+            {
+                "applications": {
+                    "keystone": {
+                        "charm": "ch:amd64/jammy/keystone-k8s-148",
+                        "charm-channel": "2023.2/stable",
+                    }
+                }
+            }
+        )
+        step = openstack.UpgradeOpenStackApplicationStep(jhelper, osplugin)
+        result = step.run()
+
+        osplugin.manifest.update_partial_tfvars_and_apply_tf.assert_called_once()
+        jhelper.wait_until_desired_status.assert_called_once()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == "timed out"
