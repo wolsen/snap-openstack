@@ -14,57 +14,40 @@
 # limitations under the License.
 
 import logging
-from typing import Callable, Dict, List, Optional, TypedDict, Union
+from typing import List, Optional
 
 from rich.console import Console
 from rich.status import Status
 
 from sunbeam.clusterd.client import Client
+from sunbeam.commands.hypervisor import CONFIG_KEY as HYPERVISOR_CONFIG_KEY
 from sunbeam.commands.juju import JujuStepHelper
-from sunbeam.commands.terraform import TerraformHelper
+from sunbeam.commands.microceph import CONFIG_KEY as MICROCEPH_CONFIG_KEY
+from sunbeam.commands.microk8s import MICROK8S_CONFIG_KEY
+from sunbeam.commands.openstack import CONFIG_KEY as OPENSTACK_CONFIG_KEY
+from sunbeam.commands.openstack import OPENSTACK_DEPLOY_TIMEOUT
+from sunbeam.commands.sunbeam_machine import CONFIG_KEY as SUNBEAM_MACHINE_CONFIG_KEY
+from sunbeam.commands.terraform import TerraformException
 from sunbeam.commands.upgrades.base import UpgradeCoordinator, UpgradePlugins
-from sunbeam.commands.upgrades.intra_channel import LatestInChannel
 from sunbeam.jobs.common import (
     BaseStep,
     Result,
     ResultType,
-    read_config,
     run_plan,
-    update_config,
+    update_status_background,
 )
-from sunbeam.jobs.juju import ChannelUpdate, JujuHelper, run_sync
+from sunbeam.jobs.juju import JujuHelper, JujuWaitException, TimeoutException, run_sync
+from sunbeam.jobs.manifest import Manifest
+from sunbeam.jobs.plugin import PluginManager
 from sunbeam.versions import (
-    CHARM_VERSIONS,
-    MACHINE_SERVICES,
-    MISC_SERVICES_K8S,
-    OPENSTACK_SERVICES_K8S,
-    OVN_SERVICES_K8S,
+    MISC_CHARMS_K8S,
+    MYSQL_CHARMS_K8S,
+    OPENSTACK_CHARMS_K8S,
+    OVN_CHARMS_K8S,
 )
 
 LOG = logging.getLogger(__name__)
 console = Console()
-
-
-class UpgradeStrategy(TypedDict):
-    """A strategy for upgrading applications.
-
-    The strategy is a list of dicts. Each dict consists of:
-        {
-            "upgrade_f": f,
-            "applications": [apps]
-        },
-
-    upgrade_f is the function to be applied to each application (in
-    parallel) to perform the upgrade.
-
-    applications is a list of applications that can be upgraded in parallel.
-
-    Currently only apps that are upgraded with the same function can be
-    grouped together.
-    """
-
-    upgrade_f: Callable[[list[str], str], None]
-    applications: list[str]
 
 
 class BaseUpgrade(BaseStep, JujuStepHelper):
@@ -74,105 +57,89 @@ class BaseUpgrade(BaseStep, JujuStepHelper):
         description: str,
         client: Client,
         jhelper: JujuHelper,
-        tfhelper: TerraformHelper,
+        manifest: Manifest,
         model: str,
     ):
         """Create instance of BaseUpgrade class.
 
         :client: Client for interacting with clusterd
         :jhelper: Helper for interacting with pylibjuju
-        :tfhelper: Helper for interaction with Terraform
+        :manifest: Manifest object
         :model: Name of model containing charms.
         """
         super().__init__(name, description)
         self.client = client
         self.jhelper = jhelper
-        self.tfhelper = tfhelper
+        self.manifest = manifest
         self.model = model
-
-    def get_upgrade_strategy_steps(self) -> UpgradeStrategy:
-        """Return a strategy for performing the upgrade."""
-
-        raise NotImplementedError
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Run control plane and machine charm upgrade."""
-        self.pre_upgrade_tasks()
-        for step in self.get_upgrade_strategy_steps():
-            step["upgrade_f"](step["applications"], self.model)
-        self.post_upgrade_tasks()
+        result = self.pre_upgrade_tasks(status)
+        if result.result_type == ResultType.FAILED:
+            return result
+
+        self.upgrade_tasks(status)
+        if result.result_type == ResultType.FAILED:
+            return result
+
+        result = self.post_upgrade_tasks(status)
+        return result
+
+    def pre_upgrade_tasks(self, status: Optional[Status] = None) -> Result:
+        """Tasks to run before the upgrade."""
         return Result(ResultType.COMPLETED)
 
-    def pre_upgrade_tasks(self) -> None:
-        """Tasks to run before the upgrade."""
-        return
-
-    def post_upgrade_tasks(self) -> None:
+    def post_upgrade_tasks(self, status: Optional[Status] = None) -> Result:
         """Tasks to run after the upgrade."""
-        return
+        return Result(ResultType.COMPLETED)
 
     def upgrade_applications(
         self,
-        application_list: List[str],
+        apps: List[str],
+        charms: List[str],
         model: str,
-        expect_wls: Optional[Dict[str, list[str]]] = None,
-    ) -> None:
+        tfplan: str,
+        config: str,
+        timeout: int,
+        status: Optional[Status] = None,
+    ) -> Result:
         """Upgrade applications.
 
-        :param application_list: List of applications to be upgraded
+        :param apps: List of applications to be upgraded
+        :param charms: List of charms
         :param model: Name of model
-        :param expect_wls: The expected workload status after charm upgrade.
+        :param tfplan: Name of plan
+        :param config: Terraform config key used to store config in clusterdb
+        :param timeout: Timeout to wait for apps in expected status
+        :param status: Status object to update charm status
         """
-        if not expect_wls:
-            expect_wls = {"workload": ["blocked", "active"]}
-        batch = {}
-        for app_name in application_list:
-            new_channel = self.get_new_channel(app_name, model)
-            if new_channel:
-                LOG.debug(f"Upgrade needed for {app_name}")
-                batch[app_name] = ChannelUpdate(
-                    channel=new_channel,
-                    expected_status=expect_wls,
+        expected_wls = ["active", "blocked", "unknown"]
+        LOG.debug(f"Upgrading applications using terraform plan {tfplan}: {apps}")
+        try:
+            self.manifest.update_partial_tfvars_and_apply_tf(charms, tfplan, config)
+        except TerraformException as e:
+            LOG.exception("Error upgrading cloud")
+            return Result(ResultType.FAILED, str(e))
+
+        task = run_sync(update_status_background(self, apps, status))
+        try:
+            run_sync(
+                self.jhelper.wait_until_desired_status(
+                    model,
+                    apps,
+                    expected_wls,
+                    timeout=timeout,
                 )
-            else:
-                LOG.debug(f"{app_name} no channel upgrade needed")
-        run_sync(self.jhelper.update_applications_channel(model, batch))
+            )
+        except (JujuWaitException, TimeoutException) as e:
+            LOG.debug(str(e))
+            return Result(ResultType.FAILED, str(e))
+        finally:
+            if not task.done():
+                task.cancel()
 
-    def get_new_channel(self, application_name: str, model: str) -> Union[str, None]:
-        """Check application to see if an upgrade is needed.
-
-        Check application to see if an upgrade is needed. A 'None'
-        returned indicates no upgrade is needed.
-
-        :param application_name: Name of application
-        :param model: Model application is in
-        """
-        new_channel = None
-        current_channel = run_sync(
-            self.jhelper.get_charm_channel(application_name, model)
-        )
-        new_channel = CHARM_VERSIONS.get(application_name)
-        if current_channel and new_channel:
-            if self.channel_update_needed(current_channel, new_channel):
-                return new_channel
-            else:
-                return None
-        else:
-            # No current_channel indicates application is missing
-            return new_channel
-
-    def terraform_sync(self, config_key: str, tfvars_delta: dict) -> None:
-        """Sync the running state back to the Terraform state file.
-
-        :param config_key: The config key used to access the data in microcluster
-        :param tfvars_delta: The delta of changes to be applied to the terraform
-                             vars stored in microcluster.
-        """
-        tfvars = read_config(self.client, config_key)
-        tfvars.update(tfvars_delta)
-        update_config(self.client, config_key, tfvars)
-        self.tfhelper.write_tfvars(tfvars)
-        self.tfhelper.sync()
+        return Result(ResultType.COMPLETED)
 
 
 class UpgradeControlPlane(BaseUpgrade):
@@ -180,143 +147,255 @@ class UpgradeControlPlane(BaseUpgrade):
         self,
         client: Client,
         jhelper: JujuHelper,
-        tfhelper: TerraformHelper,
+        manifest: Manifest,
         model: str,
     ):
         """Create instance of BaseUpgrade class.
 
         :client: Client for interacting with clusterd
         :jhelper: Helper for interacting with pylibjuju
-        :tfhelper: Helper for interaction with Terraform
+        :manifest: Manifest object
         :model: Name of model containing charms.
         """
         super().__init__(
-            "Upgrade K8S charms",
-            "Upgrade K8S charms channels to align with snap",
+            "Upgrade Openstack charms",
+            "Upgrading Openstack charms",
             client,
             jhelper,
-            tfhelper,
+            manifest,
             model,
         )
+        self.tfplan = "openstack-plan"
+        self.config = OPENSTACK_CONFIG_KEY
 
-    def get_upgrade_strategy_steps(self) -> List[Dict[str, Union[Callable, List]]]:
-        """Return a strategy for performing the upgrade.
+    def upgrade_tasks(self, status: Optional[Status] = None) -> Result:
+        # Step 1: Upgrade mysql charms
+        LOG.debug("Upgrading Mysql charms")
+        charms = list(MYSQL_CHARMS_K8S.keys())
+        apps = self.get_apps_filter_by_charms(self.model, charms)
+        result = self.upgrade_applications(
+            apps, charms, self.model, self.tfplan, self.config, 1200, status
+        )
+        if result.result_type == ResultType.FAILED:
+            return result
 
-        Upgrade all control plane applications in parallel.
-        """
-        upgrade_strategy_steps = [
-            UpgradeStrategy(
-                upgrade_f=self.upgrade_applications,
-                applications=list(MISC_SERVICES_K8S.keys())
-                + list(OVN_SERVICES_K8S.keys())  # noqa
-                + list(OPENSTACK_SERVICES_K8S.keys()),  # noqa
-            ),
-        ]
-        return upgrade_strategy_steps
+        # Step 2: Upgrade all openstack core charms
+        LOG.debug("Upgrading openstack core charms")
+        charms = (
+            list(MISC_CHARMS_K8S.keys())
+            + list(OVN_CHARMS_K8S.keys())  # noqa: W503
+            + list(OPENSTACK_CHARMS_K8S.keys())  # noqa: W503
+        )
+        apps = self.get_apps_filter_by_charms(self.model, charms)
+        result = self.upgrade_applications(
+            apps,
+            charms,
+            self.model,
+            self.tfplan,
+            self.config,
+            OPENSTACK_DEPLOY_TIMEOUT,
+            status,
+        )
+        if result.result_type == ResultType.FAILED:
+            return result
 
-    def post_upgrade_tasks(self) -> None:
-        """Update channels in terraform vars db."""
-        tfvars_delta = {
-            "openstack-channel": run_sync(
-                self.jhelper.get_charm_channel("keystone", "openstack")
-            ),
-            "ovn-channel": run_sync(
-                self.jhelper.get_charm_channel("ovn-central", "openstack")
-            ),
-            "rabbitmq-channel": run_sync(
-                self.jhelper.get_charm_channel("rabbitmq", "openstack")
-            ),
-            "traefik-channel": run_sync(
-                self.jhelper.get_charm_channel("traefik", "openstack")
-            ),
-        }
-        self.terraform_sync("TerraformVarsOpenstack", tfvars_delta)
+        # Step 3: Upgrade all plugins that uses openstack-plan
+        LOG.debug("Upgrading openstack plugins that are enabled")
+        charms = PluginManager().get_all_charms_in_openstack_plan(self.client)
+        apps = self.get_apps_filter_by_charms(self.model, charms)
+        result = self.upgrade_applications(
+            apps,
+            charms,
+            self.model,
+            self.tfplan,
+            self.config,
+            OPENSTACK_DEPLOY_TIMEOUT,
+            status,
+        )
+        return result
 
 
-class UpgradeMachineCharms(BaseUpgrade):
+class UpgradeMachineCharm(BaseUpgrade):
     def __init__(
         self,
+        name: str,
+        description: str,
         client: Client,
         jhelper: JujuHelper,
-        tfhelper: TerraformHelper,
+        manifest: Manifest,
         model: str,
+        charms: list,
+        tfplan: str,
+        config: str,
+        timeout: int,
     ):
         """Create instance of BaseUpgrade class.
 
         :jhelper: Helper for interacting with pylibjuju
-        :tfhelper: Helper for interaction with Terraform
+        :manifest: Manifest object
+        :model: Name of model containing charms.
+        :charms: List of charms to upgrade
+        :tfplan: Terraform plan to reapply
+        :config: Config key used to save tfvars in clusterdb
+        :timeout: Time to wait for apps to come to desired status
+        """
+        super().__init__(
+            name,
+            description,
+            client,
+            jhelper,
+            manifest,
+            model,
+        )
+        self.charms = charms
+        self.tfplan = tfplan
+        self.config = config
+        self.timeout = timeout
+
+    def upgrade_tasks(self, status: Optional[Status] = None) -> Result:
+        apps = self.get_apps_filter_by_charms(self.model, self.charms)
+        result = self.upgrade_applications(
+            apps,
+            self.charms,
+            self.model,
+            self.tfplan,
+            self.config,
+            self.timeout,
+            status,
+        )
+
+        return result
+
+
+class UpgradeMicrocephCharm(UpgradeMachineCharm):
+    def __init__(
+        self,
+        client: Client,
+        jhelper: JujuHelper,
+        manifest: Manifest,
+        model: str,
+    ):
+        """Create instance of UpgradeMicrocephCharm class.
+
+        :client: Client to connect to clusterdb
+        :jhelper: Helper for interacting with pylibjuju
+        :manifest: Manifest object
         :model: Name of model containing charms.
         """
         super().__init__(
-            "Upgrade Machine charms",
-            "Upgrade machine charms channels to align with snap",
+            "Upgrade Microceph charm",
+            "Upgrading microceph charm",
             client,
             jhelper,
-            tfhelper,
+            manifest,
             model,
+            ["microceph"],
+            "microceph-plan",
+            MICROCEPH_CONFIG_KEY,
+            1200,
         )
 
-    def get_upgrade_strategy_steps(self) -> List[Dict[str, Union[Callable, List]]]:
-        """Return a strategy for performing the upgrade.
 
-        Upgrade all machine applications in parallel.
+class UpgradeMicrok8sCharm(UpgradeMachineCharm):
+    def __init__(
+        self,
+        client: Client,
+        jhelper: JujuHelper,
+        manifest: Manifest,
+        model: str,
+    ):
+        """Create instance of UpgradeMicrok8sCharm class.
+
+        :client: Client to connect to clusterdb
+        :jhelper: Helper for interacting with pylibjuju
+        :manifest: Manifest object
+        :model: Name of model containing charms.
         """
-        upgrade_strategy_steps = [
-            UpgradeStrategy(
-                upgrade_f=self.upgrade_applications, applications=MACHINE_SERVICES
-            ),
-        ]
-        return upgrade_strategy_steps
+        super().__init__(
+            "Upgrade Microk8s charm",
+            "Upgrading microk8s charm",
+            client,
+            jhelper,
+            manifest,
+            model,
+            ["microk8s"],
+            "microk8s-plan",
+            MICROK8S_CONFIG_KEY,
+            1200,
+        )
 
-    def post_upgrade_tasks(self) -> None:
-        """Update channels in terraform vars db."""
-        self.terraform_sync(
-            "TerraformVarsMicrocephPlan",
-            {
-                "microceph_channel": run_sync(
-                    self.jhelper.get_charm_channel("microceph", "controller")
-                )
-            },
+
+class UpgradeOpenstackHypervisorCharm(UpgradeMachineCharm):
+    def __init__(
+        self,
+        client: Client,
+        jhelper: JujuHelper,
+        manifest: Manifest,
+        model: str,
+    ):
+        """Create instance of UpgradeOpenstackHypervisorCharm class.
+
+        :client: Client to connect to clusterdb
+        :jhelper: Helper for interacting with pylibjuju
+        :manifest: Manifest object
+        :model: Name of model containing charms.
+        """
+        super().__init__(
+            "Upgrade hypervisor charm",
+            "Upgrading hypervisor charm",
+            client,
+            jhelper,
+            manifest,
+            model,
+            ["openstack-hypervisor"],
+            "hypervisor-plan",
+            HYPERVISOR_CONFIG_KEY,
+            1200,
         )
-        self.terraform_sync(
-            "TerraformVarsSunbeamMachine",
-            {
-                "charm_channel": run_sync(
-                    self.jhelper.get_charm_channel("sunbeam-machine", "controller")
-                )
-            },
-        )
-        self.terraform_sync(
-            "TerraformVarsHypervisor",
-            {
-                "charm_channel": run_sync(
-                    self.jhelper.get_charm_channel("openstack-hypervisor", "controller")
-                )
-            },
-        )
-        self.terraform_sync(
-            "TerraformVarsMicrok8sAddons",
-            {
-                "microk8s_channel": run_sync(
-                    self.jhelper.get_charm_channel("microk8s", "controller")
-                )
-            },
+
+
+class UpgradeSunbeamMachineCharm(UpgradeMachineCharm):
+    def __init__(
+        self,
+        client: Client,
+        jhelper: JujuHelper,
+        manifest: Manifest,
+        model: str,
+    ):
+        """Create instance of UpgradeSunbeamMachineCharm class.
+
+        :client: Client to connect to clusterdb
+        :jhelper: Helper for interacting with pylibjuju
+        :manifest: Manifest object
+        :model: Name of model containing charms.
+        """
+        super().__init__(
+            "Upgrade sunbeam-machine charm",
+            "Upgrading sunbeam-machine charm",
+            client,
+            jhelper,
+            manifest,
+            model,
+            ["sunbeam-machine"],
+            "sunbeam-machine-plan",
+            SUNBEAM_MACHINE_CONFIG_KEY,
+            1200,
         )
 
 
 class ChannelUpgradeCoordinator(UpgradeCoordinator):
-    def __init__(self, client: Client, jhelper: JujuHelper, tfhelper: TerraformHelper):
+    def __init__(self, client: Client, jhelper: JujuHelper, manifest: Manifest):
         """Upgrade coordinator.
 
         Execute plan for conducting an upgrade.
 
         :client: Client for interacting with clusterd
         :jhelper: Helper for interacting with pylibjuju
-        :tfhelper: Helper for interaction with Terraform
+        :manifest: Manifest object
         """
         self.client = client
         self.jhelper = jhelper
-        self.tfhelper = tfhelper
+        self.manifest = manifest
 
     def get_plan(self) -> list[BaseStep]:
         """Return the plan for this upgrade.
@@ -324,15 +403,21 @@ class ChannelUpgradeCoordinator(UpgradeCoordinator):
         Return the steps to complete this upgrade.
         """
         plan = [
-            ValidationCheck(self.jhelper, self.tfhelper),
-            LatestInChannel(self.jhelper),
-            UpgradeControlPlane(self.client, self.jhelper, self.tfhelper, "openstack"),
-            UpgradeMachineCharms(
-                self.client, self.jhelper, self.tfhelper, "controller"
+            ValidationCheck(self.jhelper, self.manifest),
+            UpgradeControlPlane(self.client, self.jhelper, self.manifest, "openstack"),
+            UpgradeMicrocephCharm(
+                self.client, self.jhelper, self.manifest, "controller"
             ),
-            UpgradePlugins(
-                self.client, self.jhelper, self.tfhelper, upgrade_release=True
+            UpgradeMicrok8sCharm(
+                self.client, self.jhelper, self.manifest, "controller"
             ),
+            UpgradeOpenstackHypervisorCharm(
+                self.client, self.jhelper, self.manifest, "controller"
+            ),
+            UpgradeSunbeamMachineCharm(
+                self.client, self.jhelper, self.manifest, "controller"
+            ),
+            UpgradePlugins(self.client, upgrade_release=True),
         ]
         return plan
 
@@ -343,18 +428,17 @@ class ChannelUpgradeCoordinator(UpgradeCoordinator):
 
 
 class ValidationCheck(BaseStep):
-    def __init__(self, jhelper: JujuHelper, tfhelper: TerraformHelper):
+    def __init__(self, jhelper: JujuHelper, manifest: Manifest):
         """Run validation on the deployment.
 
         Check whether the requested upgrade is possible.
 
         :jhelper: Helper for interacting with pylibjuju
-        :tfhelper: Helper for interaction with Terraform
-        :channel: OpenStack channel to upgrade charms to
+        :manifest: Manifest object
         """
         super().__init__("Validation", "Running pre-upgrade validation")
         self.jhelper = jhelper
-        self.tfhelper = tfhelper
+        self.manifest = manifest
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Run validation check."""

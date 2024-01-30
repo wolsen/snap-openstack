@@ -300,9 +300,11 @@ def list(ctx: click.Context, format: str) -> None:
         for name, node in nodes.items():
             table.add_row(
                 name,
-                "[green]up[/green]"
-                if node.get("status") == "ONLINE"
-                else "[red]down[/red]",
+                (
+                    "[green]up[/green]"
+                    if node.get("status") == "ONLINE"
+                    else "[red]down[/red]"
+                ),
                 "x" if "control" in node.get("roles", []) else "",
                 "x" if "compute" in node.get("roles", []) else "",
                 "x" if "storage" in node.get("roles", []) else "",

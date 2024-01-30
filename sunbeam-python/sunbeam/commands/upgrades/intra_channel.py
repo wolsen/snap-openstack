@@ -101,7 +101,7 @@ class LatestInChannel(BaseStep, JujuStepHelper):
 
         all_deployed_apps = deployed_k8s_apps.copy()
         all_deployed_apps.update(deployed_machine_apps)
-        LOG.debug(f"Al deployed apps: {all_deployed_apps}")
+        LOG.debug(f"All deployed apps: {all_deployed_apps}")
         if self.is_track_changed_for_any_charm(all_deployed_apps):
             error_msg = (
                 "Manifest has track values that require upgrades, rerun with "
@@ -138,7 +138,5 @@ class LatestInChannelCoordinator(UpgradeCoordinator):
             ReapplyHypervisorTerraformPlanStep(
                 self.client, self.manifest, self.jhelper
             ),
-            UpgradePlugins(
-                self.client, self.jhelper, self.tfhelper, upgrade_release=False
-            ),
+            UpgradePlugins(self.client, upgrade_release=False),
         ]

@@ -20,7 +20,6 @@ from rich.console import Console
 from rich.status import Status
 
 from sunbeam.clusterd.client import Client
-from sunbeam.commands.terraform import TerraformHelper
 from sunbeam.jobs.common import BaseStep, Result, ResultType, run_plan
 from sunbeam.jobs.juju import JujuHelper
 from sunbeam.jobs.manifest import Manifest
@@ -34,21 +33,15 @@ class UpgradePlugins(BaseStep):
     def __init__(
         self,
         client: Client,
-        jhelper: JujuHelper,
-        tfhelper: TerraformHelper,
         upgrade_release: bool = False,
     ):
         """Upgrade plugins.
 
         :client: Helper for interacting with clusterd
-        :jhelper: Helper for interacting with pylibjuju
-        :tfhelper: Helper for interaction with Terraform
         :upgrade_release: Whether to upgrade channel
         """
         super().__init__("Validation", "Running pre-upgrade validation")
         self.client = client
-        self.jhelper = jhelper
-        self.tfhelper = tfhelper
         self.upgrade_release = upgrade_release
 
     def run(self, status: Optional[Status] = None) -> Result:
@@ -64,7 +57,6 @@ class UpgradeCoordinator:
         client: Client,
         jhelper: JujuHelper,
         manifest: Manifest,
-        channel: str | None = None,
     ):
         """Upgrade coordinator.
 
@@ -73,10 +65,8 @@ class UpgradeCoordinator:
         :client: Helper for interacting with clusterd
         :jhelper: Helper for interacting with pylibjuju
         :manifest: Manifest object
-        :channel: OpenStack channel to upgrade charms to
         """
         self.client = client
-        self.channel = channel
         self.jhelper = jhelper
         self.manifest = manifest
         self.tfhelper = self.manifest.get_tfhelper("openstack-plan")

@@ -283,6 +283,20 @@ class PluginManager:
             plugin.add_manifest_section(manifest)
 
     @classmethod
+    def get_all_charms_in_openstack_plan(cls, client: Client) -> list:
+        charms = []
+        plugins = cls.get_all_plugin_classes()
+        for klass in plugins:
+            plugin = klass(client)
+            m_dict = plugin.manifest_attributes_tfvar_map()
+            charms_from_plugin = list(
+                m_dict.get("openstack-plan", {}).get("charms", {}).keys()
+            )
+            charms.extend(charms_from_plugin)
+
+        return charms
+
+    @classmethod
     def register(
         cls,
         client: Client,

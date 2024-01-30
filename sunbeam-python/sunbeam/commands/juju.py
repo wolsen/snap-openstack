@@ -221,6 +221,19 @@ class JujuStepHelper:
 
         return apps
 
+    def get_apps_filter_by_charms(self, model: str, charms: list) -> list:
+        """Return apps filtered by given charms.
+
+        Get all apps from the model and return only the apps deployed with
+        charms in the provided list.
+        """
+        deployed_all_apps = self.get_charm_deployed_versions(model)
+        return [
+            app_name
+            for app_name, (charm, channel, revision) in deployed_all_apps.items()
+            if charm in charms
+        ]
+
     def normalise_channel(self, channel: str) -> str:
         """Expand channel if it is using abbreviation.
 

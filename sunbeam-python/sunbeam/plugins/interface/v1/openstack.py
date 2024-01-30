@@ -43,15 +43,9 @@ from sunbeam.jobs.common import (
     read_config,
     run_plan,
     run_preflight_checks,
-    update_config,
+    update_status_background,
 )
-from sunbeam.jobs.juju import (
-    ChannelUpdate,
-    JujuHelper,
-    JujuWaitException,
-    TimeoutException,
-    run_sync,
-)
+from sunbeam.jobs.juju import JujuHelper, JujuWaitException, TimeoutException, run_sync
 from sunbeam.jobs.manifest import Manifest
 from sunbeam.plugins.interface.v1.base import EnableDisablePlugin
 
@@ -298,12 +292,11 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
 
         :param upgrade_release: Whether to upgrade release
         """
-        # For Intra channel upgrade, if the plan is openstack-plan,
-        # upgrade already applied at core and not required at plugin
-        # level
+        # Nothig to do if the plan is openstack-plan as it is taken
+        # care during control plane refresh
         if (
             not upgrade_release
-            and self.tf_plan_location  # noqa W503
+            or self.tf_plan_location  # noqa W503
             == TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO  # noqa: W503
         ):
             LOG.debug(
@@ -315,13 +308,13 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         data_location = self.snap.paths.user_data
         jhelper = JujuHelper(self.client, data_location)
         plan = [
-            UpgradeApplicationStep(jhelper, self, upgrade_release),
+            UpgradeOpenStackApplicationStep(jhelper, self, upgrade_release),
         ]
 
         run_plan(plan, console)
 
 
-class UpgradeApplicationStep(BaseStep, JujuStepHelper):
+class UpgradeOpenStackApplicationStep(BaseStep, JujuStepHelper):
     def __init__(
         self,
         jhelper: JujuHelper,
@@ -345,69 +338,41 @@ class UpgradeApplicationStep(BaseStep, JujuStepHelper):
         self.tfhelper = self.plugin.manifest.get_tfhelper(self.plugin.tfplan)
         self.client = self.plugin.client
 
-    def terraform_sync(self, config_key: str, tfvars_delta: dict):
-        """Sync the running state back to the Terraform state file.
-
-        :param config_key: The config key used to access the data in
-                           microcluster
-        :param tfvars_delta: The delta of changes to be applied to the
-                             terraform vars stored in microcluster.
-        """
-        tfvars = read_config(self.client, config_key)
-        tfvars.update(tfvars_delta)
-        update_config(self.client, config_key, tfvars)
-        self.tfhelper.write_tfvars(tfvars)
-        self.tfhelper.sync()
-
-    def upgrade_charms(
-        self,
-        application_data: dict[str, dict[str, str]],
-        model: str,
-    ):
-        """Upgrade applications.
-
-        :param application_data: Mapping of applications to their required channels
-        :param model: Name of model applications are in
-        """
-        for application_name, config in application_data.items():
-            if self.revision_update_needed(application_name, model):
-                run_sync(self.jhelper.charm_refresh(application_name, model))
-        if self.upgrade_release:
-            batch = {}
-            expect_wls = {"workload": ["blocked", "active"]}
-            for application_name, config in application_data.items():
-                current_channel = run_sync(
-                    self.jhelper.get_charm_channel(application_name, model)
-                )
-                new_channel = config["channel"]
-                LOG.debug(
-                    f"new_channel: {new_channel} current_channel: {current_channel}"
-                )
-                if self.channel_update_needed(current_channel, new_channel):
-                    batch[application_name] = ChannelUpdate(
-                        channel=new_channel,
-                        expected_status=expect_wls,
-                    )
-                else:
-                    LOG.debug(f"{application_name} no channel upgrade needed")
-            run_sync(self.jhelper.update_applications_channel(model, batch))
-
-    def terraform_sync_channel_updates(self, application_data):
-        for application_name, config in application_data.items():
-            if config.get("tfvars_channel_var"):
-                self.terraform_sync(
-                    self.plugin.get_tfvar_config_key(),
-                    {config["tfvars_channel_var"]: config["channel"]},
-                )
-
     def run(self, status: Optional[Status] = None) -> Result:
         """Run plugin upgrade."""
-        self.upgrade_charms(self.plugin.k8s_application_data, "openstack")
-        if self.upgrade_release:
-            self.terraform_sync_channel_updates(self.plugin.k8s_application_data)
-        self.upgrade_charms(self.plugin.machine_application_data, "controller")
-        if self.upgrade_release:
-            self.terraform_sync_channel_updates(self.plugin.machine_application_data)
+        LOG.debug(f"Upgrading plugin {self.plugin.name}")
+        expected_wls = ["active", "blocked", "unknown"]
+        tfvar_map = self.plugin.manifest_attributes_tfvar_map()
+        charms = list(tfvar_map.get(self.plugin.tfplan, {}).get("charms", {}).keys())
+        apps = self.get_apps_filter_by_charms(self.model, charms)
+        config = self.plugin.get_tfvar_config_key()
+        timeout = self.plugin.set_application_timeout_on_enable()
+
+        try:
+            self.plugin.manifest.update_partial_tfvars_and_apply_tf(
+                charms, self.plugin.tfplan, config
+            )
+        except TerraformException as e:
+            LOG.exception(f"Error upgrading plugin {self.plugin.name}")
+            return Result(ResultType.FAILED, str(e))
+
+        task = run_sync(update_status_background(self, apps, status))
+        try:
+            run_sync(
+                self.jhelper.wait_until_desired_status(
+                    self.model,
+                    apps,
+                    expected_wls,
+                    timeout=timeout,
+                )
+            )
+        except (JujuWaitException, TimeoutException) as e:
+            LOG.debug(str(e))
+            return Result(ResultType.FAILED, str(e))
+        finally:
+            if not task.done():
+                task.cancel()
+
         return Result(ResultType.COMPLETED)
 
 
