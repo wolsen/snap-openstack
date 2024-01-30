@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -22,8 +22,7 @@ from sunbeam.jobs.common import ResultType
 
 @pytest.fixture()
 def cclient():
-    with patch("sunbeam.plugins.repo.plugin.Client") as p:
-        yield p
+    yield Mock()
 
 
 @pytest.fixture()
@@ -89,7 +88,9 @@ class TestRemovePluginRepoStep:
                 }
             ],
         }
-        step = repo_plugin.RemovePluginRepoStep(repo_name, tmp_path, repoplugin)
+        step = repo_plugin.RemovePluginRepoStep(
+            cclient, repo_name, tmp_path, repoplugin
+        )
         result = step.run()
 
         repoplugin.get_plugin_info.assert_called_once()
@@ -113,7 +114,9 @@ class TestRemovePluginRepoStep:
                 }
             ],
         }
-        step = repo_plugin.RemovePluginRepoStep(repo_name, tmp_path, repoplugin)
+        step = repo_plugin.RemovePluginRepoStep(
+            cclient, repo_name, tmp_path, repoplugin
+        )
         result = step.run()
 
         repoplugin.get_plugin_info.assert_not_called()
@@ -135,7 +138,9 @@ class TestRemovePluginRepoStep:
                 }
             ],
         }
-        step = repo_plugin.RemovePluginRepoStep(repo_name, tmp_path, repoplugin)
+        step = repo_plugin.RemovePluginRepoStep(
+            cclient, repo_name, tmp_path, repoplugin
+        )
         result = step.run()
 
         repoplugin.get_plugin_info.assert_called_once()
@@ -148,13 +153,13 @@ class TestUpdatePluginRepoStep:
         repo_name = "TEST_REPO"
         pluginmanager.get_all_external_repos.return_value = [repo_name]
         externalrepo.name = repo_name
-        step = repo_plugin.UpdatePluginRepoStep(externalrepo, repoplugin)
+        step = repo_plugin.UpdatePluginRepoStep(cclient, externalrepo, repoplugin)
         result = step.run()
 
         externalrepo.repo.git.rev_parse.assert_called_once()
         externalrepo.repo.git.pull.assert_called_once()
         externalrepo.validate_repo.assert_called_once()
-        pluginmanager.update_plugins.assert_called_once_with([repo_name])
+        pluginmanager.update_plugins.assert_called_once_with(cclient, [repo_name])
         repoplugin.update_plugin_info.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
 
@@ -163,7 +168,7 @@ class TestUpdatePluginRepoStep:
     ):
         pluginmanager.get_all_external_repos.return_value = ["TEST_REPO"]
         externalrepo.name = "UNKNOWN_REPO"
-        step = repo_plugin.UpdatePluginRepoStep(externalrepo, repoplugin)
+        step = repo_plugin.UpdatePluginRepoStep(cclient, externalrepo, repoplugin)
         result = step.run()
 
         externalrepo.repo.git.rev_parse.assert_not_called()
@@ -182,7 +187,7 @@ class TestUpdatePluginRepoStep:
         pluginmanager.get_all_external_repos.return_value = [repo_name]
         externalrepo.name = repo_name
         externalrepo.repo.git.rev_parse.return_value = commit_id
-        step = repo_plugin.UpdatePluginRepoStep(externalrepo, repoplugin)
+        step = repo_plugin.UpdatePluginRepoStep(cclient, externalrepo, repoplugin)
         result = step.run()
 
         externalrepo.repo.git.rev_parse.assert_called_once()

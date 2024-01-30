@@ -19,6 +19,7 @@ import click
 from snaphelpers import Snap
 
 from sunbeam import log
+from sunbeam.clusterd.client import Client
 from sunbeam.commands import configure as configure_cmds
 from sunbeam.commands import dashboard_url as dasboard_url_cmds
 from sunbeam.commands import deployment as deployment_cmds
@@ -99,10 +100,11 @@ def main():
     cli.add_command(utils)
     utils.add_command(utils_cmds.juju_login)
 
+    client = Client.from_socket()
     # Register the plugins after all groups,commands are registered
-    PluginManager.register(cli)
+    PluginManager.register(client, cli)
 
-    cli()
+    cli(obj=client)
 
 
 if __name__ == "__main__":
