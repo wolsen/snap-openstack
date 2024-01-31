@@ -15,6 +15,7 @@
 
 
 import logging
+import pathlib
 import sys
 from pathlib import Path
 
@@ -25,16 +26,19 @@ from rich.table import Table
 from snaphelpers import Snap
 
 from sunbeam.commands.deployment import (
+    Deployment,
     DeploymentsConfig,
     deployment_path,
     list_deployments,
     register_deployment_type,
+    store_deployment_as_yaml,
 )
 from sunbeam.jobs.checks import LocalShareCheck
 from sunbeam.jobs.common import (
     CONTEXT_SETTINGS,
     FORMAT_TABLE,
     FORMAT_YAML,
+    run_plan,
     run_preflight_checks,
 )
 from sunbeam.provider.base import ProviderBase
@@ -97,6 +101,70 @@ def switch(name: str) -> None:
     except ValueError as e:
         click.echo(str(e))
         sys.exit(1)
+
+
+@deployment.command("import")
+@click.option(
+    "--file",
+    type=click.Path(exists=True, path_type=pathlib.Path),
+    help="Deployment file",
+)
+def import_deployment(file: Path | None):
+    """Import deployment."""
+    if file is None:
+        click.echo("Missing deployment file argument.")
+        sys.exit(1)
+    preflight_checks = [
+        LocalShareCheck(),
+    ]
+    run_preflight_checks(preflight_checks, console)
+
+    # try parsing the deployment
+    deployment_yaml = yaml.safe_load(file.read_text())
+    try:
+        deployment = Deployment.load(deployment_yaml)
+    except ValueError as e:
+        click.echo(str(e))
+        sys.exit(1)
+
+    import_step_class = deployment.import_step()
+
+    snap = Snap()
+    path = deployment_path(snap)
+    try:
+        deployments_config = DeploymentsConfig.load(path)
+    except ValueError as e:
+        click.echo(str(e))
+        sys.exit(1)
+
+    plan = []
+    plan.append(import_step_class(deployments_config, deployment))
+
+    run_plan(plan, console)
+
+    console.print(f"Deployment {deployment.name!r} imported.")
+
+
+@deployment.command("export")
+@click.argument("name", type=str)
+def export_deployment(name: str):
+    """Export deployment."""
+    preflight_checks = [
+        LocalShareCheck(),
+    ]
+    run_preflight_checks(preflight_checks, console)
+
+    snap = Snap()
+    path = deployment_path(snap)
+    try:
+        deployments_config = DeploymentsConfig.load(path)
+        deployment = deployments_config.get_deployment(name)
+        stored_path = store_deployment_as_yaml(snap, deployment)
+    except ValueError as e:
+        click.echo(str(e))
+        sys.exit(1)
+
+    console.print(f"Deployment exported to {str(stored_path)!r}")
 
 
 @deployment.command()

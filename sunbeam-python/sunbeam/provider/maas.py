@@ -233,7 +233,7 @@ def bootstrap(
     if deployment.juju_controller is None:
         raise ValueError("Controller should have been saved in previous step.")
 
-    jhelper = JujuHelper(Path())
+    jhelper = JujuHelper(None, Path())  # type: ignore
     jhelper.controller = deployment.get_connected_controller()
     plan2 = []
     plan2.append(DeploySunbeamClusterdApplicationStep(jhelper))
@@ -271,7 +271,14 @@ def add_maas(name: str, token: str, url: str, resource_pool: str) -> None:
     path = deployment_path(snap)
     deployments = DeploymentsConfig.load(path)
     plan = []
-    plan.append(AddMaasDeployment(deployments, name, token, url, resource_pool))
+    plan.append(
+        AddMaasDeployment(
+            deployments,
+            MaasDeployment(
+                name=name, token=token, url=url, resource_pool=resource_pool
+            ),
+        )
+    )
     run_plan(plan, console)
     click.echo(f"MAAS deployment {name} added.")
 
