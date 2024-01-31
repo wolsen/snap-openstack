@@ -25,6 +25,7 @@ from rich.table import Table
 from snaphelpers import Snap
 
 from sunbeam import utils
+from sunbeam.clusterd.client import Client
 from sunbeam.commands import refresh as refresh_cmds
 from sunbeam.commands import resize as resize_cmds
 from sunbeam.commands.bootstrap_state import SetBootstrapped
@@ -184,7 +185,9 @@ class LocalProvider(ProviderBase):
         "'multi' for a database per service, "
     ),
 )
+@click.pass_context
 def bootstrap(
+    ctx: click.Context,
     roles: List[Role],
     topology: str,
     database: str,
@@ -245,13 +248,14 @@ def bootstrap(
         )
 
     run_preflight_checks(preflight_checks, console)
-
+    client: Client = ctx.obj
     plan = []
     plan.append(JujuLoginStep(data_location))
-    plan.append(ClusterInitStep(roles_to_str_list(roles)))
+    plan.append(ClusterInitStep(client, roles_to_str_list(roles)))
     plan.append(AddCloudJujuStep(cloud_name, cloud_definition))
     plan.append(
         BootstrapJujuStep(
+            client,
             cloud_name,
             cloud_type,
             CONTROLLER,
@@ -263,13 +267,13 @@ def bootstrap(
 
     plan2 = []
     plan2.append(CreateJujuUserStep(fqdn))
-    plan2.append(ClusterUpdateJujuControllerStep(CONTROLLER))
+    plan2.append(ClusterUpdateJujuControllerStep(client, CONTROLLER))
     plan2_results = run_plan(plan2, console)
 
     token = get_step_message(plan2_results, CreateJujuUserStep)
 
     plan3 = []
-    plan3.append(ClusterAddJujuUserStep(fqdn, token))
+    plan3.append(ClusterAddJujuUserStep(client, fqdn, token))
     plan3.append(BackupBootstrapUserStep(fqdn, data_location))
     plan3.append(SaveJujuUserLocallyStep(fqdn, data_location))
     run_plan(plan3, console)
@@ -304,33 +308,47 @@ def bootstrap(
         backend="http",
         data_location=data_location,
     )
-    jhelper = JujuHelper(data_location)
+    jhelper = JujuHelper(client, data_location)
 
     plan4 = []
-    plan4.append(RegisterJujuUserStep(fqdn, CONTROLLER, data_location, replace=True))
+    plan4.append(
+        RegisterJujuUserStep(client, fqdn, CONTROLLER, data_location, replace=True)
+    )
     # Deploy sunbeam machine charm
     plan4.append(TerraformInitStep(tfhelper_sunbeam_machine))
-    plan4.append(DeploySunbeamMachineApplicationStep(tfhelper_sunbeam_machine, jhelper))
-    plan4.append(AddSunbeamMachineUnitStep(fqdn, jhelper))
+    plan4.append(
+        DeploySunbeamMachineApplicationStep(client, tfhelper_sunbeam_machine, jhelper)
+    )
+    plan4.append(AddSunbeamMachineUnitStep(client, fqdn, jhelper))
     # Deploy Microk8s application during bootstrap irrespective of node role.
     plan4.append(TerraformInitStep(tfhelper))
     plan4.append(
         DeployMicrok8sApplicationStep(
-            tfhelper, jhelper, accept_defaults=accept_defaults, preseed_file=preseed
+            client,
+            tfhelper,
+            jhelper,
+            accept_defaults=accept_defaults,
+            preseed_file=preseed,
         )
     )
-    plan4.append(AddMicrok8sUnitStep(fqdn, jhelper))
-    plan4.append(StoreMicrok8sConfigStep(jhelper))
-    plan4.append(AddMicrok8sCloudStep(jhelper))
+    plan4.append(AddMicrok8sUnitStep(client, fqdn, jhelper))
+    plan4.append(StoreMicrok8sConfigStep(client, jhelper))
+    plan4.append(AddMicrok8sCloudStep(client, jhelper))
     # Deploy Microceph application during bootstrap irrespective of node role.
     plan4.append(TerraformInitStep(tfhelper_microceph_deploy))
-    plan4.append(DeployMicrocephApplicationStep(tfhelper_microceph_deploy, jhelper))
+    plan4.append(
+        DeployMicrocephApplicationStep(client, tfhelper_microceph_deploy, jhelper)
+    )
 
     if is_storage_node:
-        plan4.append(AddMicrocephUnitStep(fqdn, jhelper))
+        plan4.append(AddMicrocephUnitStep(client, fqdn, jhelper))
         plan4.append(
             ConfigureMicrocephOSDStep(
-                fqdn, jhelper, accept_defaults=accept_defaults, preseed_file=preseed
+                client,
+                fqdn,
+                jhelper,
+                accept_defaults=accept_defaults,
+                preseed_file=preseed,
             )
         )
 
@@ -338,7 +356,7 @@ def bootstrap(
         plan4.append(TerraformInitStep(tfhelper_openstack_deploy))
         plan4.append(
             DeployControlPlaneStep(
-                tfhelper_openstack_deploy, jhelper, topology, database
+                client, tfhelper_openstack_deploy, jhelper, topology, database
             )
         )
 
@@ -348,7 +366,7 @@ def bootstrap(
 
     if is_control_node:
         plan5.append(ConfigureMySQLStep(jhelper))
-        plan5.append(PatchLoadBalancerServicesStep())
+        plan5.append(PatchLoadBalancerServicesStep(client))
 
     # NOTE(jamespage):
     # As with MicroCeph, always deploy the openstack-hypervisor charm
@@ -356,13 +374,13 @@ def bootstrap(
     plan5.append(TerraformInitStep(tfhelper_hypervisor_deploy))
     plan5.append(
         DeployHypervisorApplicationStep(
-            tfhelper_hypervisor_deploy, tfhelper_openstack_deploy, jhelper
+            client, tfhelper_hypervisor_deploy, tfhelper_openstack_deploy, jhelper
         )
     )
     if is_compute_node:
-        plan5.append(AddHypervisorUnitStep(fqdn, jhelper))
+        plan5.append(AddHypervisorUnitStep(client, fqdn, jhelper))
 
-    plan5.append(SetBootstrapped())
+    plan5.append(SetBootstrapped(client))
     run_plan(plan5, console)
 
     click.echo(f"Node has been bootstrapped with roles: {pretty_roles}")
@@ -382,18 +400,20 @@ def bootstrap(
     default=FORMAT_DEFAULT,
     help="Output format.",
 )
-def add(name: str, format: str) -> None:
+@click.pass_context
+def add(ctx: click.Context, name: str, format: str) -> None:
     """Generate a token for a new node to join the cluster."""
     preflight_checks = [DaemonGroupCheck(), VerifyFQDNCheck(name)]
     run_preflight_checks(preflight_checks, console)
 
     name = remove_trailing_dot(name)
     data_location = snap.paths.user_data
-    jhelper = JujuHelper(data_location)
+    client: Client = ctx.obj
+    jhelper = JujuHelper(client, data_location)
 
     plan1 = [
         JujuLoginStep(data_location),
-        ClusterAddNodeStep(name),
+        ClusterAddNodeStep(client, name),
         CreateJujuUserStep(name),
         JujuGrantModelAccessStep(jhelper, name, OPENSTACK_MODEL),
     ]
@@ -402,7 +422,7 @@ def add(name: str, format: str) -> None:
 
     user_token = get_step_message(plan1_results, CreateJujuUserStep)
 
-    plan2 = [ClusterAddJujuUserStep(name, user_token)]
+    plan2 = [ClusterAddJujuUserStep(client, name, user_token)]
     run_plan(plan2, console)
 
     def _print_output(token):
@@ -442,7 +462,9 @@ def add(name: str, format: str) -> None:
     callback=validate_roles,
     help="Specify which roles the node will be assigned in the cluster.",
 )
+@click.pass_context
 def join(
+    ctx: click.Context,
     token: str,
     roles: List[Role],
     preseed: Optional[Path] = None,
@@ -480,6 +502,7 @@ def join(
 
     controller = CONTROLLER
     data_location = snap.paths.user_data
+    client: Client = ctx.obj
 
     # NOTE: install to user writable location
     tfplan_dirs = ["deploy-sunbeam-machine"]
@@ -505,13 +528,13 @@ def join(
         backend="http",
         data_location=data_location,
     )
-    jhelper = JujuHelper(data_location)
+    jhelper = JujuHelper(client, data_location)
 
     plan1 = [
         JujuLoginStep(data_location),
-        ClusterJoinNodeStep(token, roles_str),
+        ClusterJoinNodeStep(client, token, roles_str),
         SaveJujuUserLocallyStep(name, data_location),
-        RegisterJujuUserStep(name, controller, data_location),
+        RegisterJujuUserStep(client, name, controller, data_location),
         AddJujuMachineStep(ip),
     ]
     plan1_results = run_plan(plan1, console)
@@ -521,21 +544,25 @@ def join(
     if machine_id_result is not None:
         machine_id = int(machine_id_result)
 
-    jhelper = JujuHelper(data_location)
+    jhelper = JujuHelper(client, data_location)
     plan2 = []
-    plan2.append(ClusterUpdateNodeStep(name, machine_id=machine_id))
+    plan2.append(ClusterUpdateNodeStep(client, name, machine_id=machine_id))
     plan2.append(
-        AddSunbeamMachineUnitStep(name, jhelper),
+        AddSunbeamMachineUnitStep(client, name, jhelper),
     )
 
     if is_control_node:
-        plan2.append(AddMicrok8sUnitStep(name, jhelper))
+        plan2.append(AddMicrok8sUnitStep(client, name, jhelper))
 
     if is_storage_node:
-        plan2.append(AddMicrocephUnitStep(name, jhelper))
+        plan2.append(AddMicrocephUnitStep(client, name, jhelper))
         plan2.append(
             ConfigureMicrocephOSDStep(
-                name, jhelper, accept_defaults=accept_defaults, preseed_file=preseed
+                client,
+                name,
+                jhelper,
+                accept_defaults=accept_defaults,
+                preseed_file=preseed,
             )
         )
 
@@ -544,11 +571,14 @@ def join(
             [
                 TerraformInitStep(tfhelper_hypervisor_deploy),
                 DeployHypervisorApplicationStep(
-                    tfhelper_hypervisor_deploy, tfhelper_openstack_deploy, jhelper
+                    client,
+                    tfhelper_hypervisor_deploy,
+                    tfhelper_openstack_deploy,
+                    jhelper,
                 ),
-                AddHypervisorUnitStep(name, jhelper),
+                AddHypervisorUnitStep(client, name, jhelper),
                 SetLocalHypervisorOptions(
-                    name, jhelper, join_mode=True, preseed_file=preseed
+                    client, name, jhelper, join_mode=True, preseed_file=preseed
                 ),
             ]
         )
@@ -566,12 +596,13 @@ def join(
     default=FORMAT_TABLE,
     help="Output format.",
 )
-def list(format: str) -> None:
+@click.pass_context
+def list(ctx: click.Context, format: str) -> None:
     """List nodes in the cluster."""
     preflight_checks = [DaemonGroupCheck()]
     run_preflight_checks(preflight_checks, console)
-
-    plan = [ClusterListNodeStep()]
+    client: Client = ctx.obj
+    plan = [ClusterListNodeStep(client)]
     results = run_plan(plan, console)
 
     list_node_step_result = results.get("ClusterListNodeStep")
@@ -609,24 +640,26 @@ def list(format: str) -> None:
     is_flag=True,
 )
 @click.option("--name", type=str, prompt=True, help="Fully qualified node name")
-def remove(name: str, force: bool) -> None:
+@click.pass_context
+def remove(ctx: click.Context, name: str, force: bool) -> None:
     """Remove a node from the cluster."""
     data_location = snap.paths.user_data
-    jhelper = JujuHelper(data_location)
+    client: Client = ctx.obj
+    jhelper = JujuHelper(client, data_location)
 
     preflight_checks = [DaemonGroupCheck()]
     run_preflight_checks(preflight_checks, console)
 
     plan = [
-        RemoveSunbeamMachineStep(name, jhelper),
-        RemoveMicrok8sUnitStep(name, jhelper),
-        RemoveMicrocephUnitStep(name, jhelper),
-        RemoveHypervisorUnitStep(name, jhelper, force),
-        RemoveJujuMachineStep(name),
+        RemoveSunbeamMachineStep(client, name, jhelper),
+        RemoveMicrok8sUnitStep(client, name, jhelper),
+        RemoveMicrocephUnitStep(client, name, jhelper),
+        RemoveHypervisorUnitStep(client, name, jhelper, force),
+        RemoveJujuMachineStep(client, name),
         # Cannot remove user as the same user name cannot be resued,
         # so commenting the RemoveJujuUserStep
         # RemoveJujuUserStep(name),
-        ClusterRemoveNodeStep(name),
+        ClusterRemoveNodeStep(client, name),
     ]
     run_plan(plan, console)
     click.echo(f"Removed node {name} from the cluster")

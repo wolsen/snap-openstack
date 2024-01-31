@@ -15,20 +15,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-variable "principal-application" {
-  description = "Name of the deployed principal application that integrates with grafana-agent"
-}
-
-variable "principal-application-model" {
-  description = "Name of the model principal application is deployed in"
-  default     = "controller"
-}
-
-variable "grafana-agent-channel" {
-  description = "Channel to use when deploying grafana agent machine charm"
-  # Note: Currently, latest/stable is not available for grafana-agent. So,
-  # defaulting to latest/candidate.
-  default = "latest/candidate"
+variable "model" {
+  type        = string
+  default     = "openstack"
+  description = "Name of the model where the application is deployed"
 }
 
 variable "cos-state-backend" {
@@ -39,4 +29,22 @@ variable "cos-state-backend" {
 
 variable "cos-state-config" {
   type = map(any)
+}
+
+variable "grafana-agent-k8s-channel" {
+  type        = string
+  default     = "latest/stable"
+  description = "Operator channel for grafana-agent-k8s deployment"
+}
+
+variable "grafana-agent-k8s-revision" {
+  type        = number
+  default     = null
+  description = "Operator channel revision for grafana-agent-k8s deployment"
+}
+
+variable "grafana-agent-k8s-config" {
+  type        = map(string)
+  default     = {}
+  description = "Operator config for grafana-agent-k8s deployment"
 }

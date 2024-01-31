@@ -29,40 +29,30 @@ data "terraform_remote_state" "cos" {
   config  = var.cos-state-config
 }
 
-resource "juju_application" "grafana-agent" {
-  name  = "grafana-agent"
-  trust = false
-  model = var.principal-application-model
-  units = 0
+resource "juju_application" "grafana-agent-k8s" {
+  name  = "grafana-agent-k8s"
+  model = var.model
 
+  # note that we need to make sure the "base" matches the environment we are
+  # deploying.
   charm {
-    name    = "grafana-agent"
-    channel = var.grafana-agent-channel
-    base    = "ubuntu@22.04"
+    name     = "grafana-agent-k8s"
+    base     = "ubuntu@22.04"
+    channel  = var.grafana-agent-k8s-channel
+    revision = var.grafana-agent-k8s-revision
   }
+
+  units  = 1
+  config = var.grafana-agent-k8s-config
 }
 
-# juju integrate <principal-application>:cos-agent grafana-agent:cos-agent
-resource "juju_integration" "principal-application-to-grafana-agent" {
-  model = var.principal-application-model
+# juju integrate grafana-agent-k8s:send-remote-write cos.prometheus-receive-remote-write
+resource "juju_integration" "grafana-agent-k8s-to-cos-prometheus" {
+  model = var.model
 
   application {
-    name     = juju_application.grafana-agent.name
-    endpoint = "cos-agent"
-  }
-
-  application {
-    name     = var.principal-application
-    endpoint = "cos-agent"
-  }
-}
-
-# juju integrate grafana-agent cos.prometheus-receive-remote-write
-resource "juju_integration" "grafana-agent-to-cos-prometheus" {
-  model = var.principal-application-model
-
-  application {
-    name = juju_application.grafana-agent.name
+    name     = juju_application.grafana-agent-k8s.name
+    endpoint = "send-remote-write"
   }
 
   application {
@@ -70,12 +60,13 @@ resource "juju_integration" "grafana-agent-to-cos-prometheus" {
   }
 }
 
-# juju integrate grafana-agent cos.loki-logging
-resource "juju_integration" "grafana-agent-to-cos-loki" {
-  model = var.principal-application-model
+# juju integrate grafana-agent-k8s:logging-consumer cos.loki-logging
+resource "juju_integration" "grafana-agent-k8s-to-cos-loki" {
+  model = var.model
 
   application {
-    name = juju_application.grafana-agent.name
+    name     = juju_application.grafana-agent-k8s.name
+    endpoint = "logging-consumer"
   }
 
   application {
@@ -83,12 +74,13 @@ resource "juju_integration" "grafana-agent-to-cos-loki" {
   }
 }
 
-# juju integrate grafana-agent cos.grafana-dashboards
-resource "juju_integration" "grafana-agent-to-cos-grafana" {
-  model = var.principal-application-model
+# juju integrate grafana-agent-k8s:grafana_dashboard cos.grafana-dashboards
+resource "juju_integration" "grafana-agent-k8s-to-cos-grafana" {
+  model = var.model
 
   application {
-    name = juju_application.grafana-agent.name
+    name     = juju_application.grafana-agent-k8s.name
+    endpoint = "grafana-dashboards-provider"
   }
 
   application {
