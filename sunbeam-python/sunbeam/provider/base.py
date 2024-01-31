@@ -14,9 +14,12 @@
 # limitations under the License.
 
 import abc
+from typing import Tuple, Type
 
 import click
 from rich.console import Console
+
+from sunbeam.commands.deployment import Deployment
 
 console = Console()
 
@@ -43,4 +46,8 @@ class ProviderBase(abc.ABC):
 
         Only called when the provider is enabled.
         """
+        pass
+
+    def deployment_type(self) -> Tuple[str, Type[Deployment]] | None:
+        """Return a deployment type for the provider."""
         pass

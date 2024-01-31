@@ -14,6 +14,8 @@
 # limitations under the License.
 
 import logging
+import secrets
+import string
 
 import click
 from rich.console import Console
@@ -42,3 +44,9 @@ def juju_login() -> None:
     run_plan(plan, console)
 
     console.print("Juju re-login complete.")
+
+
+def random_string(length: int) -> str:
+    """Utility function to generate secure random string."""
+    alphabet = string.ascii_letters + string.digits
+    return "".join(secrets.choice(alphabet) for i in range(length))

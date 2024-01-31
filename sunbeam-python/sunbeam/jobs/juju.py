@@ -17,12 +17,12 @@ import asyncio
 import base64
 import json
 import logging
-from dataclasses import asdict, dataclass
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
 from typing import Awaitable, Dict, List, Optional, TypedDict, TypeVar, cast
 
+import pydantic
 import pytz
 import yaml
 from juju import utils as juju_utils
@@ -40,6 +40,7 @@ from juju.errors import (
 from juju.model import Model
 from juju.unit import Unit
 
+from sunbeam import utils
 from sunbeam.clusterd.client import Client as clusterClient
 
 LOG = logging.getLogger(__name__)
@@ -153,13 +154,12 @@ class ChannelUpdate(TypedDict):
     expected_status: Dict[str, List[str]]
 
 
-@dataclass
-class JujuAccount:
+class JujuAccount(pydantic.BaseModel):
     user: str
     password: str
 
     def to_dict(self):
-        return asdict(self)
+        return self.dict()
 
     @classmethod
     def load(cls, data_location: Path) -> "JujuAccount":
@@ -182,13 +182,12 @@ class JujuAccount:
             yaml.safe_dump(self.to_dict(), file)
 
 
-@dataclass
-class JujuController:
+class JujuController(pydantic.BaseModel):
     api_endpoints: List[str]
     ca_cert: str
 
     def to_dict(self):
-        return asdict(self)
+        return self.dict()
 
     @classmethod
     def load(cls, client: clusterClient) -> "JujuController":
@@ -197,6 +196,19 @@ class JujuController:
 
     def write(self, client: clusterClient):
         client.cluster.update_config(JUJU_CONTROLLER_KEY, json.dumps(self.to_dict()))
+
+    def to_controller(self, juju_account: JujuAccount) -> Controller:
+        """Return connected controller."""
+        controller = Controller()
+        run_sync(
+            controller.connect(
+                endpoint=self.api_endpoints,
+                cacert=self.ca_cert,
+                username=juju_account.user,
+                password=juju_account.password,
+            )
+        )
+        return controller
 
 
 def controller(func):
@@ -227,7 +239,7 @@ class JujuHelper:
 
     def __init__(self, data_location: Path):
         self.data_location = data_location
-        self.controller = None
+        self.controller: Controller = None  # type: ignore
 
     @controller
     async def get_clouds(self) -> dict:
@@ -284,6 +296,35 @@ class JujuHelper:
                 f"Application missing from model: {model!r}"
             )
         return application
+
+    @controller
+    async def deploy(
+        self,
+        name: str,
+        charm: str,
+        model: str,
+        num_units: int = 1,
+        channel: str | None = None,
+        to: list[str] | None = None,
+        config: dict | None = None,
+    ):
+        """Deploy an application"""
+        options = {}
+        if to:
+            options["to"] = to
+        if channel:
+            options["channel"] = channel
+        if config:
+            options["config"] = config
+
+        model_impl = await self.get_model(model)
+        await model_impl.deploy(
+            charm,
+            application_name=name,
+            num_units=num_units,
+            base="ubuntu@22.04",
+            **options,
+        )
 
     @controller
     async def get_unit(self, name: str, model: str) -> Unit:
@@ -822,3 +863,36 @@ class JujuHelper:
         available_charm_data = await CharmHub(model_impl).info(charm_name, channel)
         version = available_charm_data["channel-map"][channel]["revision"]["version"]
         return int(version)
+
+    @staticmethod
+    def manual_cloud(cloud_name: str) -> dict[str, dict]:
+        """Create manual cloud definition."""
+        cloud_yaml = {"clouds": {}}
+        cloud_yaml["clouds"][cloud_name] = {
+            "type": "manual",
+            "endpoint": utils.get_local_ip_by_default_route(),
+        }
+        return cloud_yaml
+
+    @staticmethod
+    def maas_cloud(cloud: str, endpoint: str) -> dict[str, dict]:
+        """Create maas cloud definition."""
+        clouds = {"clouds": {}}
+        clouds["clouds"][cloud] = {
+            "type": "maas",
+            "auth-types": ["oauth1"],
+            "endpoint": endpoint,
+        }
+        return clouds
+
+    @staticmethod
+    def maas_credential(cloud: str, credential: str, maas_apikey: str):
+        """Create maas credential definition."""
+        credentials = {"credentials": {}}
+        credentials["credentials"][cloud] = {
+            credential: {
+                "auth-type": "oauth1",
+                "maas-oauth": maas_apikey,
+            }
+        }
+        return credentials

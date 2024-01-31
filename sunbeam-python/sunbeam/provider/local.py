@@ -45,6 +45,7 @@ from sunbeam.commands.hypervisor import (
     RemoveHypervisorUnitStep,
 )
 from sunbeam.commands.juju import (
+    AddCloudJujuStep,
     AddJujuMachineStep,
     BackupBootstrapUserStep,
     BootstrapJujuStep,
@@ -111,6 +112,8 @@ from sunbeam.utils import CatchGroup
 LOG = logging.getLogger(__name__)
 console = Console()
 snap = Snap()
+
+LOCAL_TYPE = "local"
 
 
 @click.group("cluster", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
@@ -206,8 +209,9 @@ def bootstrap(
     pretty_roles = ", ".join(role.name.lower() for role in roles)
     LOG.debug(f"Bootstrap node: roles {roles_str}")
 
-    cloud_type = snap.config.get("juju.cloud.type")
     cloud_name = snap.config.get("juju.cloud.name")
+    cloud_type = snap.config.get("juju.cloud.type")
+    cloud_definition = JujuHelper.manual_cloud(cloud_name)
 
     data_location = snap.paths.user_data
 
@@ -245,6 +249,7 @@ def bootstrap(
     plan = []
     plan.append(JujuLoginStep(data_location))
     plan.append(ClusterInitStep(roles_to_str_list(roles)))
+    plan.append(AddCloudJujuStep(cloud_name, cloud_definition))
     plan.append(
         BootstrapJujuStep(
             cloud_name,
@@ -582,9 +587,11 @@ def list(format: str) -> None:
         for name, node in nodes.items():
             table.add_row(
                 name,
-                "[green]up[/green]"
-                if node.get("status") == "ONLINE"
-                else "[red]down[/red]",
+                (
+                    "[green]up[/green]"
+                    if node.get("status") == "ONLINE"
+                    else "[red]down[/red]"
+                ),
                 "x" if "control" in node.get("roles", []) else "",
                 "x" if "compute" in node.get("roles", []) else "",
                 "x" if "storage" in node.get("roles", []) else "",

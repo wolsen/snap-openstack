@@ -13,16 +13,18 @@
 # limitations under the License.
 
 from builtins import ConnectionRefusedError
-from pathlib import Path
 from ssl import SSLError
 from unittest.mock import Mock
 
 import pytest
 from maas.client.bones import CallError
 
+from sunbeam.commands.deployment import DeploymentsConfig
 from sunbeam.commands.maas import (
     AddMaasDeployment,
     DeploymentRolesCheck,
+    MaasDeployment,
+    MaasScaleJujuStep,
     MachineNetworkCheck,
     MachineRequirementsCheck,
     MachineRolesCheck,
@@ -34,6 +36,7 @@ from sunbeam.commands.maas import (
     ZonesCheck,
 )
 from sunbeam.jobs.common import ResultType
+from sunbeam.jobs.juju import ControllerNotFoundException
 
 
 class TestAddMaasDeployment:
@@ -44,53 +47,49 @@ class TestAddMaasDeployment:
             token="test_token",
             url="test_url",
             resource_pool="test_resource_pool",
-            config_path=Path("test_path"),
+            deployments_config=Mock(),
         )
 
-    def test_is_skip_with_existing_deployment(self, add_maas_deployment, mocker):
-        mocker.patch(
-            "sunbeam.commands.maas.deployment_config",
-            return_value={
-                "active": "test_deployment",
-                "deployments": [
-                    {
-                        "name": "test_deployment",
-                        "type": "maas",
-                        "url": "test_url",
-                        "resource_pool": "test_resource_pool",
-                    }
-                ],
-            },
+    def test_is_skip_with_existing_deployment(self, add_maas_deployment):
+        deployments_config = DeploymentsConfig(
+            active="test_deployment",
+            deployments=[
+                MaasDeployment(
+                    name="test_deployment",
+                    url="test_url2",
+                    resource_pool="test_resource_pool3",
+                    token="test_token",
+                )
+            ],
         )
+        add_maas_deployment.deployments_config = deployments_config
         result = add_maas_deployment.is_skip()
         assert result.result_type == ResultType.FAILED
 
-    def test_is_skip_with_existing_url_and_resource_pool(
-        self, add_maas_deployment, mocker
-    ):
-        mocker.patch(
-            "sunbeam.commands.maas.deployment_config",
-            return_value={
-                "deployments": [
-                    {
-                        "type": "maas",
-                        "url": "test_url",
-                        "resource_pool": "test_resource_pool",
-                    }
-                ]
-            },
+    def test_is_skip_with_existing_url_and_resource_pool(self, add_maas_deployment):
+        deployments_config = DeploymentsConfig(
+            active="test_deployment",
+            deployments=[
+                MaasDeployment(
+                    name="different_deployment",
+                    url="test_url",
+                    resource_pool="test_resource_pool",
+                    token="test_token",
+                )
+            ],
         )
+        add_maas_deployment.deployments_config = deployments_config
         result = add_maas_deployment.is_skip()
         assert result.result_type == ResultType.FAILED
 
-    def test_is_skip_with_no_existing_deployment(self, add_maas_deployment, mocker):
-        mocker.patch("sunbeam.commands.maas.deployment_config", return_value={})
+    def test_is_skip_with_no_existing_deployment(self, add_maas_deployment):
+        deployments_config = DeploymentsConfig()
+        add_maas_deployment.deployments_config = deployments_config
         result = add_maas_deployment.is_skip()
         assert result.result_type == ResultType.COMPLETED
 
     def test_run_with_successful_connection(self, add_maas_deployment, mocker):
         mocker.patch("sunbeam.commands.maas.MaasClient", autospec=True)
-        mocker.patch("sunbeam.commands.maas.add_deployment", autospec=True)
         result = add_maas_deployment.run()
         assert result.result_type == ResultType.COMPLETED
 
@@ -180,7 +179,7 @@ class TestMachineNetworkCheck:
         mocker.patch(
             "sunbeam.commands.maas.get_network_mapping",
             return_value={
-                **{network: "alpha" for network in Networks.values()},
+                **{network.value: "alpha" for network in Networks},
                 **{Networks.PUBLIC.value: "beta"},
             },
         )
@@ -199,7 +198,7 @@ class TestMachineNetworkCheck:
         snap = Mock()
         mocker.patch(
             "sunbeam.commands.maas.get_network_mapping",
-            return_value={network: "alpha" for network in Networks.values()},
+            return_value={network.value: "alpha" for network in Networks},
         )
         machine = {
             "hostname": "test_machine",
@@ -266,6 +265,7 @@ class TestMachineRequirementsCheck:
             "hostname": "test_machine",
             "cores": 16,
             "memory": 16384,  # 16GiB
+            "roles": [RoleTags.CONTROL.value],
         }
         check = MachineRequirementsCheck(machine)
         result = check.run()
@@ -278,6 +278,7 @@ class TestMachineRequirementsCheck:
             "hostname": "test_machine",
             "cores": 8,
             "memory": 32768,  # 32GiB
+            "roles": [RoleTags.CONTROL.value],
         }
         check = MachineRequirementsCheck(machine)
         result = check.run()
@@ -290,6 +291,7 @@ class TestMachineRequirementsCheck:
             "hostname": "test_machine",
             "cores": 16,
             "memory": 32768,  # 32GB
+            "roles": [RoleTags.CONTROL.value],
         }
         check = MachineRequirementsCheck(machine)
         result = check.run()
@@ -376,3 +378,104 @@ class TestZoneBalanceCheck:
         result = check.run()
         assert result.passed is False
         assert result.message and "compute distribution is unbalanced" in result.message
+
+
+class TestMaasScaleJujuStep:
+    def test_is_skip_with_controller_not_found(self, mocker):
+        maas_client = mocker.Mock()
+        controller = "test_controller"
+        step = MaasScaleJujuStep(maas_client, controller)
+        mocker.patch.object(
+            step,
+            "get_controller",
+            side_effect=ControllerNotFoundException("Controller not found"),
+        )
+        result = step.is_skip()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == f"Controller {controller} not found"
+
+    def test_is_skip_with_no_registered_machines(self, mocker):
+        maas_client = mocker.Mock()
+        controller = "test_controller"
+        step = MaasScaleJujuStep(maas_client, controller)
+        mocker.patch.object(
+            step, "get_controller", return_value={"controller-machines": None}
+        )
+        result = step.is_skip()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == f"Controller {controller} has no machines registered."
+
+    def _controller_machines_raw(self) -> list[dict]:
+        return [
+            {
+                "hostname": "c-1",
+                "blockdevice_set": [],
+                "interface_set": [],
+                "zone": {"name": "default"},
+                "tag_names": [RoleTags.JUJU_CONTROLLER.value],
+                "status_name": "deployed",
+                "cpu_count": 4,
+                "memory": 32768,
+            },
+            {
+                "hostname": "c-1",
+                "blockdevice_set": [],
+                "interface_set": [],
+                "zone": {"name": "default"},
+                "tag_names": [RoleTags.JUJU_CONTROLLER.value],
+                "status_name": "deployed",
+                "cpu_count": 4,
+                "memory": 32768,
+            },
+        ]
+
+    def test_is_skip_with_already_correct_number_of_controllers(self, mocker):
+        maas_client = mocker.Mock(
+            list_machines=Mock(return_value=self._controller_machines_raw())
+        )
+        controller = "test_controller"
+        step = MaasScaleJujuStep(maas_client, controller)
+        step.n = 2
+        mocker.patch.object(
+            step, "get_controller", return_value={"controller-machines": [1, 2]}
+        )
+        result = step.is_skip()
+        assert result.result_type == ResultType.SKIPPED
+
+    def test_is_skip_with_cannot_scale_down_controllers(self, mocker):
+        maas_client = mocker.Mock(
+            list_machines=Mock(return_value=self._controller_machines_raw())
+        )
+        controller = "test_controller"
+        step = MaasScaleJujuStep(maas_client, controller)
+        step.n = 1
+        mocker.patch.object(
+            step, "get_controller", return_value={"controller-machines": [1, 2]}
+        )
+        result = step.is_skip()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == f"Can't scale down controllers from 2 to {step.n}."
+
+    def test_is_skip_with_insufficient_juju_controllers(self, mocker):
+        maas_client = mocker.Mock()
+        controller = "test_controller"
+        step = MaasScaleJujuStep(maas_client, controller)
+        step.n = 3
+        mocker.patch.object(
+            step, "get_controller", return_value={"controller-machines": [1, 2]}
+        )
+        mocker.patch("sunbeam.commands.maas.list_machines", return_value=[1, 2])
+        result = step.is_skip()
+        assert result.result_type == ResultType.SKIPPED
+
+    def test_is_skip_with_completed(self, mocker):
+        maas_client = mocker.Mock()
+        controller = "test_controller"
+        step = MaasScaleJujuStep(maas_client, controller)
+        step.n = 3
+        mocker.patch.object(
+            step, "get_controller", return_value={"controller-machines": [1, 2]}
+        )
+        mocker.patch("sunbeam.commands.maas.list_machines", return_value=[1, 2, 3])
+        result = step.is_skip()
+        assert result.result_type == ResultType.COMPLETED

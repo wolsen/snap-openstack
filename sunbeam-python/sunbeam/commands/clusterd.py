@@ -34,11 +34,29 @@ from sunbeam.clusterd.service import (
 )
 from sunbeam.commands.juju import BOOTSTRAP_CONFIG_KEY, JujuStepHelper
 from sunbeam.jobs import questions
-from sunbeam.jobs.common import BaseStep, Result, ResultType, Status
-from sunbeam.jobs.juju import JujuController
+from sunbeam.jobs.common import (
+    BaseStep,
+    Result,
+    ResultType,
+    Status,
+    update_status_background,
+)
+from sunbeam.jobs.juju import (
+    MODEL,
+    ApplicationNotFoundException,
+    JujuController,
+    JujuHelper,
+    JujuWaitException,
+    TimeoutException,
+    run_sync,
+)
 
-CLUSTERD_PORT = 7000
 LOG = logging.getLogger(__name__)
+APPLICATION = "sunbeam-clusterd"
+SUNBEAM_CLUSTERD_APP_TIMEOUT = (
+    1200  # 20 minutes, adding / removing units can take a long time
+)
+CLUSTERD_PORT = 7000
 
 
 class ClusterInitStep(BaseStep):
@@ -390,3 +408,80 @@ class ClusterUpdateJujuControllerStep(BaseStep, JujuStepHelper):
             return Result(ResultType.FAILED, str(e))
 
         return Result(result_type=ResultType.COMPLETED)
+
+
+class DeploySunbeamClusterdApplicationStep(BaseStep):
+    """Deploy sunbeam-clusterd application."""
+
+    def __init__(
+        self,
+        jhelper: JujuHelper,
+    ):
+        super().__init__(
+            "Deploy sunbeam-clusterd",
+            "Deploying Sunbeam Clusterd",
+        )
+        self.jhelper = jhelper
+        self.model = MODEL
+        self.app = APPLICATION
+
+    def _get_controller_machines(self) -> list[str]:
+        """Get controller machines."""
+        controller = run_sync(self.jhelper.get_application("controller", self.model))
+        machines = []
+        for unit in controller.units:
+            machines.append(str(unit.machine.id))
+        return sorted(machines)
+
+    def is_skip(self, status: Status | None = None) -> Result:
+        """Check wheter or not to deploy sunbeam-clusterd."""
+        try:
+            run_sync(self.jhelper.get_application(self.app, self.model))
+        except ApplicationNotFoundException:
+            return Result(ResultType.COMPLETED)
+        return Result(ResultType.SKIPPED)
+
+    def run(self, status: Status | None) -> Result:
+        """Deploy sunbeam clusterd to controller machines."""
+        self.update_status(status, "fetching controller application")
+        machines = self._get_controller_machines()
+
+        self.update_status(status, "computing number of units for sunbeam-clusterd")
+        num_machines = len(machines)
+        if num_machines == 0:
+            return Result(ResultType.FAILED, "No controller machines found")
+
+        num_units = num_machines
+        self.update_status(status, "deploying application")
+        run_sync(
+            self.jhelper.deploy(
+                APPLICATION,
+                "sunbeam-clusterd",
+                MODEL,
+                num_units,
+                # TODO(gboutry): Choose channel with manifest
+                channel="2023.2/edge",
+                to=machines,
+                # TODO(gboutry): Until snap is published to main branch, manifest also
+                config={"snap-channel": "2023.2/edge/maas"},
+            )
+        )
+
+        apps = run_sync(self.jhelper.get_application_names(self.model))
+        task = run_sync(update_status_background(self, apps, status))
+        try:
+            run_sync(
+                self.jhelper.wait_until_active(
+                    self.model,
+                    apps,
+                    timeout=SUNBEAM_CLUSTERD_APP_TIMEOUT,
+                )
+            )
+        except (JujuWaitException, TimeoutException) as e:
+            LOG.warning(str(e))
+            return Result(ResultType.FAILED, str(e))
+        finally:
+            if not task.done():
+                task.cancel()
+
+        return Result(ResultType.COMPLETED)
