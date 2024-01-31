@@ -31,13 +31,13 @@ from sunbeam.commands.openstack_api import guests_on_hypervisor, remove_hypervis
 from sunbeam.commands.terraform import TerraformException, TerraformHelper
 from sunbeam.jobs.common import BaseStep, Result, ResultType, read_config, update_config
 from sunbeam.jobs.juju import (
-    CONTROLLER_MODEL,
     MODEL,
     ApplicationNotFoundException,
     JujuHelper,
     TimeoutException,
     run_sync,
 )
+from sunbeam.jobs.steps import AddMachineUnitsStep, DeployMachineApplicationStep
 
 LOG = logging.getLogger(__name__)
 CONFIG_KEY = "TerraformVarsHypervisor"
@@ -48,7 +48,7 @@ HYPERVISOR_UNIT_TIMEOUT = (
 )
 
 
-class DeployHypervisorApplicationStep(BaseStep, JujuStepHelper):
+class DeployHypervisorApplicationStep(DeployMachineApplicationStep):
     """Deploy openstack-hyervisor application using Terraform cloud"""
 
     def __init__(
@@ -57,160 +57,54 @@ class DeployHypervisorApplicationStep(BaseStep, JujuStepHelper):
         tfhelper: TerraformHelper,
         tfhelper_openstack: TerraformHelper,
         jhelper: JujuHelper,
+        model: str = MODEL,
     ):
         super().__init__(
+            client,
+            tfhelper,
+            jhelper,
+            CONFIG_KEY,
+            APPLICATION,
+            model,
             "Deploy OpenStack Hypervisor",
             "Deploying OpenStack Hypervisor",
         )
-        self.tfhelper = tfhelper
         self.tfhelper_openstack = tfhelper_openstack
-        self.jhelper = jhelper
-        self.client = client
-        self.hypervisor_model = CONTROLLER_MODEL.split("/")[-1]
         self.openstack_model = OPENSTACK_MODEL
 
-    def is_skip(self, status: Optional[Status] = None) -> Result:
-        """Determines if the step should be skipped or not.
-
-        :return: ResultType.SKIPPED if the Step should be skipped,
-                ResultType.COMPLETED or ResultType.FAILED otherwise
-        """
-        try:
-            run_sync(self.jhelper.get_application(APPLICATION, MODEL))
-        except ApplicationNotFoundException:
-            return Result(ResultType.COMPLETED)
-
-        return Result(ResultType.SKIPPED)
-
-    def run(self, status: Optional[Status] = None) -> Result:
-        """Apply terraform configuration to deploy hypervisor"""
-        machine_ids = []
-        try:
-            application = run_sync(self.jhelper.get_application(APPLICATION, MODEL))
-            machine_ids.extend(unit.machine.id for unit in application.units)
-        except ApplicationNotFoundException as e:
-            LOG.debug(str(e))
-
-        try:
-            tfvars = read_config(self.client, CONFIG_KEY)
-        except ConfigItemNotFoundException:
-            tfvars = {}
-
+    def extra_tfvars(self) -> dict:
         openstack_backend_config = self.tfhelper_openstack.backend_config()
-        tfvars.update(
-            {
-                "hypervisor_model": self.hypervisor_model,
-                "openstack_model": self.openstack_model,
-                "machine_ids": machine_ids,
-                "openstack-state-backend": self.tfhelper_openstack.backend,
-                "openstack-state-config": openstack_backend_config,
-            }
-        )
-        update_config(self.client, CONFIG_KEY, tfvars)
-        self.tfhelper.write_tfvars(tfvars)
+        return {
+            "openstack_model": self.openstack_model,
+            "openstack-state-backend": self.tfhelper_openstack.backend,
+            "openstack-state-config": openstack_backend_config,
+        }
 
-        try:
-            self.tfhelper.apply()
-        except TerraformException as e:
-            return Result(ResultType.FAILED, str(e))
-
-        # Note(gboutry): application is in state unknown when it's deployed
-        # without units
-        try:
-            run_sync(
-                self.jhelper.wait_application_ready(
-                    APPLICATION,
-                    MODEL,
-                    accepted_status=["active", "unknown"],
-                    timeout=HYPERVISOR_APP_TIMEOUT,
-                )
-            )
-        except TimeoutException as e:
-            LOG.warning(str(e))
-            return Result(ResultType.FAILED, str(e))
-
-        return Result(ResultType.COMPLETED)
+    def get_application_timeout(self) -> int:
+        return HYPERVISOR_APP_TIMEOUT
 
 
-class AddHypervisorUnitStep(BaseStep, JujuStepHelper):
-    def __init__(self, client: Client, name: str, jhelper: JujuHelper):
+class AddHypervisorUnitStep(AddMachineUnitsStep):
+    def __init__(
+        self,
+        client: Client,
+        names: list[str] | str,
+        jhelper: JujuHelper,
+        model: str = MODEL,
+    ):
         super().__init__(
-            "Add OpenStack Hypervisor unit",
-            "Adding OpenStack Hypervisor unit to machine",
+            client,
+            names,
+            jhelper,
+            CONFIG_KEY,
+            APPLICATION,
+            model,
+            "Add Openstack-Hypervisor unit(s)",
+            "Adding Openstack Hypervisor unit to machine(s)",
         )
 
-        self.name = name
-        self.jhelper = jhelper
-        self.machine_id = ""
-        self.client = client
-
-    def is_skip(self, status: Optional[Status] = None) -> Result:
-        """Determines if the step should be skipped or not.
-
-        :return: ResultType.SKIPPED if the Step should be skipped,
-                ResultType.COMPLETED or ResultType.FAILED otherwise
-        """
-        try:
-            node = self.client.cluster.get_node_info(self.name)
-            self.machine_id = str(node.get("machineid"))
-        except NodeNotExistInClusterException as e:
-            return Result(ResultType.FAILED, str(e))
-
-        try:
-            application = run_sync(self.jhelper.get_application(APPLICATION, MODEL))
-        except ApplicationNotFoundException:
-            return Result(
-                ResultType.FAILED,
-                "openstack-hypervisor application has not been deployed yet",
-            )
-
-        for unit in application.units:
-            if unit.machine.id == self.machine_id:
-                LOG.debug(
-                    (
-                        f"Unit {unit.name} is already deployed"
-                        f" on machine: {self.machine_id}"
-                    )
-                )
-                return Result(ResultType.SKIPPED)
-
-        return Result(ResultType.COMPLETED)
-
-    def add_machine_id_to_tfvar(self) -> None:
-        """Add machine id to terraform vars saved in cluster db."""
-        try:
-            tfvars = read_config(self.client, CONFIG_KEY)
-        except ConfigItemNotFoundException:
-            tfvars = {}
-
-        if not self.machine_id:
-            return
-
-        machine_ids = tfvars.get("machine_ids", [])
-        if self.machine_id in machine_ids:
-            return
-
-        machine_ids.append(self.machine_id)
-        tfvars.update({"machine_ids": machine_ids})
-        update_config(self.client, CONFIG_KEY, tfvars)
-
-    def run(self, status: Optional[Status] = None) -> Result:
-        """Add unit to openstack-hypervisor application on Juju model."""
-        try:
-            unit = run_sync(
-                self.jhelper.add_unit(APPLICATION, MODEL, str(self.machine_id))
-            )
-            self.add_machine_id_to_tfvar()
-            run_sync(
-                self.jhelper.wait_unit_ready(
-                    unit.name, MODEL, timeout=HYPERVISOR_UNIT_TIMEOUT
-                )
-            )
-        except (ApplicationNotFoundException, TimeoutException) as e:
-            LOG.warning(str(e))
-            return Result(ResultType.FAILED, str(e))
-
-        return Result(ResultType.COMPLETED)
+    def get_unit_timeout(self) -> int:
+        return HYPERVISOR_UNIT_TIMEOUT
 
 
 class RemoveHypervisorUnitStep(BaseStep, JujuStepHelper):

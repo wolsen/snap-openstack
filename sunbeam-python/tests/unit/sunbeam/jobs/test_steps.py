@@ -24,7 +24,7 @@ from sunbeam.commands.terraform import TerraformException
 from sunbeam.jobs.common import ResultType
 from sunbeam.jobs.juju import ApplicationNotFoundException, TimeoutException
 from sunbeam.jobs.steps import (
-    AddMachineUnitStep,
+    AddMachineUnitsStep,
     DeployMachineApplicationStep,
     RemoveMachineUnitStep,
 )
@@ -102,16 +102,19 @@ class TestDeployMachineApplicationStep:
 
     def test_run_already_deployed(self, cclient, jhelper, tfhelper, read_config):
         machines = ["1", "2"]
+        model = "model1"
         application = Mock(units=[Mock(machine=Mock(id=m)) for m in machines])
         jhelper.get_application.return_value = application
 
         step = DeployMachineApplicationStep(
-            cclient, tfhelper, jhelper, "tfconfig", "app1", "model1"
+            cclient, tfhelper, jhelper, "tfconfig", "app1", model
         )
         result = step.run()
 
         jhelper.get_application.assert_called_once()
-        tfhelper.write_tfvars.assert_called_with({"machine_ids": machines})
+        tfhelper.write_tfvars.assert_called_with(
+            {"machine_ids": machines, "machine_model": model}
+        )
         tfhelper.apply.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
 
@@ -140,36 +143,41 @@ class TestDeployMachineApplicationStep:
         assert result.message == "timed out"
 
 
-class TestAddMachineUnitStep:
+class TestAddMachineUnitsStep:
     def test_is_skip(self, cclient, jhelper):
-        step = AddMachineUnitStep(
-            cclient, "app1", jhelper, "tfconfig", "app1", "model1"
+        cclient.cluster.list_nodes.return_value = [
+            {"name": "machine1", "machineid": "1"}
+        ]
+        step = AddMachineUnitsStep(
+            cclient, "machine1", jhelper, "tfconfig", "app1", "model1"
         )
         result = step.is_skip()
 
+        cclient.cluster.list_nodes.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
 
     def test_is_skip_node_missing(self, cclient, jhelper):
-        cclient.cluster.get_node_info.side_effect = NodeNotExistInClusterException(
-            "Node missing..."
-        )
+        cclient.cluster.list_nodes.return_value = []
 
-        step = AddMachineUnitStep(
-            cclient, "app1", jhelper, "tfconfig", "app1", "model1"
+        step = AddMachineUnitsStep(
+            cclient, "machine1", jhelper, "tfconfig", "app1", "model1"
         )
         result = step.is_skip()
 
-        cclient.cluster.get_node_info.assert_called_once()
+        cclient.cluster.list_nodes.assert_called_once()
         assert result.result_type == ResultType.FAILED
-        assert result.message == "Node missing..."
+        assert result.message and "not exist in cluster database" in result.message
 
     def test_is_skip_application_missing(self, cclient, jhelper):
+        cclient.cluster.list_nodes.return_value = [
+            {"name": "machine1", "machineid": "1"}
+        ]
         jhelper.get_application.side_effect = ApplicationNotFoundException(
             "Application missing..."
         )
 
-        step = AddMachineUnitStep(
-            cclient, "app1", jhelper, "tfconfig", "app1", "model1"
+        step = AddMachineUnitsStep(
+            cclient, "machine1", jhelper, "tfconfig", "app1", "model1"
         )
         result = step.is_skip()
 
@@ -179,21 +187,23 @@ class TestAddMachineUnitStep:
 
     def test_is_skip_unit_already_deployed(self, cclient, jhelper):
         id = "1"
-        cclient.cluster.get_node_info.return_value = {"machineid": id}
+        cclient.cluster.list_nodes.return_value = [
+            {"name": "machine1", "machineid": id}
+        ]
         jhelper.get_application.return_value = Mock(units=[Mock(machine=Mock(id=id))])
 
-        step = AddMachineUnitStep(
-            cclient, "app1", jhelper, "tfconfig", "app1", "model1"
+        step = AddMachineUnitsStep(
+            cclient, "machine1", jhelper, "tfconfig", "app1", "model1"
         )
         result = step.is_skip()
 
-        cclient.cluster.get_node_info.assert_called_once()
+        cclient.cluster.list_nodes.assert_called_once()
         jhelper.get_application.assert_called_once()
         assert result.result_type == ResultType.SKIPPED
 
     def test_run(self, cclient, jhelper, read_config):
-        step = AddMachineUnitStep(
-            cclient, "app1", jhelper, "tfconfig", "app1", "model1"
+        step = AddMachineUnitsStep(
+            cclient, "machine1", jhelper, "tfconfig", "app1", "model1"
         )
         result = step.run()
 
@@ -204,8 +214,8 @@ class TestAddMachineUnitStep:
             "Application missing..."
         )
 
-        step = AddMachineUnitStep(
-            cclient, "app1", jhelper, "tfconfig", "app1", "model1"
+        step = AddMachineUnitsStep(
+            cclient, "machine1", jhelper, "tfconfig", "app1", "model1"
         )
         result = step.run()
 
@@ -214,14 +224,14 @@ class TestAddMachineUnitStep:
         assert result.message == "Application missing..."
 
     def test_run_timeout(self, cclient, jhelper, read_config):
-        jhelper.wait_unit_ready.side_effect = TimeoutException("timed out")
+        jhelper.wait_units_ready.side_effect = TimeoutException("timed out")
 
-        step = AddMachineUnitStep(
-            cclient, "app1", jhelper, "tfconfig", "app1", "model1"
+        step = AddMachineUnitsStep(
+            cclient, "machine1", jhelper, "tfconfig", "app1", "model1"
         )
         result = step.run()
 
-        jhelper.wait_unit_ready.assert_called_once()
+        jhelper.wait_units_ready.assert_called_once()
         assert result.result_type == ResultType.FAILED
         assert result.message == "timed out"
 

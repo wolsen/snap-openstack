@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import MagicMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 from requests.exceptions import HTTPError
@@ -29,8 +29,10 @@ from sunbeam.commands.clusterd import (
     ClusterRemoveNodeStep,
     ClusterUpdateJujuControllerStep,
     ClusterUpdateNodeStep,
+    DeploySunbeamClusterdApplicationStep,
 )
 from sunbeam.jobs.common import ResultType
+from sunbeam.jobs.juju import ApplicationNotFoundException
 
 
 @pytest.fixture()
@@ -591,3 +593,36 @@ class TestClusterUpdateJujuControllerStep:
             ["10.0.0.6:17070", "[fd42:5eda:f578:7bba:216:3eff:fe3d:7ef6]:17070"],
             "10.0.0.0/24",
         ) == ["10.0.0.6:17070"]
+
+
+class TestDeploySunbeamClusterdApplicationStep:
+    def test_is_skip_when_application_not_found(self):
+        jhelper = AsyncMock()
+        jhelper.get_application.side_effect = ApplicationNotFoundException
+        step = DeploySunbeamClusterdApplicationStep(jhelper)
+        result = step.is_skip()
+        assert result.result_type == ResultType.COMPLETED
+
+    def test_is_skip_when_application_found(self):
+        jhelper = AsyncMock()
+        jhelper.get_application.return_value = AsyncMock()
+        step = DeploySunbeamClusterdApplicationStep(jhelper)
+        result = step.is_skip()
+        assert result.result_type == ResultType.SKIPPED
+
+    def test_run_when_no_controller_machines_found(self):
+        jhelper = AsyncMock()
+        jhelper.get_application.return_value = AsyncMock()
+        step = DeploySunbeamClusterdApplicationStep(jhelper)
+        step._get_controller_machines = MagicMock(return_value=[])
+        result = step.run()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == "No controller machines found"
+
+    def test_run_when_controller_machines_found(self):
+        jhelper = AsyncMock()
+        jhelper.get_application.return_value = AsyncMock()
+        step = DeploySunbeamClusterdApplicationStep(jhelper)
+        step._get_controller_machines = MagicMock(return_value=["1", "2", "3"])
+        result = step.run()
+        assert result.result_type == ResultType.COMPLETED

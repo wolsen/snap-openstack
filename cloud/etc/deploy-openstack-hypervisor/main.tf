@@ -34,7 +34,7 @@ data "terraform_remote_state" "openstack" {
 resource "juju_application" "openstack-hypervisor" {
   name  = "openstack-hypervisor"
   trust = false
-  model = var.hypervisor_model
+  model = var.machine_model
   units = length(var.machine_ids) # need to manage the number of units
 
   charm {
@@ -50,7 +50,7 @@ resource "juju_application" "openstack-hypervisor" {
 }
 
 resource "juju_integration" "hypervisor-amqp" {
-  model = var.hypervisor_model
+  model = var.machine_model
 
   application {
     name     = juju_application.openstack-hypervisor.name
@@ -63,7 +63,7 @@ resource "juju_integration" "hypervisor-amqp" {
 }
 
 resource "juju_integration" "hypervisor-identity" {
-  model = var.hypervisor_model
+  model = var.machine_model
 
   application {
     name     = juju_application.openstack-hypervisor.name
@@ -76,7 +76,7 @@ resource "juju_integration" "hypervisor-identity" {
 }
 
 resource "juju_integration" "hypervisor-certs" {
-  model = var.hypervisor_model
+  model = var.machine_model
 
   application {
     name     = juju_application.openstack-hypervisor.name
@@ -89,7 +89,7 @@ resource "juju_integration" "hypervisor-certs" {
 }
 
 resource "juju_integration" "hypervisor-ovn" {
-  model = var.hypervisor_model
+  model = var.machine_model
 
   application {
     name     = juju_application.openstack-hypervisor.name
@@ -103,7 +103,7 @@ resource "juju_integration" "hypervisor-ovn" {
 
 resource "juju_integration" "hypervisor-ceilometer" {
   count = try(data.terraform_remote_state.openstack.outputs.ceilometer-offer-url, null) != null ? 1 : 0
-  model = var.hypervisor_model
+  model = var.machine_model
 
   application {
     name     = juju_application.openstack-hypervisor.name
@@ -116,7 +116,7 @@ resource "juju_integration" "hypervisor-ceilometer" {
 }
 
 resource "juju_integration" "hypervisor-cinder-ceph" {
-  model = var.hypervisor_model
+  model = var.machine_model
 
   application {
     name     = juju_application.openstack-hypervisor.name

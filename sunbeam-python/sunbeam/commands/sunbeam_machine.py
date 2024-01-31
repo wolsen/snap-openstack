@@ -19,7 +19,7 @@ from sunbeam.clusterd.client import Client
 from sunbeam.commands.terraform import TerraformHelper
 from sunbeam.jobs.juju import MODEL, JujuHelper
 from sunbeam.jobs.steps import (
-    AddMachineUnitStep,
+    AddMachineUnitsStep,
     DeployMachineApplicationStep,
     RemoveMachineUnitStep,
 )
@@ -41,6 +41,7 @@ class DeploySunbeamMachineApplicationStep(DeployMachineApplicationStep):
         client: Client,
         tfhelper: TerraformHelper,
         jhelper: JujuHelper,
+        model: str = MODEL,
     ):
         super().__init__(
             client,
@@ -48,31 +49,34 @@ class DeploySunbeamMachineApplicationStep(DeployMachineApplicationStep):
             jhelper,
             CONFIG_KEY,
             APPLICATION,
-            MODEL,
+            model,
             "Deploy sunbeam-machine",
             "Deploying Sunbeam Machine",
         )
-
-    def extra_tfvars(self) -> dict:
-        return {"machine_model": self.model}
 
     def get_application_timeout(self) -> int:
         return SUNBEAM_MACHINE_APP_TIMEOUT
 
 
-class AddSunbeamMachineUnitStep(AddMachineUnitStep):
-    """Add Sunbeam machine Unit."""
+class AddSunbeamMachineUnitsStep(AddMachineUnitsStep):
+    """Add Sunbeam machine Units."""
 
-    def __init__(self, client: Client, name: str, jhelper: JujuHelper):
+    def __init__(
+        self,
+        client: Client,
+        names: list[str] | str,
+        jhelper: JujuHelper,
+        model: str = MODEL,
+    ):
         super().__init__(
             client,
-            name,
+            names,
             jhelper,
             CONFIG_KEY,
             APPLICATION,
-            MODEL,
-            "Add Sunbeam-machine unit",
-            f"Adding Sunbeam Machine unit to machine {name}",
+            model,
+            "Add Sunbeam-machine unit(s)",
+            "Adding Sunbeam Machine unit to machine(s)",
         )
 
     def get_unit_timeout(self) -> int:

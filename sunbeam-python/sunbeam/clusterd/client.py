@@ -13,11 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 from urllib.parse import quote
 
 import requests
 import requests_unixsocket
+import urllib3
 from snaphelpers import Snap
 
 from sunbeam.clusterd.cluster import ClusterService
@@ -37,6 +37,7 @@ class Client:
         else:
             # TODO(gboutry): remove this when proper TLS communication is
             # implemented
+            urllib3.disable_warnings()
             self._session.verify = False
 
         self.cluster = ClusterService(self._session, self._endpoint)

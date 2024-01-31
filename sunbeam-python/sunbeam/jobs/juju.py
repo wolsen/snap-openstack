@@ -17,10 +17,11 @@ import asyncio
 import base64
 import json
 import logging
+import os
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
-from typing import Awaitable, Dict, List, Optional, TypedDict, TypeVar, cast
+from typing import Awaitable, Dict, List, Optional, Sequence, TypedDict, TypeVar, cast
 
 import pydantic
 import pytz
@@ -37,6 +38,7 @@ from juju.errors import (
     JujuMachineError,
     JujuUnitError,
 )
+from juju.machine import Machine
 from juju.model import Model
 from juju.unit import Unit
 
@@ -260,6 +262,20 @@ class JujuHelper:
             raise e
 
     @controller
+    async def add_model(self, model: str) -> Model:
+        """Add a model.
+
+        :model: Name of the model
+        """
+        # TODO(gboutry): workaround until we manage public ssh keys properly
+        old_home = os.environ["HOME"]
+        os.environ["HOME"] = os.environ["SNAP_REAL_HOME"]
+        try:
+            return await self.controller.add_model(model)
+        finally:
+            os.environ["HOME"] = old_home
+
+    @controller
     async def get_model_name_with_owner(self, model: str) -> str:
         """Get juju model full name along with owner"""
         model_impl = await self.get_model(model)
@@ -298,6 +314,15 @@ class JujuHelper:
         return application
 
     @controller
+    async def get_machines(self, model: str) -> dict[str, Machine]:
+        """Fetch machines in model.
+
+        :model: Name of the model where the machines are located
+        """
+        model_impl = await self.get_model(model)
+        return model_impl.machines
+
+    @controller
     async def deploy(
         self,
         name: str,
@@ -327,6 +352,15 @@ class JujuHelper:
         )
 
     @controller
+    async def add_machine(self, name: str, model: str) -> Machine:
+        """Add machines to model"""
+        model_impl = await self.get_model(model)
+        machine: Machine = await model_impl.add_machine(
+            spec=model_impl.uuid + ":" + name, series="jammy"
+        )  # type: ignore
+        return machine
+
+    @controller
     async def get_unit(self, name: str, model: str) -> Unit:
         """Fetch an application's unit in model.
 
@@ -345,7 +379,7 @@ class JujuHelper:
 
     @controller
     async def get_unit_from_machine(
-        self, application: str, machine_id: int, model: str
+        self, application: str, machine_id: str, model: str
     ) -> Unit:
         """Fetch a application's unit in model on a specific machine.
 
@@ -374,8 +408,8 @@ class JujuHelper:
         self,
         name: str,
         model: str,
-        machine: Optional[str] = None,
-    ) -> Unit:
+        machine: list[str] | str | None = None,
+    ) -> list[Unit]:
         """Add unit to application, can be optionnally placed on a machine.
 
         :name: Application name
@@ -383,19 +417,16 @@ class JujuHelper:
         :machine: Machine ID to place the unit on, optional
         """
 
-        model_impl = await self.get_model(model)
-
-        application = model_impl.applications.get(name)
-
-        if application is None:
-            raise ApplicationNotFoundException(
-                f"Application {name!r} is missing from model {model!r}"
-            )
+        application = await self.get_application(name, model)
+        if machine is None or isinstance(machine, str):
+            count = 1
+        else:
+            # machine is a list
+            count = len(machine)
 
         # Note(gboutry): add_unit waits for unit to be added to model,
         # but does not check status
-        # we add only one unit, so it's ok to get the first result
-        return (await application.add_unit(1, machine))[0]
+        return await application.add_unit(count, machine)
 
     @controller
     async def remove_unit(self, name: str, unit: str, model: str):
@@ -660,9 +691,9 @@ class JujuHelper:
             ) from e
 
     @controller
-    async def wait_unit_ready(
+    async def wait_units_ready(
         self,
-        name: str,
+        units: Sequence[Unit | str],
         model: str,
         accepted_status: Optional[Dict[str, List[str]]] = None,
         timeout: Optional[int] = None,
@@ -670,7 +701,8 @@ class JujuHelper:
         """Block execution until unit is ready
         The function early exits if the unit is missing from the model
 
-        :name: Name of the unit to wait for, name format is application/id
+        :units: Name of the units or Unit objects to wait for,
+            name format is application/id
         :model: Name of the model where the unit is located
         :accepted status: map of accepted statuses for "workload" and "agent"
         :timeout: Waiting timeout in seconds
@@ -682,26 +714,35 @@ class JujuHelper:
         agent_accepted_status = accepted_status.get("agent", ["idle"])
         workload_accepted_status = accepted_status.get("workload", ["active"])
 
-        self._validate_unit(name)
         model_impl = await self.get_model(model)
+        unit_list: list[Unit] = []
+        if isinstance(units, str):
+            units = [units]
+        for unit in units:
+            if isinstance(unit, str):
+                self._validate_unit(unit)
+                try:
+                    unit = await self.get_unit(unit, model)
+                except UnitNotFoundException as e:
+                    LOG.debug(str(e))
+                    return
+            unit_list.append(unit)
 
-        try:
-            unit = await self.get_unit(name, model)
-        except UnitNotFoundException as e:
-            LOG.debug(str(e))
-            return
-
-        LOG.debug(
-            f"Unit {name!r} is in status: "
-            f"agent={unit.agent_status!r}, workload={unit.workload_status!r}"
-        )
+        for unit in unit_list:
+            LOG.debug(
+                f"Unit {unit.name!r} is in status: "
+                f"agent={unit.agent_status!r}, workload={unit.workload_status!r}"
+            )
 
         def condition() -> bool:
             """Computes readiness for unit"""
-            unit = model_impl.units[name]
-            agent_ready = unit.agent_status in agent_accepted_status
-            workload_ready = unit.workload_status in workload_accepted_status
-            return agent_ready and workload_ready
+            for unit in unit_list:
+                unit: Unit = model_impl.units[unit.name]
+                agent_ready = unit.agent_status in agent_accepted_status
+                workload_ready = unit.workload_status in workload_accepted_status
+                if not agent_ready or not workload_ready:
+                    return False
+            return True
 
         try:
             await model_impl.block_until(
@@ -710,8 +751,28 @@ class JujuHelper:
             )
         except asyncio.TimeoutError as e:
             raise TimeoutException(
-                f"Timed out while waiting for unit {name!r} to be ready"
+                "Timed out while waiting for units "
+                f"{','.join(unit.name for unit in unit_list)} to be ready"
             ) from e
+
+    @controller
+    async def wait_unit_ready(
+        self,
+        unit: Unit | str,
+        model: str,
+        accepted_status: Optional[Dict[str, List[str]]] = None,
+        timeout: Optional[int] = None,
+    ):
+        """Block execution until unit is ready
+        The function early exits if the unit is missing from the model
+
+        :unit: Name of the unit or Unit object to wait for,
+            name format is application/id
+        :model: Name of the model where the unit is located
+        :accepted status: map of accepted statuses for "workload" and "agent"
+        :timeout: Waiting timeout in seconds
+        """
+        await self.wait_units_ready([unit], model, accepted_status, timeout)
 
     @controller
     async def wait_all_units_ready(
@@ -731,8 +792,41 @@ class JujuHelper:
         model_impl = await self.get_model(model)
         for unit in model_impl.applications[app].units:
             await self.wait_unit_ready(
-                unit.entity_id, model, accepted_status=accepted_status
+                unit.entity_id,
+                model,
+                accepted_status=accepted_status,
+                timeout=timeout,
             )
+
+    @controller
+    async def wait_all_machines_deployed(
+        self, model: str, timeout: Optional[int] = None
+    ):
+        """Block execution until all machines in model are deployed.
+
+        :model: Name of the model to wait for readiness
+        :timeout: Waiting timeout in seconds
+        """
+
+        model_impl = await self.get_model(model)
+
+        def condition() -> bool:
+            """Computes readiness for unit"""
+            machines = model_impl.machines
+            for machine in machines.values():
+                if machine is None or machine.status_message != "Deployed":
+                    return False
+            return True
+
+        try:
+            await model_impl.block_until(
+                condition,
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError as e:
+            raise TimeoutException(
+                "Timed out while waiting for machines to be deployed"
+            ) from e
 
     @controller
     async def wait_until_active(

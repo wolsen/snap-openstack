@@ -78,6 +78,7 @@ class TerraformHelper:
         parallelism: Optional[int] = None,
         backend: Optional[str] = None,
         data_location: Optional[Path] = None,
+        clusterd_address: str | None = None,
     ):
         self.snap = Snap()
         self.path = path
@@ -87,32 +88,42 @@ class TerraformHelper:
         self.backend = backend or "local"
         self.data_location = data_location
         self.terraform = str(self.snap.paths.snap / "bin" / "terraform")
+        self.clusterd_address = clusterd_address
 
     def backend_config(self) -> dict:
         if self.backend == "http":
-            local_ip = utils.get_local_ip_by_default_route()
-            local_address = f"https://{local_ip}:7000"
+            if self.clusterd_address is not None:
+                address = self.clusterd_address
+            else:
+                local_ip = utils.get_local_ip_by_default_route()
+                address = f"https://{local_ip}:7000"
             return {
-                "address": f"{local_address}/1.0/terraformstate/{self.plan}",
+                "address": f"{address}/1.0/terraformstate/{self.plan}",
                 "update_method": "PUT",
-                "lock_address": f"{local_address}/1.0/terraformlock/{self.plan}",
+                "lock_address": f"{address}/1.0/terraformlock/{self.plan}",
                 "lock_method": "PUT",
-                "unlock_address": f"{local_address}/1.0/terraformunlock/{self.plan}",
+                "unlock_address": f"{address}/1.0/terraformunlock/{self.plan}",
                 "unlock_method": "PUT",
                 "skip_cert_verification": True,
             }
         return {}
 
-    def write_backend_tf(self) -> None:
+    def write_backend_tf(self) -> bool:
         backend = self.backend_config()
         if self.backend == "http":
             backend_obj = Template(http_backend_template)
             backend = backend_obj.safe_substitute(
                 {key: json.dumps(value) for key, value in backend.items()}
             )
-
-            with Path(self.path / "backend.tf").open(mode="w") as file:
-                file.write(backend)
+            backend_path = self.path / "backend.tf"
+            old_backend = None
+            if backend_path.exists():
+                old_backend = backend_path.read_text()
+            if old_backend != backend:
+                with backend_path.open(mode="w") as file:
+                    file.write(backend)
+                return True
+        return False
 
     def write_tfvars(self, vars: dict, location: Optional[Path] = None) -> None:
         """Write terraform variables file"""
@@ -155,14 +166,18 @@ class TerraformHelper:
         os_env.setdefault("TF_LOG", "INFO")
         if self.env:
             os_env.update(self.env)
+        backend_updated = False
         if self.backend:
-            self.write_backend_tf()
+            backend_updated = self.write_backend_tf()
         if self.data_location:
             os_env.update(self.update_juju_provider_credentials())
         self.write_terraformrc()
 
         try:
             cmd = [self.terraform, "init", "-upgrade", "-no-color"]
+            if backend_updated:
+                LOG.debug("Backend updated, running terraform init -reconfigure")
+                cmd.append("-reconfigure")
             LOG.debug(f'Running command {" ".join(cmd)}')
             process = subprocess.run(
                 cmd,

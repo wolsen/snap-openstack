@@ -14,28 +14,39 @@
 
 from builtins import ConnectionRefusedError
 from ssl import SSLError
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 from maas.client.bones import CallError
 
 from sunbeam.commands.deployment import DeploymentsConfig
 from sunbeam.commands.maas import (
+    MAAS_INTERNAL_IP_RANGE,
+    MAAS_PUBLIC_IP_RANGE,
+    ActionFailedException,
     AddMaasDeployment,
     DeploymentRolesCheck,
+    IpRangesCheck,
+    MaasAddMachinesToClusterdStep,
+    MaasBootstrapJujuStep,
+    MaasConfigureMicrocephOSDStep,
+    MaasDeployMachinesStep,
     MaasDeployment,
+    MaasDeployMicrok8sApplicationStep,
     MaasScaleJujuStep,
     MachineNetworkCheck,
     MachineRequirementsCheck,
     MachineRolesCheck,
     MachineStorageCheck,
     Networks,
+    Result,
+    ResultType,
     RoleTags,
     StorageTags,
+    UnitNotFoundException,
     ZoneBalanceCheck,
     ZonesCheck,
 )
-from sunbeam.jobs.common import ResultType
 from sunbeam.jobs.juju import ControllerNotFoundException
 
 
@@ -252,7 +263,7 @@ class TestMachineStorageCheck:
         machine = {
             "hostname": "test_machine",
             "roles": [RoleTags.STORAGE.value],
-            "storage": {StorageTags.CEPH.value: 1},
+            "storage": {StorageTags.CEPH.value: ["/disk_a"]},
         }
         check = MachineStorageCheck(machine)
         result = check.run()
@@ -382,6 +393,179 @@ class TestZoneBalanceCheck:
         assert result.message and "compute distribution is unbalanced" in result.message
 
 
+class TestIpRangesCheck:
+    def test_run_with_missing_network_mapping(self, mocker):
+        client = Mock()
+        deployment = Mock()
+        deployment.network_mapping = {}
+        check = IpRangesCheck(client, deployment)
+        result = check.run()
+        assert result.passed is False
+        assert result.diagnostics and "network mapping" in result.diagnostics
+
+    def test_run_with_missing_public_ip_ranges(self, mocker):
+        client = Mock()
+        deployment = Mock()
+        deployment.network_mapping = {
+            **{
+                network.value: "data"
+                for network in Networks
+                if network != Networks.PUBLIC
+            },
+            **{Networks.PUBLIC.value: "public_space"},
+        }
+        get_ip_ranges_from_space_mock = mocker.patch(
+            "sunbeam.commands.maas.get_ip_ranges_from_space", return_value={}
+        )
+        check = IpRangesCheck(client, deployment)
+        result = check.run()
+        assert result.passed is False
+        assert result.diagnostics and MAAS_PUBLIC_IP_RANGE in result.diagnostics
+        get_ip_ranges_from_space_mock.assert_any_call(client, "public_space")
+
+    def test_run_with_missing_internal_ip_ranges(self, mocker):
+        client = Mock()
+        deployment = Mock()
+        deployment.network_mapping = {
+            **{
+                network.value: "data"
+                for network in Networks
+                if network != Networks.INTERNAL
+            },
+            **{Networks.INTERNAL.value: "internal_space"},
+        }
+
+        public_ip_ranges = {
+            "any_cidr": [
+                {
+                    "start": "192.168.0.1",
+                    "end": "192.168.0.10",
+                    "label": MAAS_PUBLIC_IP_RANGE,
+                },
+            ]
+        }
+
+        get_ip_ranges_from_space_mock = mocker.patch(
+            "sunbeam.commands.maas.get_ip_ranges_from_space",
+            side_effect=[public_ip_ranges, {}],
+        )
+        check = IpRangesCheck(client, deployment)
+        result = check.run()
+        assert result.passed is False
+        assert result.diagnostics and MAAS_INTERNAL_IP_RANGE in result.diagnostics
+        get_ip_ranges_from_space_mock.assert_any_call(client, "internal_space")
+
+    def test_run_with_successful_check(self, mocker):
+        client = Mock()
+        deployment = Mock()
+        deployment.network_mapping = {
+            Networks.PUBLIC.value: "public_space",
+            Networks.INTERNAL.value: "internal_space",
+            **{
+                network.value: "data"
+                for network in Networks
+                if network not in (Networks.PUBLIC, Networks.INTERNAL)
+            },
+        }
+
+        public_ip_ranges = {
+            "192.168.0.0/24": [
+                {
+                    "start": "192.168.0.1",
+                    "end": "192.168.0.10",
+                    "label": MAAS_PUBLIC_IP_RANGE,
+                }
+            ]
+        }
+        internal_ip_ranges = {
+            "10.0.0.0/24": [
+                {
+                    "start": "10.0.0.1",
+                    "end": "10.0.0.10",
+                    "label": MAAS_INTERNAL_IP_RANGE,
+                }
+            ]
+        }
+
+        get_ip_ranges_from_space_mock = mocker.patch(
+            "sunbeam.commands.maas.get_ip_ranges_from_space",
+            side_effect=[public_ip_ranges, internal_ip_ranges],
+        )
+        check = IpRangesCheck(client, deployment)
+        result = check.run()
+        assert result.passed is True
+        get_ip_ranges_from_space_mock.assert_any_call(client, "public_space")
+        get_ip_ranges_from_space_mock.assert_any_call(client, "internal_space")
+
+
+class TestMaasBootstrapJujuStep:
+    def test_is_skip_with_no_machines(self, mocker):
+        maas_client = Mock()
+        mocker.patch(
+            "sunbeam.commands.maas.list_machines",
+            return_value=[],
+        )
+        step = MaasBootstrapJujuStep(
+            maas_client=maas_client,
+            cloud="test_cloud",
+            cloud_type="test_cloud_type",
+            controller="test_controller",
+            password="test_password",
+        )
+        result = step.is_skip()
+        assert result.result_type == ResultType.FAILED
+        assert result.message and "No machines with tag" in result.message
+
+    def test_is_skip_with_multiple_machines(self, mocker):
+        maas_client = Mock()
+        mocker.patch(
+            "sunbeam.commands.maas.list_machines",
+            return_value=[
+                {"hostname": "machine1"},
+                {"hostname": "machine2"},
+            ],
+        )
+        mocker.patch(
+            "sunbeam.commands.juju.BootstrapJujuStep.is_skip",
+            return_value=Result(ResultType.COMPLETED),
+        )
+        step = MaasBootstrapJujuStep(
+            maas_client=maas_client,
+            cloud="test_cloud",
+            cloud_type="test_cloud_type",
+            controller="test_controller",
+            password="test_password",
+        )
+        result = step.is_skip()
+        assert result.result_type == ResultType.COMPLETED
+        assert "--to" in step.bootstrap_args
+        assert step.bootstrap_args[-1] == "machine1"
+
+    def test_is_skip_with_single_machine(self, mocker):
+        maas_client = Mock()
+        mocker.patch(
+            "sunbeam.commands.maas.list_machines",
+            return_value=[
+                {"hostname": "machine1"},
+            ],
+        )
+        mocker.patch(
+            "sunbeam.commands.juju.BootstrapJujuStep.is_skip",
+            return_value=Result(ResultType.COMPLETED),
+        )
+        step = MaasBootstrapJujuStep(
+            maas_client=maas_client,
+            cloud="test_cloud",
+            cloud_type="test_cloud_type",
+            controller="test_controller",
+            password="test_password",
+        )
+        result = step.is_skip()
+        assert result.result_type == ResultType.COMPLETED
+        assert "--to" in step.bootstrap_args
+        assert step.bootstrap_args[-1] == "machine1"
+
+
 class TestMaasScaleJujuStep:
     def test_is_skip_with_controller_not_found(self, mocker):
         maas_client = mocker.Mock()
@@ -481,3 +665,436 @@ class TestMaasScaleJujuStep:
         mocker.patch("sunbeam.commands.maas.list_machines", return_value=[1, 2, 3])
         result = step.is_skip()
         assert result.result_type == ResultType.COMPLETED
+
+
+class TestMaasAddMachinesToClusterdStep:
+    @pytest.fixture
+    def maas_add_machines_to_clusterd_step(self):
+        client = Mock()
+        maas_client = Mock()
+        return MaasAddMachinesToClusterdStep(client, maas_client)
+
+    def test_is_skip_with_no_filtered_machines(
+        self, mocker, maas_add_machines_to_clusterd_step
+    ):
+        mocker.patch("sunbeam.commands.maas.list_machines", return_value=[])
+        result = maas_add_machines_to_clusterd_step.is_skip()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == "Maas deployment has no machines."
+
+    def test_is_skip_with_filtered_machines(
+        self, mocker, maas_add_machines_to_clusterd_step
+    ):
+        mocker.patch(
+            "sunbeam.commands.maas.list_machines",
+            return_value=[
+                {"hostname": "machine1", "roles": [RoleTags.CONTROL.value]},
+                {"hostname": "machine2", "roles": [RoleTags.COMPUTE.value]},
+            ],
+        )
+        maas_add_machines_to_clusterd_step.client.cluster.list_nodes.return_value = []
+        result = maas_add_machines_to_clusterd_step.is_skip()
+        assert result.result_type == ResultType.COMPLETED
+
+    def test_run_with_no_machines_and_nodes(self, maas_add_machines_to_clusterd_step):
+        maas_add_machines_to_clusterd_step.machines = None
+        maas_add_machines_to_clusterd_step.nodes = None
+        result = maas_add_machines_to_clusterd_step.run()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == "No machines to add / node to update."
+
+    def test_run_with_machines_and_nodes(self, maas_add_machines_to_clusterd_step):
+        maas_add_machines_to_clusterd_step.machines = [
+            {"hostname": "machine1", "roles": [RoleTags.CONTROL.value]},
+            {"hostname": "machine2", "roles": [RoleTags.COMPUTE.value]},
+        ]
+        maas_add_machines_to_clusterd_step.nodes = [
+            ("machine1", [RoleTags.CONTROL.value]),
+            ("machine2", [RoleTags.COMPUTE.value]),
+        ]
+        result = maas_add_machines_to_clusterd_step.run()
+        assert result.result_type == ResultType.COMPLETED
+
+
+class TestMaasDeployMachinesStep:
+    @pytest.fixture
+    def maas_deploy_machines_step(self):
+        client = Mock()
+        jhelper = AsyncMock()
+        model = "test_model"
+        return MaasDeployMachinesStep(client, jhelper, model)
+
+    def test_is_skip_with_no_clusterd_nodes(self, maas_deploy_machines_step):
+        maas_deploy_machines_step.client.cluster.list_nodes.return_value = []
+        result = maas_deploy_machines_step.is_skip()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == "No machines to deploy."
+
+    def test_is_skip_with_existing_machine_id(self, maas_deploy_machines_step):
+        maas_deploy_machines_step.client.cluster.list_nodes.return_value = [
+            {"name": "test_node", "machineid": 1}
+        ]
+        maas_deploy_machines_step.jhelper.get_machines.return_value = {
+            "2": Mock(hostname="test_node")
+        }
+        result = maas_deploy_machines_step.is_skip()
+        assert result.result_type == ResultType.FAILED
+        msg = (
+            "Machine test_node already exists in model test_model with id 2,"
+            " expected the id 1."
+        )
+        assert result.message == msg
+
+    def test_is_skip_with_nodes_to_deploy(self, maas_deploy_machines_step):
+        maas_deploy_machines_step.client.cluster.list_nodes.return_value = [
+            {"name": "test_node", "machineid": -1}
+        ]
+        maas_deploy_machines_step.jhelper.get_machines.return_value = {}
+        result = maas_deploy_machines_step.is_skip()
+        assert result.result_type == ResultType.COMPLETED
+
+    def test_run(self, maas_deploy_machines_step):
+        maas_deploy_machines_step.nodes_to_deploy = [
+            {"name": "test_node1"},
+            {"name": "test_node2"},
+        ]
+        maas_deploy_machines_step.nodes_to_update = [
+            {"name": "test_node3"},
+            {"name": "test_node4"},
+        ]
+        maas_deploy_machines_step.jhelper.get_model.return_value = Mock(
+            machines={
+                "1": Mock(hostname="test_node3", id=1),
+                "2": Mock(hostname="test_node4", id=2),
+            }
+        )
+        result = maas_deploy_machines_step.run()
+        assert result.result_type == ResultType.COMPLETED
+        assert maas_deploy_machines_step.client.cluster.update_node_info.call_count == 4
+        assert (
+            maas_deploy_machines_step.jhelper.wait_all_machines_deployed.call_count == 1
+        )
+
+
+class TestMaasConfigureMicrocephOSDStep:
+    @pytest.fixture
+    def jhelper(self):
+        jhelper = Mock()
+        jhelper.get_leader_unit = AsyncMock(return_value="leader_unit")
+        jhelper.get_unit_from_machine = AsyncMock(return_value="unit/1")
+        return jhelper
+
+    @pytest.fixture
+    def step(self, jhelper):
+        client = Mock()
+        maas_client = Mock()
+        names = ["machine1", "machine2"]
+        step = MaasConfigureMicrocephOSDStep(client, maas_client, jhelper, names)
+        return step
+
+    @pytest.fixture
+    def microceph_disks(self):
+        return {
+            "machine1": {
+                "osds": ["/dev/sdb", "/dev/sdc"],
+                "unpartitioned_disks": ["/dev/sdd"],
+                "unit": "unit/1",
+            },
+            "machine2": {
+                "osds": ["/dev/sde"],
+                "unpartitioned_disks": ["/dev/sdf", "/dev/sdg"],
+                "unit": "unit/2",
+            },
+        }
+
+    @pytest.fixture
+    def maas_disks(self):
+        return {
+            "machine1": ["/dev/sdb", "/dev/sdc"],
+            "machine2": ["/dev/sde", "/dev/sdf"],
+        }
+
+    @pytest.fixture
+    def step_with_disks(self, step, microceph_disks, maas_disks):
+        step._get_microceph_disks = AsyncMock(return_value=microceph_disks)
+        step._get_maas_disks = Mock(return_value=maas_disks)
+        return step
+
+    @pytest.mark.asyncio
+    async def test_get_microceph_disks(self, step, jhelper, microceph_disks):
+        osds = (
+            '[{"location": "machine1", "path": "/dev/sdb"},'
+            ' {"location": "machine1", "path": "/dev/sdc"},'
+            ' {"location": "machine2", "path": "/dev/sde"}]'
+        )
+        leader_result = {
+            "osds": osds,
+            "unpartitioned-disks": '[{"path": "/dev/sdd"}]',
+        }
+        jhelper.run_action = AsyncMock(
+            side_effect=[
+                leader_result,
+                leader_result,
+                {
+                    "osds": (osds),
+                    "unpartitioned-disks": '[{"path": "/dev/sdf"},'
+                    ' {"path": "/dev/sdg"}]',
+                },
+            ]
+        )
+        step.client.cluster.get_node_info.return_value = {"machineid": 1}
+        step.client.cluster.list_nodes.return_value = [
+            {"name": "machine1"},
+            {"name": "machine2"},
+        ]
+        step.jhelper.get_unit_from_machine.side_effect = [
+            Mock(entity_id="unit/1"),
+            Mock(entity_id="unit/2"),
+        ]
+        step.jhelper.get_machines.return_value = {
+            "machine1": Mock(hostname="test_node1"),
+            "machine2": Mock(hostname="test_node2"),
+        }
+        step.jhelper.get_model.return_value = Mock(
+            machines={
+                "1": Mock(hostname="test_node1", id=1),
+                "2": Mock(hostname="test_node2", id=2),
+            }
+        )
+
+        # Call the method under test
+        result = await step._get_microceph_disks()
+
+        # Assert the result
+        assert result == microceph_disks
+
+    @pytest.mark.asyncio
+    async def test_list_disks(self, step, jhelper):
+        jhelper.run_action = AsyncMock(
+            return_value={
+                "osds": (
+                    '[{"location": "machine1", "path": "/dev/sdb"},'
+                    ' {"location": "machine1", "path": "/dev/sdc"}]'
+                ),
+                "unpartitioned-disks": '[{"path": "/dev/sdd"}]',
+            }
+        )
+        result = await step._list_disks("unit1")
+        assert result == (
+            [
+                {"location": "machine1", "path": "/dev/sdb"},
+                {"location": "machine1", "path": "/dev/sdc"},
+            ],
+            [{"path": "/dev/sdd"}],
+        )
+
+    def test_compute_disks_to_configure(self, step):
+        microceph_disks = {
+            "osds": ["/dev/sdb", "/dev/sdc"],
+            "unpartitioned_disks": ["/dev/sdd", "/dev/sde"],
+            "unit": "unit/1",
+        }
+        maas_disks = {"/dev/sdb", "/dev/sdc", "/dev/sdd"}
+        result = step._compute_disks_to_configure(microceph_disks, maas_disks)
+        assert result == ["/dev/sdd"]
+
+    def test_compute_disks_to_configure_no_maas_disks(self, step):
+        microceph_disks = {
+            "osds": ["/dev/sdb", "/dev/sdc"],
+            "unpartitioned_disks": ["/dev/sdd"],
+            "unit": "unit/1",
+        }
+        maas_disks = set()
+        with pytest.raises(ValueError) as e:
+            step._compute_disks_to_configure(microceph_disks, maas_disks)
+        assert str(e.value) == "Machine 'unit/1' does not have any 'ceph' disk defined."
+
+    def test_compute_disks_to_configure_unknown_osds(self, step):
+        microceph_disks = {
+            "osds": ["/dev/sdb", "/dev/sdc", "/dev/sdd"],
+            "unpartitioned_disks": ["/dev/sde"],
+            "unit": "unit/1",
+        }
+        maas_disks = {"/dev/sdb", "/dev/sdc"}
+        with pytest.raises(ValueError) as e:
+            step._compute_disks_to_configure(microceph_disks, maas_disks)
+        exc_msg = "Machine 'unit/1' has OSDs from disks unknown to MAAS: {'/dev/sdd'}"
+        assert str(e.value) == exc_msg
+
+    def test_compute_disks_to_configure_missing_disks(self, step):
+        microceph_disks = {
+            "osds": ["/dev/sdb", "/dev/sdc"],
+            "unpartitioned_disks": ["/dev/sdd"],
+            "unit": "unit1",
+        }
+        maas_disks = {"/dev/sdb", "/dev/sdc", "/dev/sde"}
+        with pytest.raises(ValueError) as e:
+            step._compute_disks_to_configure(microceph_disks, maas_disks)
+        assert str(e.value) == "Machine 'unit1' is missing disks: {'/dev/sde'}"
+
+    def test_is_skip_completed(self, step_with_disks):
+        result = step_with_disks.is_skip()
+        assert result.result_type == ResultType.COMPLETED
+
+    def test_is_skip_failed_get_microceph_disks(self, step):
+        step._get_microceph_disks = AsyncMock(
+            side_effect=ValueError("Failed to list microceph disks from units")
+        )
+        result = step.is_skip()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == "Failed to list microceph disks from units"
+
+    def test_is_skip_failed_get_maas_disks(self, step):
+        step._get_microceph_disks = AsyncMock(return_value={})
+        step._get_maas_disks = MagicMock(
+            side_effect=ValueError("Failed to list disks from MAAS")
+        )
+        result = step.is_skip()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == "Failed to list disks from MAAS"
+
+    def test_run(self, step_with_disks, jhelper):
+        jhelper.run_action = AsyncMock(return_value={"status": "completed"})
+        result = step_with_disks.run()
+        assert result.result_type == ResultType.COMPLETED
+
+    def test_run_failed_run_action(self, step_with_disks, jhelper):
+        step_with_disks.disks_to_configure = {"unit/1": ["/dev/sdd"]}
+        jhelper.run_action = AsyncMock(
+            side_effect=ActionFailedException("Failed to run action")
+        )
+        result = step_with_disks.run()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == "Failed to run action"
+
+    def test_run_failed_unit_not_found(self, step_with_disks, jhelper):
+        step_with_disks.disks_to_configure = {"unit/1": ["/dev/sdd"]}
+        jhelper.run_action = AsyncMock(
+            side_effect=UnitNotFoundException("Unit not found")
+        )
+        result = step_with_disks.run()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == "Unit not found"
+
+
+class TestMaasDeployMicrok8sApplicationStep:
+    def test_extra_tfvars_with_ranges_none(self):
+        step = MaasDeployMicrok8sApplicationStep(
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            "public_space",
+            "internal_space",
+        )
+        with pytest.raises(ValueError):
+            step.extra_tfvars()
+
+    def test_extra_tfvars_with_ranges(self):
+        step = MaasDeployMicrok8sApplicationStep(
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            "public_space",
+            "internal_space",
+        )
+        step.ranges = "10.0.0.1-10.0.0.10,10.0.0.20-10.0.0.30"
+        expected_tfvars = {
+            "addons": {
+                "dns": "",
+                "hostpath-storage": "",
+                "metallb": "10.0.0.1-10.0.0.10,10.0.0.20-10.0.0.30",
+            }
+        }
+        assert step.extra_tfvars() == expected_tfvars
+
+    def test_is_skip_with_public_ranges_error(self, mocker):
+        mocker.patch(
+            "sunbeam.commands.maas.get_ip_ranges_from_space",
+            side_effect=ValueError("Failed to get ip ranges"),
+        )
+        step = MaasDeployMicrok8sApplicationStep(
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            "public_space",
+            "internal_space",
+        )
+        result = step.is_skip()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == "Failed to get ip ranges"
+
+    def test_is_skip_with_no_public_ranges(self, mocker):
+        mocker.patch(
+            "sunbeam.commands.maas.get_ip_ranges_from_space",
+            return_value={},
+        )
+        step = MaasDeployMicrok8sApplicationStep(
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            "public_space",
+            "internal_space",
+        )
+        result = step.is_skip()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == "No public ip range found"
+
+    def test_is_skip_with_internal_ranges_error(self, mocker):
+        mocker.patch(
+            "sunbeam.commands.maas.get_ip_ranges_from_space",
+            side_effect=[
+                {
+                    "10.0.0.0/24": [
+                        {
+                            "start": "10.0.0.10",
+                            "end": "10.0.0.20",
+                            "label": MAAS_PUBLIC_IP_RANGE,
+                        }
+                    ]
+                },
+                ValueError("Failed to get ip ranges"),
+            ],
+        )
+        step = MaasDeployMicrok8sApplicationStep(
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            "public_space",
+            "internal_space",
+        )
+        result = step.is_skip()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == "Failed to get ip ranges"
+
+    def test_is_skip_with_no_internal_ranges(self, mocker):
+        mocker.patch(
+            "sunbeam.commands.maas.get_ip_ranges_from_space",
+            side_effect=[
+                {
+                    "10.0.0.0/24": [
+                        {
+                            "start": "10.0.0.10",
+                            "end": "10.0.0.20",
+                            "label": MAAS_PUBLIC_IP_RANGE,
+                        }
+                    ]
+                },
+                {},
+            ],
+        )
+        step = MaasDeployMicrok8sApplicationStep(
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+            "public_space",
+            "internal_space",
+        )
+        result = step.is_skip()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == "No internal ip range found"

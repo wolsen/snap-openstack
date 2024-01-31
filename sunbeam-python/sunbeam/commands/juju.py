@@ -50,6 +50,7 @@ from sunbeam.jobs.juju import (
 LOG = logging.getLogger(__name__)
 PEXPECT_TIMEOUT = 60
 BOOTSTRAP_CONFIG_KEY = "BootstrapAnswers"
+INFRASTRUCTURE_MODEL = "openstack-machines"
 
 
 class JujuStepHelper:
@@ -1319,3 +1320,28 @@ class JujuLoginStep(BaseStep, JujuStepHelper):
         if process.exitstatus != 0:
             return Result(ResultType.FAILED, "Failed to login to Juju Controller")
         return Result(ResultType.COMPLETED)
+
+
+class AddInfrastructureModelStep(BaseStep):
+    """Add infrastructure model."""
+
+    def __init__(self, jhelper: JujuHelper):
+        super().__init__("Add infrastructure model", "Adding infrastructure model")
+        self.jhelper = jhelper
+
+    def is_skip(self, status: Optional["Status"] = None) -> Result:
+        """Determines if the step should be skipped or not."""
+        try:
+            run_sync(self.jhelper.get_model(INFRASTRUCTURE_MODEL))
+            return Result(ResultType.SKIPPED)
+        except ModelNotFoundException:
+            LOG.debug(f"Model {INFRASTRUCTURE_MODEL} not found")
+        return Result(ResultType.COMPLETED)
+
+    def run(self, status: Optional["Status"] = None) -> Result:
+        """Add infrastructure model."""
+        try:
+            run_sync(self.jhelper.add_model(INFRASTRUCTURE_MODEL))
+            return Result(ResultType.COMPLETED)
+        except Exception as e:
+            return Result(ResultType.FAILED, str(e))
