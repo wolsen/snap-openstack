@@ -26,9 +26,22 @@ variable "principal-application-model" {
 
 variable "grafana-agent-channel" {
   description = "Channel to use when deploying grafana agent machine charm"
+  type        = string
   # Note: Currently, latest/stable is not available for grafana-agent. So,
   # defaulting to latest/candidate.
-  default = "latest/candidate"
+  default     = "latest/candidate"
+}
+
+variable "grafana-agent-revision" {
+  description = "Channel revision to use when deploying grafana agent machine charm"
+  type        = number
+  default     = null
+}
+
+variable "grafana-agent-config" {
+  description = "Config to use when deploying grafana agent machine charm"
+  type        = map(string)
+  default     = {}
 }
 
 variable "cos-state-backend" {

@@ -19,7 +19,7 @@ terraform {
   required_providers {
     juju = {
       source  = "juju/juju"
-      version = "= 0.8.0"
+      version = "= 0.10.1"
     }
   }
 }
@@ -36,10 +36,13 @@ resource "juju_application" "grafana-agent" {
   units = 0
 
   charm {
-    name = "grafana-agent"
-    channel = var.grafana-agent-channel
-    series = "jammy"
+    name     = "grafana-agent"
+    channel  = var.grafana-agent-channel
+    revision = var.grafana-agent-revision
+    base     = "ubuntu@22.04"
   }
+
+  config = var.grafana-agent-config
 }
 
 # juju integrate <principal-application>:cos-agent grafana-agent:cos-agent

@@ -20,7 +20,7 @@ terraform {
   required_providers {
     juju = {
       source  = "juju/juju"
-      version = "= 0.8.0"
+      version = "= 0.10.1"
     }
   }
 }
@@ -43,12 +43,14 @@ resource "juju_application" "traefik" {
   model = juju_model.cos.name
 
   charm {
-    name    = "traefik-k8s"
-    channel = var.cos-channel
-    series  = "focal"
+    name     = "traefik-k8s"
+    channel  = var.traefik-channel == null ? var.cos-channel : var.traefik-channel
+    revision = var.traefik-revision
+    base     = "ubuntu@20.04"
   }
 
-  units = var.ingress-scale
+  config = var.traefik-config
+  units  = var.ingress-scale
 }
 
 resource "juju_application" "alertmanager" {
@@ -57,12 +59,14 @@ resource "juju_application" "alertmanager" {
   model = juju_model.cos.name
 
   charm {
-    name    = "alertmanager-k8s"
-    channel = var.cos-channel
-    series  = "focal"
+    name     = "alertmanager-k8s"
+    channel  = var.alertmanager-channel == null ? var.cos-channel : var.alertmanager-channel
+    revision = var.alertmanager-revision
+    base     = "ubuntu@20.04"
   }
 
-  units = var.alertmanager-scale
+  config = var.alertmanager-config
+  units  = var.alertmanager-scale
 }
 
 resource "juju_application" "prometheus" {
@@ -71,12 +75,14 @@ resource "juju_application" "prometheus" {
   model = juju_model.cos.name
 
   charm {
-    name    = "prometheus-k8s"
-    channel = var.cos-channel
-    series  = "focal"
+    name     = "prometheus-k8s"
+    channel  = var.prometheus-channel == null ? var.cos-channel : var.prometheus-channel
+    revision = var.prometheus-revision
+    base     = "ubuntu@20.04"
   }
 
-  units = var.prometheus-scale
+  config = var.prometheus-config
+  units  = var.prometheus-scale
 }
 
 resource "juju_application" "grafana" {
@@ -85,12 +91,14 @@ resource "juju_application" "grafana" {
   model = juju_model.cos.name
 
   charm {
-    name    = "grafana-k8s"
-    channel = var.cos-channel
-    series  = "focal"
+    name     = "grafana-k8s"
+    channel  = var.grafana-channel == null ? var.cos-channel : var.grafana-channel
+    revision = var.grafana-revision
+    base     = "ubuntu@20.04"
   }
 
-  units = var.grafana-scale
+  config = var.grafana-config
+  units  = var.grafana-scale
 }
 
 resource "juju_application" "catalogue" {
@@ -100,15 +108,16 @@ resource "juju_application" "catalogue" {
 
   charm {
     name    = "catalogue-k8s"
-    channel = var.cos-channel
-    series  = "focal"
+    channel  = var.catalogue-channel == null ? var.cos-channel : var.catalogue-channel
+    revision = var.catalogue-revision
+    base     = "ubuntu@20.04"
   }
 
-  config = {
+  config = merge({
     title       = "Canonical Observability Stack"
     tagline     = "Model-driven Observability Stack deployed with a single command."
     description = " Canonical Observability Stack Lite, or COS Lite, is a light-weight, highly-integrated, Juju-based observability suite running on Kubernetes."
-  }
+  }, var.catalogue-config)
 
   units = var.catalogue-scale
 }
@@ -120,11 +129,13 @@ resource "juju_application" "loki" {
 
   charm {
     name    = "loki-k8s"
-    channel = var.cos-channel
-    series  = "focal"
+    channel  = var.loki-channel == null ? var.cos-channel : var.loki-channel
+    revision = var.loki-revision
+    base     = "ubuntu@20.04"
   }
 
-  units = var.loki-scale
+  config = var.loki-config
+  units  = var.loki-scale
 }
 
 # juju integrate traefik prometheus
