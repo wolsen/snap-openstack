@@ -201,7 +201,16 @@ class Manifest:
             tf_keys = set(self.terraform.keys())
             all_tfplans = default_manifest.get("terraform", {}).keys()
             if not tf_keys <= all_tfplans:
-                raise ValueError(f"Terraform keys should be one of {all_tfplans} ")
+                raise ValueError(
+                    f"Manifest Terraform keys should be one of {all_tfplans} "
+                )
+
+    def validate_charm_keys(self, default_manifest: dict):
+        if self.charms:
+            charms_keys = set(self.charms.keys())
+            all_charms = default_manifest.get("charms", {}).keys()
+            if not charms_keys <= all_charms:
+                raise ValueError(f"Manifest charms keys should be one of {all_charms} ")
 
     def __post_init__(self, client: Client):
         LOG.debug("Calling __post__init__")
@@ -209,6 +218,7 @@ class Manifest:
         self.default_manifest_dict = self.get_default_manifest_as_dict(client)
         # Add custom validations
         self.validate_terraform_keys(self.default_manifest_dict)
+        self.validate_charm_keys(self.default_manifest_dict)
 
         # Add object variables to store
         self.tf_helpers = {}
