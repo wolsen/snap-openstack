@@ -25,10 +25,10 @@ from rich.table import Table
 from snaphelpers import Snap
 
 from sunbeam import utils
+from sunbeam.clusterd.client import Client
 from sunbeam.commands import refresh as refresh_cmds
 from sunbeam.commands import resize as resize_cmds
 from sunbeam.commands.bootstrap_state import SetBootstrapped
-from sunbeam.clusterd.client import Client
 from sunbeam.commands.clusterd import (
     ClusterAddJujuUserStep,
     ClusterAddNodeStep,

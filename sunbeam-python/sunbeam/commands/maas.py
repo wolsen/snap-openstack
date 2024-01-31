@@ -882,9 +882,9 @@ class MaasBootstrapJujuStep(BootstrapJujuStep):
             )
         )
         super().__init__(
-            # client is not used when bootstrapping with maas, as it was used during prompts
-            # and there's no prompt with maas
-            None, # type: ignore
+            # client is not used when bootstrapping with maas,
+            # as it was used during prompts and there's no prompt with maas
+            None,  # type: ignore
             cloud,
             cloud_type,
             controller,
