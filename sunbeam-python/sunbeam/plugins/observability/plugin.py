@@ -61,7 +61,7 @@ from sunbeam.jobs.juju import (
     TimeoutException,
     run_sync,
 )
-from sunbeam.jobs.manifest import Manifest
+from sunbeam.jobs.manifest import AddManifestStep, Manifest
 from sunbeam.plugins.interface.v1.base import EnableDisablePlugin, PluginRequirement
 from sunbeam.plugins.interface.v1.openstack import (
     OPENSTACK_TERRAFORM_PLAN,
@@ -476,6 +476,10 @@ class ObservabilityPlugin(EnableDisablePlugin):
             f"{OPENSTACK_TERRAFORM_PLAN}-plan"
         )
 
+        plan = []
+        if self.user_manifest:
+            plan.append(AddManifestStep(self.client, self.user_manifest))
+
         cos_plan = [
             TerraformInitStep(tfhelper_cos),
             DeployObservabilityStackStep(self, tfhelper_cos, jhelper),
@@ -490,6 +494,7 @@ class ObservabilityPlugin(EnableDisablePlugin):
             DeployGrafanaAgentStep(self, tfhelper_grafana_agent, tfhelper_cos, jhelper),
         ]
 
+        run_plan(plan, console)
         run_plan(cos_plan, console)
         run_plan(grafana_agent_plan, console)
 
