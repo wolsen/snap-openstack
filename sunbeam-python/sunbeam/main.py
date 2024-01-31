@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import logging
+from pathlib import Path
 
 import click
 from snaphelpers import Snap
@@ -73,8 +74,14 @@ def manifest(ctx):
 
 
 @click.group("enable", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
+@click.option(
+    "-m",
+    "--manifest",
+    help="Manifest file.",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
 @click.pass_context
-def enable(ctx):
+def enable(ctx, manifest: Path | None = None):
     """Enable plugins"""
 
 

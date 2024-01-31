@@ -46,7 +46,7 @@ from sunbeam.jobs.common import (
     update_status_background,
 )
 from sunbeam.jobs.juju import JujuHelper, JujuWaitException, TimeoutException, run_sync
-from sunbeam.jobs.manifest import Manifest
+from sunbeam.jobs.manifest import AddManifestStep, Manifest
 from sunbeam.plugins.interface.v1.base import EnableDisablePlugin
 
 LOG = logging.getLogger(__name__)
@@ -120,9 +120,15 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         if self._manifest:
             return self._manifest
 
-        self._manifest = Manifest.load_latest_from_clusterdb(
-            self.client, include_defaults=True
-        )
+        if self.user_manifest:
+            self._manifest = Manifest.load(
+                self.client, manifest_file=self.user_manifest, include_defaults=True
+            )
+        else:
+            self._manifest = Manifest.load_latest_from_clusterdb(
+                self.client, include_defaults=True
+            )
+
         return self._manifest
 
     def is_openstack_control_plane(self) -> bool:
@@ -154,10 +160,16 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         """Run plans to enable plugin."""
         data_location = self.snap.paths.user_data
         jhelper = JujuHelper(self.client, data_location)
-        plan = [
-            TerraformInitStep(self.manifest.get_tfhelper(self.tfplan)),
-            EnableOpenStackApplicationStep(jhelper, self),
-        ]
+
+        plan = []
+        if self.user_manifest:
+            plan.append(AddManifestStep(self.client, self.user_manifest))
+        plan.extend(
+            [
+                TerraformInitStep(self.manifest.get_tfhelper(self.tfplan)),
+                EnableOpenStackApplicationStep(jhelper, self),
+            ]
+        )
 
         run_plan(plan, console)
         click.echo(f"OpenStack {self.name} application enabled.")

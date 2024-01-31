@@ -26,6 +26,7 @@ from sunbeam.commands.openstack import OPENSTACK_MODEL, PatchLoadBalancerService
 from sunbeam.commands.terraform import TerraformInitStep
 from sunbeam.jobs.common import run_plan
 from sunbeam.jobs.juju import JujuHelper, run_sync
+from sunbeam.jobs.manifest import AddManifestStep
 from sunbeam.plugins.interface.v1.openstack import (
     ApplicationChannelData,
     EnableOpenStackApplicationStep,
@@ -86,11 +87,17 @@ class DnsPlugin(OpenStackControlPlanePlugin):
         """Run plans to enable plugin."""
         data_location = self.snap.paths.user_data
         jhelper = JujuHelper(self.client, data_location)
-        plan = [
-            TerraformInitStep(self.manifest.get_tfhelper(self.tfplan)),
-            EnableOpenStackApplicationStep(jhelper, self),
-            PatchBindLoadBalancerStep(self.client),
-        ]
+
+        plan = []
+        if self.user_manifest:
+            plan.append(AddManifestStep(self.client, self.user_manifest))
+        plan.extend(
+            [
+                TerraformInitStep(self.manifest.get_tfhelper(self.tfplan)),
+                EnableOpenStackApplicationStep(jhelper, self),
+                PatchBindLoadBalancerStep(self.client),
+            ]
+        )
 
         run_plan(plan, console)
         click.echo(f"OpenStack {self.name!r} application enabled.")

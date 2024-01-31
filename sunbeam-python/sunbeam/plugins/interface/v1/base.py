@@ -479,6 +479,7 @@ class EnableDisablePlugin(BasePlugin):
         :param name: Name of the plugin
         """
         super().__init__(name, client)
+        self.user_manifest = None
 
     @property
     def enabled(self) -> bool:
@@ -637,6 +638,8 @@ class EnableDisablePlugin(BasePlugin):
     @abstractmethod
     def enable_plugin(self) -> None:
         """Enable plugin command."""
+        current_click_context = click.get_current_context()
+        self.user_manifest = current_click_context.parent.params.get("manifest")
         self.pre_enable()
         self.run_enable_plans()
         self.post_enable()
