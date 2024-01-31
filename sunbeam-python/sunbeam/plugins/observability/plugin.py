@@ -74,6 +74,13 @@ console = Console()
 OBSERVABILITY_MODEL = "observability"
 OBSERVABILITY_DEPLOY_TIMEOUT = 1200  # 20 minutes
 CONTROLLER_MODEL = CONTROLLER_MODEL.split("/")[-1]
+COS_TFPLAN = "cos-plan"
+GRAFANA_AGENT_TFPLAN = "grafana-agent-plan"
+COS_CONFIG_KEY = "TerraformVarsPluginObservabilityPlanCos"
+GRAFANA_AGENT_CONFIG_KEY = "TerraformVarsPluginObservabilityPlanGrafanaAgent"
+
+COS_CHANNEL = "1.0/candidate"
+GRAFANA_AGENT_CHANNEL = "latest/edge"
 
 
 class FillObservabilityOffersStep(BaseStep):
@@ -164,47 +171,37 @@ class RemoveObservabilityIntegrationStep(BaseStep):
 class DeployObservabilityStackStep(BaseStep, JujuStepHelper):
     """Deploy Observability Stack using Terraform"""
 
+    _CONFIG = COS_CONFIG_KEY
+
     def __init__(
         self,
         plugin: "ObservabilityPlugin",
-        tfhelper: TerraformHelper,
         jhelper: JujuHelper,
     ):
         super().__init__("Deploy Observability Stack", "Deploying Observability Stack")
-        self.tfhelper = tfhelper
+        self.plugin = plugin
         self.jhelper = jhelper
+        self.manifest = self.plugin.manifest
+        self.tfplan = self.plugin.tfplan_cos
         self.model = OBSERVABILITY_MODEL
         self.cloud = MICROK8S_CLOUD
-        self.read_config = lambda: plugin.get_plugin_info().get(
-            "observability-stack-config", {}
-        )
-        self.update_config = lambda c: plugin.update_plugin_info(
-            {"observability-stack-config": c}
-        )
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Execute configuration using terraform."""
-
-        try:
-            config = self.read_config()
-        except ConfigItemNotFoundException as e:
-            LOG.exception("Failed deploying Observability Stack: unable to read config")
-            return Result(ResultType.FAILED, str(e))
-
-        tfvars = {
+        extra_tfvars = {
             "model": self.model,
-            "cos-channel": "1.0/candidate",
             "cloud": self.cloud,
             "credential": f"{self.cloud}{CREDENTIAL_SUFFIX}",
             "config": {"workload-storage": MICROK8S_DEFAULT_STORAGECLASS},
         }
-        config.update(tfvars)
-        self.update_config(config)
-        self.tfhelper.write_tfvars(tfvars)
 
-        self.update_status(status, "deploying services")
         try:
-            self.tfhelper.apply()
+            self.update_status(status, "deploying services")
+            self.manifest.update_tfvars_and_apply_tf(
+                tfplan=self.tfplan,
+                tfvar_config=self._CONFIG,
+                override_tfvars=extra_tfvars,
+            )
         except TerraformException as e:
             LOG.exception("Error deploying Observability Stack")
             return Result(ResultType.FAILED, str(e))
@@ -233,50 +230,40 @@ class DeployObservabilityStackStep(BaseStep, JujuStepHelper):
 class DeployGrafanaAgentStep(BaseStep, JujuStepHelper):
     """Deploy Grafana Agent using Terraform"""
 
+    _CONFIG = GRAFANA_AGENT_CONFIG_KEY
+
     def __init__(
         self,
         plugin: "ObservabilityPlugin",
-        tfhelper: TerraformHelper,
-        tfhelper_cos: TerraformHelper,
         jhelper: JujuHelper,
     ):
         super().__init__("Deploy Grafana Agent", "Deploy Grafana Agent")
-        self.tfhelper = tfhelper
-        self.tfhelper_cos = tfhelper_cos
+        self.plugin = plugin
         self.jhelper = jhelper
+        self.manifest = self.plugin.manifest
+        self.tfplan = self.plugin.tfplan_grafana_agent
         self.model = CONTROLLER_MODEL
-        self.read_config = lambda: plugin.get_plugin_info().get(
-            "grafana-agent-config", {}
-        )
-        self.update_config = lambda c: plugin.update_plugin_info(
-            {"grafana-agent-config": c}
-        )
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Execute configuration using terraform."""
+        tfhelper_cos = self.manifest.get_tfhelper(COS_TFPLAN)
+        cos_backend = tfhelper_cos.backend
+        cos_backend_config = tfhelper_cos.backend_config()
 
-        cos_backend = self.tfhelper_cos.backend
-        cos_backend_config = self.tfhelper_cos.backend_config()
-        try:
-            config = self.read_config()
-        except ConfigItemNotFoundException as e:
-            LOG.exception("Failed deploying grafana agent: unable to read config")
-            return Result(ResultType.FAILED, str(e))
-
-        tfvars = {
-            "grafana-agent-channel": "latest/edge",
+        extra_tfvars = {
             "principal-application-model": self.model,
             "cos-state-backend": cos_backend,
             "cos-state-config": cos_backend_config,
             "principal-application": "openstack-hypervisor",
         }
-        config.update(tfvars)
-        self.update_config(config)
-        self.tfhelper.write_tfvars(tfvars)
 
-        self.update_status(status, "deploying application")
         try:
-            self.tfhelper.apply()
+            self.update_status(status, "deploying services")
+            self.manifest.update_tfvars_and_apply_tf(
+                tfplan=self.tfplan,
+                tfvar_config=self._CONFIG,
+                override_tfvars=extra_tfvars,
+            )
         except TerraformException as e:
             LOG.exception("Error deploying grafana agent")
             return Result(ResultType.FAILED, str(e))
@@ -304,42 +291,22 @@ class RemoveObservabilityStackStep(BaseStep, JujuStepHelper):
     def __init__(
         self,
         plugin: "ObservabilityPlugin",
-        tfhelper: TerraformHelper,
         jhelper: JujuHelper,
     ):
         super().__init__("Remove Observability Stack", "Removing Observability Stack")
-        self.tfhelper = tfhelper
+        self.plugin = plugin
+        self.manifest = self.plugin.manifest
+        self.tfplan = self.plugin.tfplan_cos
         self.jhelper = jhelper
         self.model = OBSERVABILITY_MODEL
         self.cloud = MICROK8S_CLOUD
-        self.read_config = lambda: plugin.get_plugin_info().get(
-            "observability-stack-config", {}
-        )
-        self.update_config = lambda c: plugin.update_plugin_info(
-            {"observability-stack-config": c}
-        )
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Execute configuration using terraform."""
-
+        tfhelper = self.manifest.get_tfhelper(self.tfplan)
+        print(tfhelper)
         try:
-            config = self.read_config()
-        except ConfigItemNotFoundException as e:
-            LOG.exception("Failed removing Observability Stack: unable to read config")
-            return Result(ResultType.FAILED, str(e))
-
-        tfvars = {
-            "model": self.model,
-            "cos-channel": "1.0/candidate",
-            "cloud": self.cloud,
-            "credential": f"{self.cloud}{CREDENTIAL_SUFFIX}",
-            "config": {"workload-storage": MICROK8S_DEFAULT_STORAGECLASS},
-        }
-        config.update(tfvars)
-        self.update_config(config)
-        self.tfhelper.write_tfvars(tfvars)
-        try:
-            self.tfhelper.destroy()
+            tfhelper.destroy()
         except TerraformException as e:
             LOG.exception("Error destroying Observability Stack")
             return Result(ResultType.FAILED, str(e))
@@ -364,45 +331,20 @@ class RemoveGrafanaAgentStep(BaseStep, JujuStepHelper):
     def __init__(
         self,
         plugin: "ObservabilityPlugin",
-        tfhelper: TerraformHelper,
-        tfhelper_cos: TerraformHelper,
         jhelper: JujuHelper,
     ):
         super().__init__("Remove Grafana Agent", "Removing Grafana Agent")
-        self.tfhelper = tfhelper
-        self.tfhelper_cos = tfhelper_cos
+        self.plugin = plugin
+        self.manifest = self.plugin.manifest
+        self.tfplan = self.plugin.tfplan_grafana_agent
         self.jhelper = jhelper
         self.model = CONTROLLER_MODEL
-        self.read_config = lambda: plugin.get_plugin_info().get(
-            "grafana-agent-config", {}
-        )
-        self.update_config = lambda c: plugin.update_plugin_info(
-            {"grafana-agent-config": c}
-        )
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Execute configuration using terraform."""
-
-        cos_backend = self.tfhelper_cos.backend
-        cos_backend_config = self.tfhelper_cos.backend_config()
+        tfhelper = self.manifest.get_tfhelper(self.tfplan)
         try:
-            config = self.read_config()
-        except ConfigItemNotFoundException as e:
-            LOG.exception("Failed removing grafana agent: unable to read config")
-            return Result(ResultType.FAILED, str(e))
-
-        tfvars = {
-            "grafana-agent-channel": "latest/edge",
-            "principal-application-model": self.model,
-            "cos-state-backend": cos_backend,
-            "cos-state-config": cos_backend_config,
-            "principal-application": "openstack-hypervisor",
-        }
-        config.update(tfvars)
-        self.update_config(config)
-        self.tfhelper.write_tfvars(tfvars)
-        try:
-            self.tfhelper.destroy()
+            tfhelper.destroy()
         except TerraformException as e:
             LOG.exception("Error destroying grafana agent")
             return Result(ResultType.FAILED, str(e))
@@ -435,9 +377,9 @@ class ObservabilityPlugin(EnableDisablePlugin):
     def __init__(self, client: Client) -> None:
         super().__init__("observability", client)
         self.snap = Snap()
-        self.tfplan_cos = "cos-plan"
+        self.tfplan_cos = COS_TFPLAN
         self.tfplan_cos_dir = "deploy-cos"
-        self.tfplan_grafana_agent = "grafana-agent-plan"
+        self.tfplan_grafana_agent = GRAFANA_AGENT_TFPLAN
         self.tfplan_grafana_agent_dir = "deploy-grafana-agent"
         self._manifest = None
 
@@ -454,6 +396,15 @@ class ObservabilityPlugin(EnableDisablePlugin):
     def manifest_defaults(self) -> dict:
         """Manifest plugin part in dict format."""
         return {
+            "charms": {
+                "cos-traefik-k8s": {"channel": COS_CHANNEL},
+                "alertmanager-k8s": {"channel": COS_CHANNEL},
+                "grafana-k8s": {"channel": COS_CHANNEL},
+                "catalogue-k8s": {"channel": COS_CHANNEL},
+                "prometheus-k8s": {"channel": COS_CHANNEL},
+                "loki-k8s": {"channel": COS_CHANNEL},
+                "grafana-agent": {"channel": GRAFANA_AGENT_CHANNEL},
+            },
             "terraform": {
                 self.tfplan_cos: {
                     "source": Path(__file__).parent / "etc" / self.tfplan_cos_dir
@@ -463,7 +414,55 @@ class ObservabilityPlugin(EnableDisablePlugin):
                     / "etc"  # noqa: W503
                     / self.tfplan_grafana_agent_dir  # noqa: W503
                 },
-            }
+            },
+        }
+
+    def manifest_attributes_tfvar_map(self) -> dict:
+        """Manifest attributes terraformvars map."""
+        return {
+            self.tfplan_cos: {
+                "charms": {
+                    "cos-traefik-k8s": {
+                        "channel": "traefik-channel",
+                        "revision": "traefik-revision",
+                        "config": "traefik-config",
+                    },
+                    "alertmanager-k8s": {
+                        "channel": "alertmanager-channel",
+                        "revision": "alertmanager-revision",
+                        "config": "alertmanager-config",
+                    },
+                    "grafana-k8s": {
+                        "channel": "grafana-channel",
+                        "revision": "grafana-revision",
+                        "config": "grafana-config",
+                    },
+                    "catalogue-k8s": {
+                        "channel": "catalogue-channel",
+                        "revision": "catalogue-revision",
+                        "config": "catalogue-config",
+                    },
+                    "prometheus-k8s": {
+                        "channel": "prometheus-channel",
+                        "revision": "prometheus-revision",
+                        "config": "prometheus-config",
+                    },
+                    "loki-k8s": {
+                        "channel": "loki-channel",
+                        "revision": "loki-revision",
+                        "config": "loki-config",
+                    },
+                }
+            },
+            self.tfplan_grafana_agent: {
+                "charms": {
+                    "grafana-agent": {
+                        "channel": "grafana-agent-channel",
+                        "revision": "grafana-agent-revision",
+                        "config": "grafana-agent-config",
+                    }
+                }
+            },
         }
 
     def run_enable_plans(self):
@@ -471,7 +470,6 @@ class ObservabilityPlugin(EnableDisablePlugin):
         jhelper = JujuHelper(self.client, data_location)
 
         tfhelper_cos = self.manifest.get_tfhelper(self.tfplan_cos)
-        tfhelper_grafana_agent = self.manifest.get_tfhelper(self.tfplan_grafana_agent)
         tfhelper_openstack = self.manifest.get_tfhelper(
             f"{OPENSTACK_TERRAFORM_PLAN}-plan"
         )
@@ -482,7 +480,7 @@ class ObservabilityPlugin(EnableDisablePlugin):
 
         cos_plan = [
             TerraformInitStep(tfhelper_cos),
-            DeployObservabilityStackStep(self, tfhelper_cos, jhelper),
+            DeployObservabilityStackStep(self, jhelper),
             PatchCosLoadBalancerStep(self.client),
             FillObservabilityOffersStep(
                 self.client, tfhelper_openstack, tfhelper_cos, jhelper
@@ -490,8 +488,8 @@ class ObservabilityPlugin(EnableDisablePlugin):
         ]
 
         grafana_agent_plan = [
-            TerraformInitStep(tfhelper_grafana_agent),
-            DeployGrafanaAgentStep(self, tfhelper_grafana_agent, tfhelper_cos, jhelper),
+            TerraformInitStep(self.manifest.get_tfhelper(self.tfplan_grafana_agent)),
+            DeployGrafanaAgentStep(self, jhelper),
         ]
 
         run_plan(plan, console)
@@ -504,23 +502,21 @@ class ObservabilityPlugin(EnableDisablePlugin):
         data_location = self.snap.paths.user_data
         jhelper = JujuHelper(self.client, data_location)
 
-        tfhelper_cos = self.manifest.get_tfhelper(self.tfplan_cos)
-        tfhelper_grafana_agent = self.manifest.get_tfhelper(self.tfplan_grafana_agent)
         tfhelper_openstack = self.manifest.get_tfhelper(
             f"{OPENSTACK_TERRAFORM_PLAN}-plan"
         )
 
         cos_plan = [
-            TerraformInitStep(tfhelper_cos),
+            TerraformInitStep(self.manifest.get_tfhelper(self.tfplan_cos)),
             RemoveObservabilityIntegrationStep(
                 self.client, tfhelper_openstack, jhelper
             ),
-            RemoveObservabilityStackStep(self, tfhelper_cos, jhelper),
+            RemoveObservabilityStackStep(self, jhelper),
         ]
 
         grafana_agent_plan = [
-            TerraformInitStep(tfhelper_grafana_agent),
-            RemoveGrafanaAgentStep(self, tfhelper_grafana_agent, tfhelper_cos, jhelper),
+            TerraformInitStep(self.manifest.get_tfhelper(self.tfplan_grafana_agent)),
+            RemoveGrafanaAgentStep(self, jhelper),
         ]
 
         run_plan(grafana_agent_plan, console)
