@@ -43,11 +43,13 @@ class TestAddMaasDeployment:
     @pytest.fixture
     def add_maas_deployment(self):
         return AddMaasDeployment(
-            deployment="test_deployment",
-            token="test_token",
-            url="test_url",
-            resource_pool="test_resource_pool",
-            deployments_config=Mock(),
+            Mock(),
+            MaasDeployment(
+                name="test_deployment",
+                token="test_token",
+                url="test_url",
+                resource_pool="test_resource_pool",
+            ),
         )
 
     def test_is_skip_with_existing_deployment(self, add_maas_deployment):

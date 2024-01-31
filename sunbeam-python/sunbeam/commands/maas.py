@@ -22,11 +22,10 @@ import logging
 import ssl
 import textwrap
 from pathlib import Path
-from typing import TypeGuard, overload
+from typing import Type, TypeGuard, overload
 
 import pydantic
 import yaml
-from juju.controller import Controller
 from maas.client import bones, connect
 from rich.console import Console
 from rich.status import Status
@@ -46,7 +45,7 @@ from sunbeam.jobs.common import (
     Result,
     ResultType,
 )
-from sunbeam.jobs.juju import JujuAccount, JujuController
+from sunbeam.jobs.juju import JujuController, run_sync
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -72,8 +71,6 @@ class MaasDeployment(Deployment):
     token: str
     resource_pool: str
     network_mapping: dict[str, str | None] = {}
-    juju_account: JujuAccount | None = None
-    juju_controller: JujuController | None = None
 
     @property
     def controller(self) -> str:
@@ -86,15 +83,15 @@ class MaasDeployment(Deployment):
             raise ValueError("Deployment type must be MAAS.")
         return v
 
-    def get_connected_controller(self) -> Controller:
-        """Return connected controller."""
-        if self.juju_account is None:
-            raise ValueError(f"No juju account configured for deployment {self.name}.")
-        if self.juju_controller is None:
-            raise ValueError(
-                f"No juju controller configured for deployment {self.name}."
-            )
-        return self.juju_controller.to_controller(self.juju_account)
+    @classmethod
+    def import_step(cls) -> Type["AddMaasDeployment"]:
+        """Return a step for importing a deployment.
+
+        This step will be used to make sure the deployment is valid.
+        The step must take as constructor arguments: DeploymentsConfig, Deployment.
+        The Deployment must be of the type that the step is registered for.
+        """
+        return AddMaasDeployment
 
 
 def is_maas_deployment(deployment: Deployment) -> TypeGuard[MaasDeployment]:
@@ -329,10 +326,7 @@ class AddMaasDeployment(BaseStep):
     def __init__(
         self,
         deployments_config: DeploymentsConfig,
-        deployment: str,
-        token: str,
-        url: str,
-        resource_pool: str,
+        deployment: MaasDeployment,
     ) -> None:
         super().__init__(
             "Add MAAS-backed deployment",
@@ -340,17 +334,17 @@ class AddMaasDeployment(BaseStep):
         )
         self.deployments_config = deployments_config
         self.deployment = deployment
-        self.token = token
-        self.url = url
-        self.resource_pool = resource_pool
 
     def is_skip(self, status: Status | None = None) -> Result:
         """Check if deployment is already added."""
-        for deployment in self.deployments_config.deployments:
-            if deployment.name == self.deployment:
-                return Result(
-                    ResultType.FAILED, f"Deployment {self.deployment} already exists."
-                )
+
+        try:
+            self.deployments_config.get_deployment(self.deployment.name)
+            return Result(
+                ResultType.FAILED, f"Deployment {self.deployment.name} already exists."
+            )
+        except ValueError:
+            pass
 
         current_deployments = set()
         for deployment in self.deployments_config.deployments:
@@ -362,7 +356,7 @@ class AddMaasDeployment(BaseStep):
                     )
                 )
 
-        if (self.url, self.resource_pool) in current_deployments:
+        if (self.deployment.url, self.deployment.resource_pool) in current_deployments:
             return Result(
                 ResultType.FAILED,
                 "Deployment with same url and resource pool already exists.",
@@ -373,8 +367,8 @@ class AddMaasDeployment(BaseStep):
     def run(self, status: Status | None = None) -> Result:
         """Check MAAS is working, Resource Pool exists, write to local configuration."""
         try:
-            client = MaasClient(self.url, self.token)
-            _ = client.get_resource_pool(self.resource_pool)
+            client = MaasClient(self.deployment.url, self.deployment.token)
+            _ = client.get_resource_pool(self.deployment.resource_pool)
         except ValueError as e:
             LOG.debug("Failed to connect to maas", exc_info=True)
             return Result(ResultType.FAILED, str(e))
@@ -389,7 +383,7 @@ class AddMaasDeployment(BaseStep):
                 LOG.debug("Resource pool not found", exc_info=True)
                 return Result(
                     ResultType.FAILED,
-                    f"Resource pool {self.resource_pool!r} not"
+                    f"Resource pool {self.deployment.resource_pool!r} not"
                     " found in given MAAS URL.",
                 )
             LOG.debug("Unknown error", exc_info=True)
@@ -408,16 +402,53 @@ class AddMaasDeployment(BaseStep):
                     )
             LOG.info("Exception info", exc_info=True)
             return Result(ResultType.FAILED, str(e))
-        data = MaasDeployment(
-            name=self.deployment,
-            token=self.token,
-            url=self.url,
-            resource_pool=self.resource_pool,
-            network_mapping={},
-            juju_account=None,
-            juju_controller=None,
-        )
-        self.deployments_config.add_deployment(data)
+
+        spaces = self.deployment.network_mapping.values()
+        spaces = [space for space in spaces if space is not None]
+        if len(spaces) > 0:
+            try:
+                maas_spaces = list_spaces(client)
+            except ValueError as e:
+                LOG.debug("Failed to list spaces", exc_info=True)
+                return Result(ResultType.FAILED, str(e))
+            maas_spaces = [maas_space["name"] for maas_space in maas_spaces]
+            difference = set(spaces).difference(maas_spaces)
+            if len(difference) > 0:
+                return Result(
+                    ResultType.FAILED,
+                    f"Spaces {', '.join(difference)} not found in MAAS.",
+                )
+
+        if (
+            self.deployment.juju_controller is None
+            and self.deployment.juju_account is not None  # noqa: W503
+        ):
+            return Result(
+                ResultType.FAILED,
+                "Juju account configured, but Juju Controller not configured.",
+            )
+
+        if (
+            self.deployment.juju_controller is not None
+            and self.deployment.juju_account is None  # noqa: W503
+        ):
+            return Result(
+                ResultType.FAILED,
+                "Juju Controller configured, but Juju account not configured.",
+            )
+
+        if (
+            self.deployment.juju_account is not None
+            and self.deployment.juju_controller is not None  # noqa: W503
+        ):
+            controller = self.deployment.get_connected_controller()
+            try:
+                run_sync(controller.list_models())
+            except Exception as e:
+                LOG.debug("Failed to list models", exc_info=True)
+                return Result(ResultType.FAILED, str(e))
+
+        self.deployments_config.add_deployment(self.deployment)
         return Result(ResultType.COMPLETED)
 
 
