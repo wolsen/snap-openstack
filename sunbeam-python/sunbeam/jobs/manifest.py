@@ -405,19 +405,33 @@ class AddManifestStep(BaseStep):
         # Write EMPTY_MANIFEST if manifest not provided
         self.manifest = manifest
         self.client = client
+        self.manifest_content = None
+
+    def is_skip(self, status: Optional[Status] = None) -> Result:
+        """Skip if the user provided manifest and the latest from db are same."""
+        try:
+            if self.manifest:
+                with self.manifest.open("r") as file:
+                    self.manifest_content = yaml.safe_load(file)
+            else:
+                self.manifest_content = EMPTY_MANIFEST
+
+            latest_manifest = self.client.cluster.get_latest_manifest()
+        except Exception as e:
+            LOG.debug(str(e))
+            return Result(ResultType.FAILED, str(e))
+
+        if yaml.safe_load(latest_manifest.get("data")) == self.manifest_content:
+            return Result(ResultType.SKIPPED)
+
+        return Result(ResultType.COMPLETED)
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Write manifest to cluster db"""
         try:
-            if self.manifest:
-                with self.manifest.open("r") as file:
-                    data = yaml.safe_load(file)
-                    id = self.client.cluster.add_manifest(data=yaml.safe_dump(data))
-            else:
-                id = self.client.cluster.add_manifest(
-                    data=yaml.safe_dump(EMPTY_MANIFEST)
-                )
-
+            id = self.client.cluster.add_manifest(
+                data=yaml.safe_dump(self.manifest_content)
+            )
             return Result(ResultType.COMPLETED, id)
         except Exception as e:
             LOG.warning(str(e))
