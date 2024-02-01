@@ -47,7 +47,7 @@ func ListNodes(s *state.State, roles []string) (types.Nodes, error) {
 
 // GetNode returns a Node with the given name
 func GetNode(s *state.State, name string) (types.Node, error) {
-	node := types.Node{}
+	node := types.Node{MachineID: -1}
 	err := s.Database.Transaction(s.Context, func(ctx context.Context, tx *sql.Tx) error {
 		record, err := database.GetNode(ctx, tx, name)
 		if err != nil {
@@ -106,7 +106,7 @@ func UpdateNode(s *state.State, name string, role []string, machineid int) error
 		if role == nil {
 			nodeRole = node.Role
 		}
-		if machineid == 0 {
+		if machineid == -1 {
 			machineid = node.MachineID
 		}
 

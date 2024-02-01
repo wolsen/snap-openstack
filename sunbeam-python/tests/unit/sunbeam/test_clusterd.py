@@ -43,7 +43,7 @@ class TestClusterdSteps:
 
     def test_init_step(self, cclient):
         role = "control"
-        init_step = ClusterInitStep(cclient, [role])
+        init_step = ClusterInitStep(cclient, [role], 0)
         init_step.client = MagicMock()
         result = init_step.run()
         assert result.result_type == ResultType.COMPLETED

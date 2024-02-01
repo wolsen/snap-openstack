@@ -251,7 +251,8 @@ def bootstrap(
     client: Client = ctx.obj
     plan = []
     plan.append(JujuLoginStep(data_location))
-    plan.append(ClusterInitStep(client, roles_to_str_list(roles)))
+    # bootstrapped node is always machine 0 in controller model
+    plan.append(ClusterInitStep(client, roles_to_str_list(roles), 0))
     plan.append(AddCloudJujuStep(cloud_name, cloud_definition))
     plan.append(
         BootstrapJujuStep(
