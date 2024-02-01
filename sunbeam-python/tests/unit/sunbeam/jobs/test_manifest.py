@@ -341,20 +341,71 @@ class TestManifest:
 
 
 class TestAddManifestStep:
-    def test_run(self, cclient, tmpdir):
+    def test_is_skip(self, cclient, tmpdir):
+        # Manifest in cluster DB different from user provided manifest
+        cclient.cluster.get_latest_manifest.return_value = {"data": "charms: {}"}
         manifest_file = tmpdir.mkdir("manifests").join("test_manifest.yaml")
         manifest_file.write(test_manifest)
         step = manifest.AddManifestStep(cclient, manifest_file)
+        result = step.is_skip()
+
+        assert result.result_type == ResultType.COMPLETED
+
+    def test_is_skip_apply_same_manifest(self, cclient, tmpdir):
+        # Manifest in cluster DB same as user provided manifest
+        cclient.cluster.get_latest_manifest.return_value = {"data": test_manifest}
+        manifest_file = tmpdir.mkdir("manifests").join("test_manifest.yaml")
+        manifest_file.write(test_manifest)
+        step = manifest.AddManifestStep(cclient, manifest_file)
+        result = step.is_skip()
+
+        assert result.result_type == ResultType.SKIPPED
+
+    def test_is_skip_no_manifest(self, cclient):
+        # Manifest in cluster DB same as user provided manifest
+        cclient.cluster.get_latest_manifest.return_value = {"data": test_manifest}
+        step = manifest.AddManifestStep(cclient)
+        result = step.is_skip()
+
+        assert step.manifest_content == manifest.EMPTY_MANIFEST
+        assert result.result_type == ResultType.COMPLETED
+
+    def test_is_skip_no_manifest_apply_same(self, cclient):
+        # Manifest in cluster DB same as user provided manifest
+        empty_manifest_str = yaml.safe_dump(manifest.EMPTY_MANIFEST)
+        cclient.cluster.get_latest_manifest.return_value = {"data": empty_manifest_str}
+        step = manifest.AddManifestStep(cclient)
+        result = step.is_skip()
+
+        assert step.manifest_content == manifest.EMPTY_MANIFEST
+        assert result.result_type == ResultType.SKIPPED
+
+    def test_is_skip_no_connection_to_clusterdb(self, cclient):
+        cclient.cluster.get_latest_manifest.side_effect = (
+            ClusterServiceUnavailableException("Cluster unavailable..")
+        )
+        step = manifest.AddManifestStep(cclient)
+        result = step.is_skip()
+
+        assert result.result_type == ResultType.FAILED
+
+    def test_run(self, cclient, tmpdir):
+        cclient.cluster.get_latest_manifest.return_value = {"data": "charms: {}"}
+        manifest_file = tmpdir.mkdir("manifests").join("test_manifest.yaml")
+        manifest_file.write(test_manifest)
+        step = manifest.AddManifestStep(cclient, manifest_file)
+        step.manifest_content = yaml.safe_load(test_manifest)
         result = step.run()
 
-        test_manifest_dict = yaml.safe_load(test_manifest)
         cclient.cluster.add_manifest.assert_called_once_with(
-            data=yaml.safe_dump(test_manifest_dict)
+            data=yaml.safe_dump(step.manifest_content)
         )
         assert result.result_type == ResultType.COMPLETED
 
     def test_run_with_no_manifest(self, cclient):
+        cclient.cluster.get_latest_manifest.return_value = {"data": test_manifest}
         step = manifest.AddManifestStep(cclient)
+        step.manifest_content = manifest.EMPTY_MANIFEST
         result = step.run()
 
         cclient.cluster.add_manifest.assert_called_once_with(
@@ -367,6 +418,7 @@ class TestAddManifestStep:
             "Cluster unavailable.."
         )
         step = manifest.AddManifestStep(cclient)
+        step.manifest_content = manifest.EMPTY_MANIFEST
         result = step.run()
 
         cclient.cluster.add_manifest.assert_called_once_with(
