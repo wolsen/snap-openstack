@@ -63,7 +63,7 @@ func cmdNodesGet(s *state.State, r *http.Request) response.Response {
 }
 
 func cmdNodesPost(s *state.State, r *http.Request) response.Response {
-	var req types.Node
+	req := types.Node{MachineID: -1}
 
 	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
@@ -79,7 +79,7 @@ func cmdNodesPost(s *state.State, r *http.Request) response.Response {
 }
 
 func cmdNodesPut(s *state.State, r *http.Request) response.Response {
-	var req types.Node
+	req := types.Node{MachineID: -1}
 
 	name, err := url.PathUnescape(mux.Vars(r)["name"])
 	if err != nil {

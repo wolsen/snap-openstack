@@ -62,11 +62,12 @@ CLUSTERD_PORT = 7000
 class ClusterInitStep(BaseStep):
     """Bootstrap clustering on sunbeam clusterd."""
 
-    def __init__(self, client: Client, role: List[str]):
+    def __init__(self, client: Client, role: List[str], machineid: int):
         super().__init__("Bootstrap Cluster", "Bootstrapping Sunbeam cluster")
 
         self.port = CLUSTERD_PORT
         self.role = role
+        self.machineid = machineid
         self.client = client
         self.fqdn = utils.get_fqdn()
         self.ip = utils.get_local_ip_by_default_route()
@@ -95,7 +96,10 @@ class ClusterInitStep(BaseStep):
         """Bootstrap sunbeam cluster"""
         try:
             self.client.cluster.bootstrap(
-                name=self.fqdn, address=f"{self.ip}:{self.port}", role=self.role
+                name=self.fqdn,
+                address=f"{self.ip}:{self.port}",
+                role=self.role,
+                machineid=self.machineid,
             )
             return Result(ResultType.COMPLETED)
         except ClusterAlreadyBootstrappedException:
