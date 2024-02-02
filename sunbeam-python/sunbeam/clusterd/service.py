@@ -46,6 +46,12 @@ class ConfigItemNotFoundException(RemoteException):
     pass
 
 
+class ManifestItemNotFoundException(RemoteException):
+    """Raise when ManifestItem cannot be found on the remote"""
+
+    pass
+
+
 class NodeAlreadyExistsException(RemoteException):
     """Raised when the node already exists"""
 
@@ -168,6 +174,8 @@ class BaseService(ABC):
                 )
             elif "ConfigItem not found" in error:
                 raise ConfigItemNotFoundException("ConfigItem not found")
+            elif "ManifestItem not found" in error:
+                raise ManifestItemNotFoundException("ManifestItem not found")
             raise e
 
         return response.json()

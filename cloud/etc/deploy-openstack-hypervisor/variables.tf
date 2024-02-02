@@ -31,6 +31,18 @@ variable "charm_channel" {
   default     = "2023.2/edge"
 }
 
+variable "charm_revision" {
+  description = "Charm channel revision to deploy openstack-hypervisor charm from"
+  type        = number
+  default     = null
+}
+
+variable "charm_config" {
+  description = "Charm config to deploy openstack-hypervisor charm from"
+  type        = map(string)
+  default     = {}
+}
+
 variable "openstack_model" {
   description = "Name of OpenStack model."
   type        = string

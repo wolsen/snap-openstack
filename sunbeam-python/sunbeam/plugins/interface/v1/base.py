@@ -190,6 +190,67 @@ class BasePlugin(ABC):
 
         return Version(version)
 
+    def manifest_defaults(self) -> dict:
+        """Return manifest part of the plugin.
+
+        Define manifest charms involved and default values for charm attributes
+        and terraform plan.
+        Sample manifest:
+        {
+            "charms": {
+                "heat-k8s": {
+                    "channel": <>.
+                    "revision": <>,
+                    "config": <>,
+                }
+            },
+            "terraform": {
+                "<plugin>-plan": {
+                    "source": <Path of terraform plan>,
+                }
+            }
+        }
+
+        The plugins that uses terraform plan should override this function.
+        """
+        return {}
+
+    def add_manifest_section(self, manifest) -> None:
+        """Add manifest section.
+
+        Any new attributes to the manifest introduced by the plugin will be read as
+        dict. This function should convert the new attribute to a dataclass if
+        required and reassign it to manifest object. This will also help in
+        validation of new attributes.
+        """
+        pass
+
+    def manifest_attributes_tfvar_map(self) -> dict:
+        """Return terraform var map for the manifest attributes.
+
+        Map terraform variable for each manifest attribute.
+        Sample return value:
+        {
+            <tf plan1>: {
+                "charms": {
+                    "heat-k8s": {
+                        "channel": <tfvar for heat channel>,
+                        "revision": <tfvar for heat revision>,
+                        "config": <tfvar for heat config>,
+                    }
+                }
+            },
+            <tfplan2>: {
+                "caas-config": {
+                    "image-url": <tfvar map for caas image url>
+                }
+            }
+        }
+
+        The plugins that uses terraform plan should override this function.
+        """
+        return {}
+
     def get_terraform_plans_base_path(self) -> Path:
         """Return Terraform plan base location."""
         return Snap().paths.user_common
@@ -418,6 +479,7 @@ class EnableDisablePlugin(BasePlugin):
         :param name: Name of the plugin
         """
         super().__init__(name, client)
+        self.user_manifest = None
 
     @property
     def enabled(self) -> bool:
@@ -576,6 +638,8 @@ class EnableDisablePlugin(BasePlugin):
     @abstractmethod
     def enable_plugin(self) -> None:
         """Enable plugin command."""
+        current_click_context = click.get_current_context()
+        self.user_manifest = current_click_context.parent.params.get("manifest")
         self.pre_enable()
         self.run_enable_plans()
         self.post_enable()

@@ -25,7 +25,6 @@ from rich.status import Status
 from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import ConfigItemNotFoundException
 from sunbeam.commands.juju import JujuStepHelper
-from sunbeam.commands.terraform import TerraformHelper
 from sunbeam.jobs import questions
 from sunbeam.jobs.common import BaseStep, Result, ResultType, read_config, update_config
 from sunbeam.jobs.juju import (
@@ -37,6 +36,7 @@ from sunbeam.jobs.juju import (
     UnsupportedKubeconfigException,
     run_sync,
 )
+from sunbeam.jobs.manifest import Manifest
 from sunbeam.jobs.steps import (
     AddMachineUnitStep,
     DeployMachineApplicationStep,
@@ -92,25 +92,27 @@ class DeployMicrok8sApplicationStep(DeployMachineApplicationStep):
     def __init__(
         self,
         client: Client,
-        tfhelper: TerraformHelper,
+        manifest: Manifest,
         jhelper: JujuHelper,
         preseed_file: Optional[Path] = None,
         accept_defaults: bool = False,
+        refresh: bool = False,
     ):
         super().__init__(
             client,
-            tfhelper,
+            manifest,
             jhelper,
             MICROK8S_CONFIG_KEY,
             APPLICATION,
             MODEL,
+            "microk8s-plan",
             "Deploy MicroK8S",
             "Deploying MicroK8S",
+            refresh,
         )
 
         self.preseed_file = preseed_file
         self.accept_defaults = accept_defaults
-        self.answer_file = self.tfhelper.path / "addons.auto.tfvars.json"
         self.variables = {}
 
     def get_application_timeout(self) -> int:
@@ -146,7 +148,9 @@ class DeployMicrok8sApplicationStep(DeployMachineApplicationStep):
         LOG.debug(self.variables)
         questions.write_answers(self.client, self._ADDONS_CONFIG, self.variables)
         # Write answers to terraform location as a separate variables file
-        self.tfhelper.write_tfvars(self.variables, self.answer_file)
+        tfhelper = self.manifest.get_tfhelper(self.tfplan)
+        answer_file = tfhelper.path / "addons.auto.tfvars.json"
+        tfhelper.write_tfvars(self.variables, answer_file)
 
     def has_prompts(self) -> bool:
         """Returns true if the step has prompts that it can ask the user.
@@ -154,6 +158,10 @@ class DeployMicrok8sApplicationStep(DeployMachineApplicationStep):
         :return: True if the step can ask the user for prompts,
                  False otherwise
         """
+        # No need to prompt for questions in case of refresh
+        if self.refresh:
+            return False
+
         return True
 
 

@@ -23,6 +23,7 @@ import click
 import yaml
 from snaphelpers import Snap
 
+from sunbeam import utils
 from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import (
     ClusterServiceUnavailableException,
@@ -254,6 +255,49 @@ class PluginManager:
 
         LOG.debug(f"Enabledplugins in repos {repos}: {enabled_plugins}")
         return enabled_plugins
+
+    @classmethod
+    def get_all_plugin_manifests(cls, client: Client) -> dict:
+        manifest = {}
+        plugins = cls.get_all_plugin_classes()
+        for klass in plugins:
+            plugin = klass(client)
+            m_dict = plugin.manifest_defaults()
+            utils.merge_dict(manifest, m_dict)
+
+        return manifest
+
+    @classmethod
+    def get_all_plugin_manfiest_tfvar_map(cls, client: Client) -> dict:
+        tfvar_map = {}
+        plugins = cls.get_all_plugin_classes()
+        for klass in plugins:
+            plugin = klass(client)
+            m_dict = plugin.manifest_attributes_tfvar_map()
+            utils.merge_dict(tfvar_map, m_dict)
+
+        return tfvar_map
+
+    @classmethod
+    def add_manifest_section(cls, client, manifest) -> None:
+        plugins = cls.get_all_plugin_classes()
+        for klass in plugins:
+            plugin = klass(client)
+            plugin.add_manifest_section(manifest)
+
+    @classmethod
+    def get_all_charms_in_openstack_plan(cls, client: Client) -> list:
+        charms = []
+        plugins = cls.get_all_plugin_classes()
+        for klass in plugins:
+            plugin = klass(client)
+            m_dict = plugin.manifest_attributes_tfvar_map()
+            charms_from_plugin = list(
+                m_dict.get("openstack-plan", {}).get("charms", {}).keys()
+            )
+            charms.extend(charms_from_plugin)
+
+        return charms
 
     @classmethod
     def register(

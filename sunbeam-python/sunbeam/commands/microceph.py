@@ -23,7 +23,6 @@ from rich.console import Console
 from rich.status import Status
 
 from sunbeam.clusterd.client import Client
-from sunbeam.commands.terraform import TerraformHelper
 from sunbeam.jobs import questions
 from sunbeam.jobs.common import BaseStep, Result, ResultType
 from sunbeam.jobs.juju import (
@@ -33,6 +32,7 @@ from sunbeam.jobs.juju import (
     UnitNotFoundException,
     run_sync,
 )
+from sunbeam.jobs.manifest import Manifest
 from sunbeam.jobs.steps import (
     AddMachineUnitStep,
     DeployMachineApplicationStep,
@@ -64,18 +64,21 @@ class DeployMicrocephApplicationStep(DeployMachineApplicationStep):
     def __init__(
         self,
         client: Client,
-        tfhelper: TerraformHelper,
+        manifest: Manifest,
         jhelper: JujuHelper,
+        refresh: bool = False,
     ):
         super().__init__(
             client,
-            tfhelper,
+            manifest,
             jhelper,
             CONFIG_KEY,
             APPLICATION,
             MODEL,
+            "microceph-plan",
             "Deploy MicroCeph",
             "Deploying MicroCeph",
+            refresh,
         )
 
     def get_application_timeout(self) -> int:

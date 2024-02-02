@@ -202,6 +202,38 @@ class JujuStepHelper:
         )
         return bool(available_revision > deployed_revision)
 
+    def get_charm_deployed_versions(self, model: str) -> dict:
+        """Return charm deployed info for all the applications in model.
+
+        For each application, return a tuple of charm name, channel and revision.
+        Example output:
+        {"keystone": ("keystone-k8s", "2023.2/stable", 234)}
+        """
+        _status = run_sync(self.jhelper.get_model_status_full(model))
+        status = json.loads(_status.to_json())
+
+        apps = {}
+        for app_name, app_status in status.get("applications", {}).items():
+            charm_name = self._extract_charm_name(app_status["charm"])
+            deployed_channel = self.normalise_channel(app_status["charm-channel"])
+            deployed_revision = int(self._extract_charm_revision(app_status["charm"]))
+            apps[app_name] = (charm_name, deployed_channel, deployed_revision)
+
+        return apps
+
+    def get_apps_filter_by_charms(self, model: str, charms: list) -> list:
+        """Return apps filtered by given charms.
+
+        Get all apps from the model and return only the apps deployed with
+        charms in the provided list.
+        """
+        deployed_all_apps = self.get_charm_deployed_versions(model)
+        return [
+            app_name
+            for app_name, (charm, channel, revision) in deployed_all_apps.items()
+            if charm in charms
+        ]
+
     def normalise_channel(self, channel: str) -> str:
         """Expand channel if it is using abbreviation.
 
@@ -270,6 +302,7 @@ class BootstrapJujuStep(BaseStep, JujuStepHelper):
         cloud_name: str,
         cloud_type: str,
         controller: str,
+        bootstrap_args: list = [],
         preseed_file: Optional[Path] = None,
         accept_defaults: bool = False,
     ):
@@ -278,6 +311,7 @@ class BootstrapJujuStep(BaseStep, JujuStepHelper):
         self.cloud = cloud_name
         self.cloud_type = cloud_type
         self.controller = controller
+        self.bootstrap_args = bootstrap_args
         self.preseed_file = preseed_file
         self.accept_defaults = accept_defaults
         self.juju_clouds = []
@@ -358,12 +392,9 @@ class BootstrapJujuStep(BaseStep, JujuStepHelper):
                 if not result:
                     return Result(ResultType.FAILED, "Not able to create cloud")
 
-            cmd = [
-                self._get_juju_binary(),
-                "bootstrap",
-                self.cloud,
-                self.controller,
-            ]
+            cmd = [self._get_juju_binary(), "bootstrap"]
+            cmd.extend(self.bootstrap_args)
+            cmd.extend([self.cloud, self.controller])
             LOG.debug(f'Running command {" ".join(cmd)}')
             process = subprocess.run(cmd, capture_output=True, text=True, check=True)
             LOG.debug(

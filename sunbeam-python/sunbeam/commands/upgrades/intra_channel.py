@@ -13,25 +13,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import logging
 from typing import Optional
 
 from rich.console import Console
 from rich.status import Status
 
+from sunbeam.commands.hypervisor import ReapplyHypervisorTerraformPlanStep
 from sunbeam.commands.juju import JujuStepHelper
+from sunbeam.commands.microceph import DeployMicrocephApplicationStep
+from sunbeam.commands.microk8s import DeployMicrok8sApplicationStep
+from sunbeam.commands.openstack import ReapplyOpenStackTerraformPlanStep
+from sunbeam.commands.sunbeam_machine import DeploySunbeamMachineApplicationStep
+from sunbeam.commands.terraform import TerraformInitStep
 from sunbeam.commands.upgrades.base import UpgradeCoordinator, UpgradePlugins
 from sunbeam.jobs.common import BaseStep, Result, ResultType
 from sunbeam.jobs.juju import run_sync
-from sunbeam.versions import K8S_SERVICES, MACHINE_SERVICES
 
 LOG = logging.getLogger(__name__)
 console = Console()
 
 
 class LatestInChannel(BaseStep, JujuStepHelper):
-    def __init__(self, jhelper):
+    def __init__(self, jhelper, manifest):
         """Upgrade all charms to latest in current channel.
 
         :jhelper: Helper for interacting with pylibjuju
@@ -40,47 +44,73 @@ class LatestInChannel(BaseStep, JujuStepHelper):
             "In channel upgrade", "Upgrade charms to latest revision in current channel"
         )
         self.jhelper = jhelper
-
-    def get_charm_update(self, applications, model) -> list[str]:
-        """Return a list applications that need to be refreshed."""
-        candidates = []
-        _status = run_sync(self.jhelper.get_model_status_full(model))
-        status = json.loads(_status.to_json())
-        for app_name in applications:
-            if self.revision_update_needed(app_name, model, status=status):
-                candidates.append(app_name)
-            else:
-                LOG.debug(f"{app_name} already at latest version in current channel")
-        return candidates
-
-    def get_charm_update_candidates_k8s(self) -> list[str]:
-        """Return a list of all k8s charms that need to be refreshed."""
-        return self.get_charm_update(K8S_SERVICES.keys(), "openstack")
-
-    def get_charm_update_candidates_machine(self) -> list[str]:
-        """Return a list of all machine charms that need to be refreshed."""
-        return self.get_charm_update(MACHINE_SERVICES.keys(), "controller")
+        self.manifest = manifest
 
     def is_skip(self, status: Optional[Status] = None) -> Result:
         """Step can be skipped if nothing needs refreshing."""
-        if (
-            self.get_charm_update_candidates_k8s()
-            or self.get_charm_update_candidates_machine()  # noqa
-        ):
-            return Result(ResultType.COMPLETED)
-        else:
-            return Result(ResultType.SKIPPED)
+        return Result(ResultType.COMPLETED)
+
+    def is_track_changed_for_any_charm(self, deployed_apps: dict):
+        """Check if chanel track is same in manifest and deployed app."""
+        for app_name, (charm, channel, revision) in deployed_apps.items():
+            if not self.manifest.charms.get(charm):
+                LOG.debug(f"Charm not present in manifest: {charm}")
+                continue
+
+            channel_from_manifest = self.manifest.charms.get(charm).channel or ""
+            track_from_manifest = channel_from_manifest.split("/")[0]
+            track_from_deployed_app = channel.split("/")[0]
+            # Compare tracks
+            if track_from_manifest != track_from_deployed_app:
+                LOG.debug(
+                    "Channel track for app {app_name} different in manifest "
+                    "and actual deployed"
+                )
+                return True
+
+        return False
+
+    def refresh_apps(self, apps: dict, model: str) -> None:
+        """Refresh apps in the model.
+
+        If the charm has no revision in manifest and channel mentioned in manifest
+        and the deployed app is same, run juju refresh.
+        Otherwise ignore so that terraform plan apply will take care of charm upgrade.
+        """
+        for app_name, (charm, channel, revision) in apps.items():
+            manifest_charm = self.manifest.charms.get(charm)
+            if not manifest_charm:
+                continue
+
+            if not manifest_charm.revision and manifest_charm.channel == channel:
+                app = run_sync(self.jhelper.get_application(app_name, model))
+                LOG.debug(f"Running refresh for app {app_name}")
+                # refresh() checks for any new revision and updates if available
+                run_sync(app.refresh())
 
     def run(self, status: Optional[Status] = None) -> Result:
-        """Refresh all charms identified as needing a refresh."""
-        for app_name in self.get_charm_update_candidates_k8s():
-            LOG.debug(f"Refreshing {app_name}")
-            app = run_sync(self.jhelper.get_application(app_name, "openstack"))
-            run_sync(app.refresh())
-        for app_name in self.get_charm_update_candidates_machine():
-            LOG.debug(f"Refreshing {app_name}")
-            app = run_sync(self.jhelper.get_application(app_name, "controller"))
-            run_sync(app.refresh())
+        """Refresh all charms identified as needing a refresh.
+
+        If the manifest has charm channel and revision, terraform apply should update
+        the charms.
+        If the manifest has only charm, then juju refresh is required if channel is
+        same as deployed charm, otherwise juju upgrade charm.
+        """
+        deployed_k8s_apps = self.get_charm_deployed_versions("openstack")
+        deployed_machine_apps = self.get_charm_deployed_versions("controller")
+
+        all_deployed_apps = deployed_k8s_apps.copy()
+        all_deployed_apps.update(deployed_machine_apps)
+        LOG.debug(f"All deployed apps: {all_deployed_apps}")
+        if self.is_track_changed_for_any_charm(all_deployed_apps):
+            error_msg = (
+                "Manifest has track values that require upgrades, rerun with "
+                "option --upgrade-release for release upgrades."
+            )
+            return Result(ResultType.FAILED, error_msg)
+
+        self.refresh_apps(deployed_k8s_apps, "openstack")
+        self.refresh_apps(deployed_machine_apps, "controller")
         return Result(ResultType.COMPLETED)
 
 
@@ -89,8 +119,24 @@ class LatestInChannelCoordinator(UpgradeCoordinator):
 
     def get_plan(self) -> list[BaseStep]:
         return [
-            LatestInChannel(self.jhelper),
-            UpgradePlugins(
-                self.client, self.jhelper, self.tfhelper, upgrade_release=False
+            LatestInChannel(self.jhelper, self.manifest),
+            TerraformInitStep(self.manifest.get_tfhelper("openstack-plan")),
+            ReapplyOpenStackTerraformPlanStep(self.client, self.manifest, self.jhelper),
+            TerraformInitStep(self.manifest.get_tfhelper("sunbeam-machine-plan")),
+            DeploySunbeamMachineApplicationStep(
+                self.client, self.manifest, self.jhelper, refresh=True
             ),
+            TerraformInitStep(self.manifest.get_tfhelper("microk8s-plan")),
+            DeployMicrok8sApplicationStep(
+                self.client, self.manifest, self.jhelper, refresh=True
+            ),
+            TerraformInitStep(self.manifest.get_tfhelper("microceph-plan")),
+            DeployMicrocephApplicationStep(
+                self.client, self.manifest, self.jhelper, refresh=True
+            ),
+            TerraformInitStep(self.manifest.get_tfhelper("hypervisor-plan")),
+            ReapplyHypervisorTerraformPlanStep(
+                self.client, self.manifest, self.jhelper
+            ),
+            UpgradePlugins(self.client, upgrade_release=False),
         ]
