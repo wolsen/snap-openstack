@@ -124,6 +124,7 @@ def main():
     cli.add_command(manifest)
     manifest.add_command(manifest_commands.list)
     manifest.add_command(manifest_commands.show)
+    manifest.add_command(manifest_commands.generate)
 
     cli.add_command(enable)
     cli.add_command(disable)

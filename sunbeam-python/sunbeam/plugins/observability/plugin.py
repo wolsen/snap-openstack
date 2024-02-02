@@ -304,7 +304,6 @@ class RemoveObservabilityStackStep(BaseStep, JujuStepHelper):
     def run(self, status: Optional[Status] = None) -> Result:
         """Execute configuration using terraform."""
         tfhelper = self.manifest.get_tfhelper(self.tfplan)
-        print(tfhelper)
         try:
             tfhelper.destroy()
         except TerraformException as e:
