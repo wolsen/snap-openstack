@@ -163,7 +163,7 @@ class CaasPlugin(OpenStackControlPlanePlugin):
             manifest.caas_config = CaasConfig(**_caas_config)
         except AttributeError:
             # Attribute not defined in manifest
-            pass
+            manifest.caas_config = CaasConfig()
 
     def set_application_names(self) -> list:
         """Application names handled by the terraform plan."""

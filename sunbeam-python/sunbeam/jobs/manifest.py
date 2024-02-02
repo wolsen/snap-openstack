@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import yaml
-from pydantic import Field
+from pydantic import Field, PrivateAttr
 from pydantic.dataclasses import dataclass
 from snaphelpers import Snap
 
@@ -95,6 +95,9 @@ class TerraformManifest:
 @dataclass(config=dict(extra="allow"))
 class Manifest:
     client: InitVar[Client]
+    tf_helpers: dict = PrivateAttr(default={})
+    tfvar_map: dict = PrivateAttr(default={})
+    default_manifest_dict: dict = PrivateAttr(default={})
     juju: Optional[JujuManifest] = None
     charms: Optional[Dict[str, CharmsManifest]] = None
     terraform: Optional[Dict[str, TerraformManifest]] = None
@@ -222,8 +225,6 @@ class Manifest:
 
         # Add object variables to store
         self.tf_helpers = {}
-        self.snap = Snap()
-        self.data_location = self.snap.paths.user_data
         self.tfvar_map = self._get_all_tfvar_map(client)
         self.client = client
 
@@ -235,6 +236,7 @@ class Manifest:
 
     # Terraform helper classes
     def get_tfhelper(self, tfplan: str) -> TerraformHelper:
+        snap = Snap()
         if self.tf_helpers.get(tfplan):
             return self.tf_helpers.get(tfplan)
 
@@ -245,15 +247,15 @@ class Manifest:
 
         tfplan_dir = TERRAFORM_DIR_NAMES.get(tfplan, tfplan)
         src = self.terraform.get(tfplan).source
-        dst = self.snap.paths.user_common / "etc" / tfplan_dir
+        dst = snap.paths.user_common / "etc" / tfplan_dir
         LOG.debug(f"Updating {dst} from {src}...")
         shutil.copytree(src, dst, dirs_exist_ok=True)
 
         self.tf_helpers[tfplan] = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / tfplan_dir,
+            path=snap.paths.user_common / "etc" / tfplan_dir,
             plan=tfplan,
             backend="http",
-            data_location=self.data_location,
+            data_location=snap.paths.user_data,
         )
 
         return self.tf_helpers[tfplan]
