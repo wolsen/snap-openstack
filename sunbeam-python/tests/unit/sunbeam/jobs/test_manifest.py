@@ -22,7 +22,10 @@ from pydantic import ValidationError
 
 import sunbeam.commands.terraform as terraform
 import sunbeam.jobs.manifest as manifest
-from sunbeam.clusterd.service import ClusterServiceUnavailableException
+from sunbeam.clusterd.service import (
+    ClusterServiceUnavailableException,
+    ManifestItemNotFoundException,
+)
 from sunbeam.jobs.common import ResultType
 from sunbeam.versions import OPENSTACK_CHANNEL, TERRAFORM_DIR_NAMES
 
@@ -388,6 +391,15 @@ class TestAddManifestStep:
         result = step.is_skip()
 
         assert result.result_type == ResultType.FAILED
+
+    def test_is_skip_with_no_manifest_in_db(self, cclient):
+        cclient.cluster.get_latest_manifest.side_effect = ManifestItemNotFoundException(
+            "Manifest Item not found."
+        )
+        step = manifest.AddManifestStep(cclient)
+        result = step.is_skip()
+
+        assert result.result_type == ResultType.COMPLETED
 
     def test_run(self, cclient, tmpdir):
         cclient.cluster.get_latest_manifest.return_value = {"data": "charms: {}"}

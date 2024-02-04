@@ -28,6 +28,7 @@ from snaphelpers import Snap
 from sunbeam import utils
 from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import (
+    ClusterServiceUnavailableException,
     ConfigItemNotFoundException,
     ManifestItemNotFoundException,
 )
@@ -419,8 +420,10 @@ class AddManifestStep(BaseStep):
                 self.manifest_content = EMPTY_MANIFEST
 
             latest_manifest = self.client.cluster.get_latest_manifest()
-        except Exception as e:
-            LOG.debug(str(e))
+        except ManifestItemNotFoundException:
+            return Result(ResultType.COMPLETED)
+        except (ClusterServiceUnavailableException, yaml.YAMLError, IOError) as e:
+            LOG.debug(e)
             return Result(ResultType.FAILED, str(e))
 
         if yaml.safe_load(latest_manifest.get("data")) == self.manifest_content:
@@ -436,5 +439,5 @@ class AddManifestStep(BaseStep):
             )
             return Result(ResultType.COMPLETED, id)
         except Exception as e:
-            LOG.warning(str(e))
+            LOG.debug(e)
             return Result(ResultType.FAILED, str(e))
