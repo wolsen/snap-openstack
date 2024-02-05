@@ -139,6 +139,15 @@ def generate(
     try:
         manifest_dict = asdict_with_extra_fields(manifest_obj)
         LOG.debug(f"Manifest dict with extra fields: {manifest_dict}")
+
+        # Remove terraform default sources
+        manifest_terraform_dict = manifest_dict.get("terraform", {})
+        for name, value in manifest_terraform_dict.items():
+            if value.get("source") and value.get("source").startswith(
+                "/snap/openstack"
+            ):
+                value["source"] = None
+
         manifest_yaml = yaml.safe_dump(manifest_dict, sort_keys=False)
 
         # add comment to each line
