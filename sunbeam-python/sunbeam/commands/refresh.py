@@ -89,7 +89,7 @@ def refresh(
             client, include_defaults=True
         )
 
-    LOG.debug(f"Manifest object used for refresh: {manifest_obj}")
+    LOG.debug(f"Manifest used for deployment - software: {manifest_obj.software}")
     data_location = snap.paths.user_data
     jhelper = JujuHelper(client, data_location)
     if upgrade_release:

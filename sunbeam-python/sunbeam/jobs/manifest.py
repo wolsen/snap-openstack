@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import yaml
-from pydantic import Field, PrivateAttr
+from pydantic import Field
 from pydantic.dataclasses import dataclass
 from snaphelpers import Snap
 
@@ -94,97 +94,12 @@ class TerraformManifest:
 
 
 @dataclass(config=dict(extra="allow"))
-class Manifest:
+class SoftwareConfig:
     client: InitVar[Client]
-    tf_helpers: dict = PrivateAttr(default={})
-    tfvar_map: dict = PrivateAttr(default={})
-    default_manifest_dict: dict = PrivateAttr(default={})
+    plugin_manager: InitVar[PluginManager]
     juju: Optional[JujuManifest] = None
     charms: Optional[Dict[str, CharmsManifest]] = None
     terraform: Optional[Dict[str, TerraformManifest]] = None
-
-    @classmethod
-    def load(
-        cls, client: Client, manifest_file: Path, include_defaults: bool = False
-    ) -> "Manifest":
-        """Load the manifest with the provided file input
-
-        If include_defaults is True, load the manifest over the defaut manifest.
-        """
-        if include_defaults:
-            return cls.load_on_default(client, manifest_file)
-
-        with manifest_file.open() as file:
-            return Manifest(client, **yaml.safe_load(file))
-
-    @classmethod
-    def load_latest_from_clusterdb(
-        cls, client: Client, include_defaults: bool = False
-    ) -> "Manifest":
-        """Load the latest manifest from clusterdb
-
-        If include_defaults is True, load the manifest over the defaut manifest.
-        values.
-        """
-        if include_defaults:
-            return cls.load_latest_from_clusterdb_on_default(client)
-
-        try:
-            manifest_latest = client.cluster.get_latest_manifest()
-            return Manifest(client, **yaml.safe_load(manifest_latest.get("data")))
-        except ManifestItemNotFoundException as e:
-            LOG.debug(f"Error in getting latest manifest from cluster DB: {str(e)}")
-            return Manifest(client)
-
-    @classmethod
-    def load_on_default(cls, client: Client, manifest_file: Path) -> "Manifest":
-        """Load manifest and override the default manifest"""
-        with manifest_file.open() as file:
-            override = yaml.safe_load(file)
-            default = cls.get_default_manifest_as_dict(client)
-            utils.merge_dict(default, override)
-            return Manifest(client, **default)
-
-    @classmethod
-    def load_latest_from_clusterdb_on_default(cls, client: Client) -> "Manifest":
-        """Load the latest manifest from clusterdb"""
-        default = cls.get_default_manifest_as_dict(client)
-        try:
-            manifest_latest = client.cluster.get_latest_manifest()
-            override = yaml.safe_load(manifest_latest.get("data"))
-        except ManifestItemNotFoundException as e:
-            LOG.debug(f"Error in getting latest manifest from cluster DB: {str(e)}")
-            override = {}
-
-        utils.merge_dict(default, override)
-        return Manifest(client, **default)
-
-    @classmethod
-    def get_default_manifest_as_dict(cls, client: Client) -> dict:
-        snap = Snap()
-        m = {
-            "juju": {"bootstrap_args": []},
-            "charms": {},
-            "terraform": {},
-        }
-        m["charms"] = {
-            charm: {"channel": channel}
-            for charm, channel in MANIFEST_CHARM_VERSIONS.items()
-        }
-        m["terraform"] = {
-            tfplan: {"source": Path(snap.paths.snap / "etc" / tfplan_dir)}
-            for tfplan, tfplan_dir in TERRAFORM_DIR_NAMES.items()
-        }
-
-        # Update manifests from plugins
-        m_plugin = PluginManager().get_all_plugin_manifests(client)
-        utils.merge_dict(m, m_plugin)
-
-        return copy.deepcopy(m)
-
-    @classmethod
-    def get_default_manifest(cls, client: Client) -> "Manifest":
-        return Manifest(client, **cls.get_default_manifest_as_dict(client))
 
     """
     # field_validator supported only in pydantix 2.x
@@ -200,38 +115,166 @@ class Manifest:
         return terraform
     """
 
-    def validate_terraform_keys(self, default_manifest: dict):
+    def validate_terraform_keys(self, default_software_config: dict):
         if self.terraform:
             tf_keys = set(self.terraform.keys())
-            all_tfplans = default_manifest.get("terraform", {}).keys()
+            all_tfplans = default_software_config.get("terraform", {}).keys()
             if not tf_keys <= all_tfplans:
                 raise ValueError(
-                    f"Manifest Terraform keys should be one of {all_tfplans} "
+                    f"Manifest Software Terraform keys should be one of {all_tfplans} "
                 )
 
-    def validate_charm_keys(self, default_manifest: dict):
+    def validate_charm_keys(self, default_software_config: dict):
         if self.charms:
             charms_keys = set(self.charms.keys())
-            all_charms = default_manifest.get("charms", {}).keys()
+            all_charms = default_software_config.get("charms", {}).keys()
             if not charms_keys <= all_charms:
-                raise ValueError(f"Manifest charms keys should be one of {all_charms} ")
+                raise ValueError(
+                    f"Manifest Software charms keys should be one of {all_charms} "
+                )
 
-    def __post_init__(self, client: Client):
+    def __post_init__(self, client: Client, plugin_manager: PluginManager):
         LOG.debug("Calling __post__init__")
-        PluginManager().add_manifest_section(client, self)
-        self.default_manifest_dict = self.get_default_manifest_as_dict(client)
+        plugin_manager.add_manifest_section(client, self)
+        default_software_config = self.get_default_software_as_dict(
+            client, plugin_manager
+        )
         # Add custom validations
-        self.validate_terraform_keys(self.default_manifest_dict)
-        self.validate_charm_keys(self.default_manifest_dict)
+        self.validate_terraform_keys(default_software_config)
+        self.validate_charm_keys(default_software_config)
 
-        # Add object variables to store
-        self.tf_helpers = {}
-        self.tfvar_map = self._get_all_tfvar_map(client)
+    @classmethod
+    def get_default_software_as_dict(
+        cls, client: Client, plugin_manager: PluginManager
+    ) -> dict:
+        snap = Snap()
+        software = {"juju": {"bootstrap_args": []}}
+        software["charms"] = {
+            charm: {"channel": channel}
+            for charm, channel in MANIFEST_CHARM_VERSIONS.items()
+        }
+        software["terraform"] = {
+            tfplan: {"source": Path(snap.paths.snap / "etc" / tfplan_dir)}
+            for tfplan, tfplan_dir in TERRAFORM_DIR_NAMES.items()
+        }
+
+        # Update manifests from plugins
+        software_from_plugins = plugin_manager.get_all_plugin_manifests(client)
+        utils.merge_dict(software, software_from_plugins)
+        return copy.deepcopy(software)
+
+
+class Manifest:
+
+    def __init__(
+        self,
+        client: Client,
+        plugin_manager: PluginManager,
+        deployment: dict,
+        software: dict,
+    ):
         self.client = client
+        self.plugin_manager = plugin_manager
+        self.deployment = deployment
+        self.software = SoftwareConfig(client, plugin_manager, **software)
+        self.tf_helpers = {}
+        self.tfvar_map = self._get_all_tfvar_map(client, plugin_manager)
 
-    def _get_all_tfvar_map(self, client: Client) -> dict:
+    @classmethod
+    def load(
+        cls, client: Client, manifest_file: Path, include_defaults: bool = False
+    ) -> "Manifest":
+        """Load the manifest with the provided file input
+
+        If include_defaults is True, load the manifest over the defaut manifest.
+        """
+        if include_defaults:
+            return cls.load_on_default(client, manifest_file)
+
+        plugin_manager = PluginManager()
+        with manifest_file.open() as file:
+            override = yaml.safe_load(file)
+            return Manifest(
+                client,
+                plugin_manager,
+                override.get("deployment", {}),
+                override.get("software", {}),
+            )
+
+    @classmethod
+    def load_latest_from_clusterdb(
+        cls, client: Client, include_defaults: bool = False
+    ) -> "Manifest":
+        """Load the latest manifest from clusterdb
+
+        If include_defaults is True, load the manifest over the defaut manifest.
+        values.
+        """
+        if include_defaults:
+            return cls.load_latest_from_clusterdb_on_default(client)
+
+        plugin_manager = PluginManager()
+        try:
+            manifest_latest = client.cluster.get_latest_manifest()
+            override = yaml.safe_load(manifest_latest.get("data"))
+            return Manifest(
+                client,
+                plugin_manager,
+                override.get("deployment", {}),
+                override.get("software", {}),
+            )
+        except ManifestItemNotFoundException as e:
+            LOG.debug(f"Error in getting latest manifest from cluster DB: {str(e)}")
+            return Manifest(client, plugin_manager, {}, {})
+
+    @classmethod
+    def load_on_default(cls, client: Client, manifest_file: Path) -> "Manifest":
+        """Load manifest and override the default manifest"""
+        plugin_manager = PluginManager()
+        with manifest_file.open() as file:
+            override = yaml.safe_load(file)
+            override_deployment = override.get("deployment") or {}
+            override_software = override.get("software") or {}
+            default_software = SoftwareConfig.get_default_software_as_dict(
+                client, plugin_manager
+            )
+            LOG.warning(default_software)
+            LOG.warning(override_software)
+            utils.merge_dict(default_software, override_software)
+            return Manifest(
+                client, plugin_manager, override_deployment, default_software
+            )
+
+    @classmethod
+    def load_latest_from_clusterdb_on_default(cls, client: Client) -> "Manifest":
+        """Load the latest manifest from clusterdb"""
+        plugin_manager = PluginManager()
+        default_software = SoftwareConfig.get_default_software_as_dict(
+            client, plugin_manager
+        )
+        try:
+            manifest_latest = client.cluster.get_latest_manifest()
+            override = yaml.safe_load(manifest_latest.get("data"))
+        except ManifestItemNotFoundException as e:
+            LOG.debug(f"Error in getting latest manifest from cluster DB: {str(e)}")
+            override = {}
+
+        override_deployment = override.get("deployment") or {}
+        override_software = override.get("software") or {}
+        utils.merge_dict(default_software, override_software)
+        return Manifest(client, plugin_manager, override_deployment, default_software)
+
+    @classmethod
+    def get_default_manifest(cls, client: Client) -> "Manifest":
+        plugin_manager = PluginManager()
+        default_software = SoftwareConfig.get_default_software_as_dict(
+            client, plugin_manager
+        )
+        return Manifest(client, plugin_manager, {}, default_software)
+
+    def _get_all_tfvar_map(self, client: Client, plugin_manager: PluginManager) -> dict:
         tfvar_map = copy.deepcopy(MANIFEST_ATTRIBUTES_TFVAR_MAP)
-        tfvar_map_plugin = PluginManager().get_all_plugin_manfiest_tfvar_map(client)
+        tfvar_map_plugin = plugin_manager.get_all_plugin_manfiest_tfvar_map(client)
         utils.merge_dict(tfvar_map, tfvar_map_plugin)
         return tfvar_map
 
@@ -241,13 +284,13 @@ class Manifest:
         if self.tf_helpers.get(tfplan):
             return self.tf_helpers.get(tfplan)
 
-        if not (self.terraform and self.terraform.get(tfplan)):
+        if not (self.software.terraform and self.software.terraform.get(tfplan)):
             raise MissingTerraformInfoException(
                 f"Terraform information missing in manifest for {tfplan}"
             )
 
         tfplan_dir = TERRAFORM_DIR_NAMES.get(tfplan, tfplan)
-        src = self.terraform.get(tfplan).source
+        src = self.software.terraform.get(tfplan).source
         dst = snap.paths.user_common / "etc" / tfplan_dir
         LOG.debug(f"Updating {dst} from {src}...")
         shutil.copytree(src, dst, dirs_exist_ok=True)
@@ -370,7 +413,7 @@ class Manifest:
 
         # handle tfvars for charms section
         for charm, per_charm_tfvar_map in charms_tfvar_map.items():
-            charm_ = self.charms.get(charm)
+            charm_ = self.software.charms.get(charm)
             if charm_:
                 manifest_charm = asdict(charm_)
                 for charm_attribute, tfvar_name in per_charm_tfvar_map.items():

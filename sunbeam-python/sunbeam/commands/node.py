@@ -14,8 +14,7 @@
 # limitations under the License.
 
 import logging
-from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 import click
 import yaml
@@ -155,12 +154,6 @@ def add(ctx: click.Context, name: str, format: str) -> None:
 
 @click.command()
 @click.option("-a", "--accept-defaults", help="Accept all defaults.", is_flag=True)
-@click.option(
-    "-p",
-    "--preseed",
-    help="Preseed file.",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-)
 @click.option("--token", type=str, help="Join token")
 @click.option(
     "--role",
@@ -176,7 +169,6 @@ def join(
     ctx: click.Context,
     token: str,
     roles: List[Role],
-    preseed: Optional[Path] = None,
     accept_defaults: bool = False,
 ) -> None:
     """Join node to the cluster.
@@ -225,6 +217,7 @@ def join(
 
     # Get manifest object once the cluster is joined
     manifest_obj = Manifest.load_latest_from_clusterdb(client, include_defaults=True)
+    preseed = manifest_obj.deployment
 
     machine_id = -1
     machine_id_result = get_step_message(plan1_results, AddJujuMachineStep)
@@ -249,7 +242,7 @@ def join(
                 name,
                 jhelper,
                 accept_defaults=accept_defaults,
-                preseed_file=preseed,
+                deployment_preseed=preseed,
             )
         )
 
@@ -260,7 +253,7 @@ def join(
                 DeployHypervisorApplicationStep(client, manifest_obj, jhelper),
                 AddHypervisorUnitStep(client, name, jhelper),
                 SetLocalHypervisorOptions(
-                    client, name, jhelper, join_mode=True, preseed_file=preseed
+                    client, name, jhelper, join_mode=True, deployment_preseed=preseed
                 ),
             ]
         )

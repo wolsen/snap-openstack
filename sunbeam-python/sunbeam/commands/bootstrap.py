@@ -91,12 +91,6 @@ snap = Snap()
 @click.command()
 @click.option("-a", "--accept-defaults", help="Accept all defaults.", is_flag=True)
 @click.option(
-    "-p",
-    "--preseed",
-    help="Preseed file.",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-)
-@click.option(
     "-m",
     "--manifest",
     help="Manifest file.",
@@ -138,7 +132,6 @@ def bootstrap(
     topology: str,
     database: str,
     manifest: Optional[Path] = None,
-    preseed: Optional[Path] = None,
     accept_defaults: bool = False,
 ) -> None:
     """Bootstrap the local node.
@@ -156,7 +149,9 @@ def bootstrap(
     else:
         manifest_obj = Manifest.get_default_manifest(client)
 
-    LOG.debug(f"Manifest used for deployment: {manifest_obj}")
+    LOG.debug(f"Manifest used for deployment - preseed: {manifest_obj.deployment}")
+    LOG.debug(f"Manifest used for deployment - software: {manifest_obj.software}")
+    preseed = manifest_obj.deployment
 
     # Bootstrap node must always have the control role
     if Role.CONTROL not in roles:
@@ -174,7 +169,7 @@ def bootstrap(
 
     cloud_type = snap.config.get("juju.cloud.type")
     cloud_name = snap.config.get("juju.cloud.name")
-    juju_bootstrap_args = manifest_obj.juju.bootstrap_args
+    juju_bootstrap_args = manifest_obj.software.juju.bootstrap_args
     data_location = snap.paths.user_data
 
     preflight_checks = []
@@ -204,7 +199,7 @@ def bootstrap(
             CONTROLLER,
             bootstrap_args=juju_bootstrap_args,
             accept_defaults=accept_defaults,
-            preseed_file=preseed,
+            deployment_preseed=preseed,
         )
     )
     run_plan(plan, console)
@@ -240,7 +235,7 @@ def bootstrap(
             manifest_obj,
             jhelper,
             accept_defaults=accept_defaults,
-            preseed_file=preseed,
+            deployment_preseed=preseed,
         )
     )
     plan4.append(AddMicrok8sUnitStep(client, fqdn, jhelper))
@@ -258,7 +253,7 @@ def bootstrap(
                 fqdn,
                 jhelper,
                 accept_defaults=accept_defaults,
-                preseed_file=preseed,
+                deployment_preseed=preseed,
             )
         )
 

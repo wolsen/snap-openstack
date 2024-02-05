@@ -434,7 +434,7 @@ class UserQuestions(BaseStep):
         self,
         client: Client,
         answer_file: str,
-        preseed_file: str | None = None,
+        deployment_preseed: dict | None = None,
         accept_defaults: bool = False,
     ):
         super().__init__(
@@ -442,7 +442,7 @@ class UserQuestions(BaseStep):
         )
         self.client = client
         self.accept_defaults = accept_defaults
-        self.preseed_file = preseed_file
+        self.preseed = deployment_preseed or {}
         self.answer_file = answer_file
 
     def has_prompts(self) -> bool:
@@ -462,14 +462,11 @@ class UserQuestions(BaseStep):
         for section in ["user", "external_network"]:
             if not self.variables.get(section):
                 self.variables[section] = {}
-        if self.preseed_file:
-            preseed = sunbeam.jobs.questions.read_preseed(Path(self.preseed_file))
-        else:
-            preseed = {}
+
         user_bank = sunbeam.jobs.questions.QuestionBank(
             questions=user_questions(),
             console=console,
-            preseed=preseed.get("user"),
+            preseed=self.preseed.get("user"),
             previous_answers=self.variables.get("user"),
             accept_defaults=self.accept_defaults,
         )
@@ -481,7 +478,7 @@ class UserQuestions(BaseStep):
             ext_net_bank = sunbeam.jobs.questions.QuestionBank(
                 questions=ext_net_questions_local_only(),
                 console=console,
-                preseed=preseed.get("external_network"),
+                preseed=self.preseed.get("external_network"),
                 previous_answers=self.variables.get("external_network"),
                 accept_defaults=self.accept_defaults,
             )
@@ -489,7 +486,7 @@ class UserQuestions(BaseStep):
             ext_net_bank = sunbeam.jobs.questions.QuestionBank(
                 questions=ext_net_questions(),
                 console=console,
-                preseed=preseed.get("external_network"),
+                preseed=self.preseed.get("external_network"),
                 previous_answers=self.variables.get("external_network"),
                 accept_defaults=self.accept_defaults,
             )
@@ -633,7 +630,7 @@ class SetLocalHypervisorOptions(BaseStep):
         name: str,
         jhelper: JujuHelper,
         join_mode: bool = False,
-        preseed_file: Path | None = None,
+        deployment_preseed: dict | None = None,
     ):
         super().__init__(
             "Apply local hypervisor settings", "Applying local hypervisor settings"
@@ -642,8 +639,7 @@ class SetLocalHypervisorOptions(BaseStep):
         self.name = name
         self.jhelper = jhelper
         self.join_mode = join_mode
-        self.preseed_file = preseed_file
-        self.preseed_file = preseed_file
+        self.preseed = deployment_preseed or {}
 
     def has_prompts(self) -> bool:
         return True
@@ -686,14 +682,10 @@ class SetLocalHypervisorOptions(BaseStep):
         remote_access_location = self.variables.get("user", {}).get(
             "remote_access_location"
         )
-        if self.preseed_file:
-            preseed = sunbeam.jobs.questions.read_preseed(self.preseed_file)
-        else:
-            preseed = {}
         # If adding new nodes to the cluster then local access makes no sense
         # so always prompt for the nic.
         if self.join_mode or remote_access_location == utils.REMOTE_ACCESS:
-            ext_net_preseed = preseed.get("external_network", {})
+            ext_net_preseed = self.preseed.get("external_network", {})
             # If nic is in the preseed assume the user knows what they are doing and
             # bypass validation
             if ext_net_preseed.get("nic"):
@@ -730,7 +722,7 @@ class SetLocalHypervisorOptions(BaseStep):
 def _configure(
     client: Client,
     openrc: Optional[Path] = None,
-    preseed: Optional[Path] = None,
+    manifest: Optional[Path] = None,
     accept_defaults: bool = False,
 ):
     preflight_checks = []
@@ -738,13 +730,26 @@ def _configure(
     preflight_checks.append(VerifyBootstrappedCheck(client))
     run_preflight_checks(preflight_checks, console)
 
-    manifest_obj = Manifest.load_latest_from_clusterdb(client, include_defaults=True)
+    # Validate manifest file
+    manifest_obj = None
+    if manifest:
+        manifest_obj = Manifest.load(
+            client, manifest_file=manifest, include_defaults=True
+        )
+    else:
+        manifest_obj = Manifest.load_latest_from_clusterdb(
+            client, include_defaults=True
+        )
+
+    LOG.debug(f"Manifest used for deployment - preseed: {manifest_obj.deployment}")
+    LOG.debug(f"Manifest used for deployment - software: {manifest_obj.software}")
+    preseed = manifest_obj.deployment or {}
 
     name = utils.get_fqdn()
     tfplan = "demo-setup"
     tfplan_dir = TERRAFORM_DIR_NAMES.get(tfplan)
     snap = Snap()
-    manifest_tfplans = manifest_obj.terraform
+    manifest_tfplans = manifest_obj.software.terraform
     src = manifest_tfplans.get(tfplan).source
     dst = snap.paths.user_common / "etc" / tfplan_dir
     try:
@@ -776,7 +781,7 @@ def _configure(
         UserQuestions(
             client,
             answer_file=answer_file,
-            preseed_file=preseed,
+            deployment_preseed=preseed,
             accept_defaults=accept_defaults,
         ),
         TerraformDemoInitStep(client, tfhelper),
@@ -805,7 +810,7 @@ def _configure(
                 # Accept preseed file but do not allow 'accept_defaults' as nic
                 # selection may vary from machine to machine and is potentially
                 # destructive if it takes over an unintended nic.
-                preseed_file=preseed,
+                deployment_preseed=preseed,
             )
         )
     run_plan(plan, console)
@@ -815,9 +820,9 @@ def _configure(
 @click.pass_context
 @click.option("-a", "--accept-defaults", help="Accept all defaults.", is_flag=True)
 @click.option(
-    "-p",
-    "--preseed",
-    help="Preseed file.",
+    "-m",
+    "--manifest",
+    help="Manifest file.",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
 @click.option(
@@ -829,14 +834,14 @@ def _configure(
 def configure(
     ctx: click.Context,
     openrc: Optional[Path] = None,
-    preseed: Optional[Path] = None,
+    manifest: Optional[Path] = None,
     accept_defaults: bool = False,
 ) -> None:
     """Configure cloud with some sensible defaults."""
     if ctx.invoked_subcommand is not None:
         return
     client: Client = ctx.obj
-    _configure(client, openrc, preseed, accept_defaults)
+    _configure(client, openrc, manifest, accept_defaults)
     for name, command in configure.commands.items():
         LOG.debug("Running configure %r", name)
         cmd_ctx = click.Context(

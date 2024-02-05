@@ -32,7 +32,7 @@ from sunbeam.commands.openstack import OPENSTACK_MODEL
 from sunbeam.commands.terraform import TerraformException, TerraformInitStep
 from sunbeam.jobs.common import BaseStep, Result, ResultType, run_plan
 from sunbeam.jobs.juju import JujuHelper
-from sunbeam.jobs.manifest import Manifest
+from sunbeam.jobs.manifest import Manifest, SoftwareConfig
 from sunbeam.plugins.interface.v1.base import PluginRequirement
 from sunbeam.plugins.interface.v1.openstack import (
     OpenStackControlPlanePlugin,
@@ -81,7 +81,7 @@ class CaasConfigureStep(BaseStep):
         try:
             override_tfvars = {}
             try:
-                manifest_caas_config = asdict(self.manifest.caas_config)
+                manifest_caas_config = asdict(self.manifest.software.caas_config)
                 for caas_config_attribute, tfvar_name in (
                     self.tfvar_map.get(self.tfplan, {}).get("caas_config", {}).items()
                 ):
@@ -156,14 +156,14 @@ class CaasPlugin(OpenStackControlPlanePlugin):
             },
         }
 
-    def add_manifest_section(self, manifest: Manifest) -> None:
+    def add_manifest_section(self, software_config: SoftwareConfig) -> None:
         """Adds manifest section"""
         try:
-            _caas_config = manifest.caas_config
-            manifest.caas_config = CaasConfig(**_caas_config)
+            _caas_config = software_config.caas_config
+            software_config.caas_config = CaasConfig(**_caas_config)
         except AttributeError:
             # Attribute not defined in manifest
-            manifest.caas_config = CaasConfig()
+            software_config.caas_config = CaasConfig()
 
     def set_application_names(self) -> list:
         """Application names handled by the terraform plan."""

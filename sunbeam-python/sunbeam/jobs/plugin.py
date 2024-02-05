@@ -279,11 +279,11 @@ class PluginManager:
         return tfvar_map
 
     @classmethod
-    def add_manifest_section(cls, client, manifest) -> None:
+    def add_manifest_section(cls, client, software_config) -> None:
         plugins = cls.get_all_plugin_classes()
         for klass in plugins:
             plugin = klass(client)
-            plugin.add_manifest_section(manifest)
+            plugin.add_manifest_section(software_config)
 
     @classmethod
     def get_all_charms_in_openstack_plan(cls, client: Client) -> list:

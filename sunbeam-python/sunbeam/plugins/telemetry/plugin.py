@@ -54,6 +54,7 @@ class TelemetryPlugin(OpenStackControlPlanePlugin):
                 "aodh-k8s": {"channel": OPENSTACK_CHANNEL},
                 "gnocchi-k8s": {"channel": OPENSTACK_CHANNEL},
                 "ceilometer-k8s": {"channel": OPENSTACK_CHANNEL},
+                "openstack-exporter-k8s": {"channel": OPENSTACK_CHANNEL},
             }
         }
 
@@ -76,6 +77,11 @@ class TelemetryPlugin(OpenStackControlPlanePlugin):
                         "channel": "ceilometer-channel",
                         "revision": "ceilometer-revision",
                         "config": "ceilometer-config",
+                    },
+                    "openstack-exporter-k8s": {
+                        "channel": "openstack-exporter-channel",
+                        "revision": "openstack-exporter-revision",
+                        "config": "openstack-exporter-config",
                     },
                 }
             }

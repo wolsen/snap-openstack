@@ -303,7 +303,7 @@ class BootstrapJujuStep(BaseStep, JujuStepHelper):
         cloud_type: str,
         controller: str,
         bootstrap_args: list = [],
-        preseed_file: Optional[Path] = None,
+        deployment_preseed: dict | None = None,
         accept_defaults: bool = False,
     ):
         super().__init__("Bootstrap Juju", "Bootstrapping Juju onto machine")
@@ -312,7 +312,7 @@ class BootstrapJujuStep(BaseStep, JujuStepHelper):
         self.cloud_type = cloud_type
         self.controller = controller
         self.bootstrap_args = bootstrap_args
-        self.preseed_file = preseed_file
+        self.preseed = deployment_preseed or {}
         self.accept_defaults = accept_defaults
         self.juju_clouds = []
         self.client = client
@@ -330,14 +330,10 @@ class BootstrapJujuStep(BaseStep, JujuStepHelper):
         self.variables = questions.load_answers(self.client, self._CONFIG)
         self.variables.setdefault("bootstrap", {})
 
-        if self.preseed_file:
-            preseed = questions.read_preseed(self.preseed_file)
-        else:
-            preseed = {}
         bootstrap_bank = questions.QuestionBank(
             questions=bootstrap_questions(),
             console=console,  # type: ignore
-            preseed=preseed.get("bootstrap"),
+            preseed=self.preseed.get("bootstrap"),
             previous_answers=self.variables.get("bootstrap", {}),
             accept_defaults=self.accept_defaults,
         )

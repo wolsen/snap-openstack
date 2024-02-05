@@ -15,7 +15,6 @@
 
 import ipaddress
 import logging
-from pathlib import Path
 from typing import Optional
 
 import yaml
@@ -94,7 +93,7 @@ class DeployMicrok8sApplicationStep(DeployMachineApplicationStep):
         client: Client,
         manifest: Manifest,
         jhelper: JujuHelper,
-        preseed_file: Optional[Path] = None,
+        deployment_preseed: dict | None = None,
         accept_defaults: bool = False,
         refresh: bool = False,
     ):
@@ -111,7 +110,7 @@ class DeployMicrok8sApplicationStep(DeployMachineApplicationStep):
             refresh,
         )
 
-        self.preseed_file = preseed_file
+        self.preseed = deployment_preseed or {}
         self.accept_defaults = accept_defaults
         self.variables = {}
 
@@ -128,14 +127,10 @@ class DeployMicrok8sApplicationStep(DeployMachineApplicationStep):
         self.variables = questions.load_answers(self.client, self._ADDONS_CONFIG)
         self.variables.setdefault("addons", {})
 
-        if self.preseed_file:
-            preseed = questions.read_preseed(self.preseed_file)
-        else:
-            preseed = {}
         microk8s_addons_bank = questions.QuestionBank(
             questions=microk8s_addons_questions(),
             console=console,  # type: ignore
-            preseed=preseed.get("addons"),
+            preseed=self.preseed.get("addons"),
             previous_answers=self.variables.get("addons", {}),
             accept_defaults=self.accept_defaults,
         )

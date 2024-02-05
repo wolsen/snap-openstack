@@ -30,52 +30,56 @@ from sunbeam.jobs.common import ResultType
 from sunbeam.versions import OPENSTACK_CHANNEL, TERRAFORM_DIR_NAMES
 
 test_manifest = """
-juju:
-  bootstrap_args:
-    - --agent-version=3.2.4
-charms:
-  keystone-k8s:
-    channel: 2023.1/stable
-    revision: 234
-    config:
-      debug: True
-  glance-k8s:
-    channel: 2023.1/stable
-    revision: 134
-terraform:
-  openstack-plan:
-    source: /home/ubuntu/openstack-tf
-  hypervisor-plan:
-    source: /home/ubuntu/hypervisor-tf
+software:
+  juju:
+    bootstrap_args:
+      - --agent-version=3.2.4
+  charms:
+    keystone-k8s:
+      channel: 2023.1/stable
+      revision: 234
+      config:
+        debug: True
+    glance-k8s:
+      channel: 2023.1/stable
+      revision: 134
+  terraform:
+    openstack-plan:
+      source: /home/ubuntu/openstack-tf
+    hypervisor-plan:
+      source: /home/ubuntu/hypervisor-tf
 """
 
 malformed_test_manifest = """
-charms:
-  keystone-k8s:
-    channel: 2023.1/stable
-    revision: 234
-    conf
+software:
+  charms:
+    keystone-k8s:
+      channel: 2023.1/stable
+      revision: 234
+      conf
 """
 
 test_manifest_invalid_values = """
-charms:
-  keystone-k8s:
-    channel: 2023.1/stable
-    revision: 234
-    # Config value should be dictionary but provided str
-    config: debug
+software:
+  charms:
+    keystone-k8s:
+      channel: 2023.1/stable
+      revision: 234
+      # Config value should be dictionary but provided str
+      config: debug
 """
 
 test_manifest_incorrect_terraform_key = """
-charms:
-  keystone-k8s:
-    channel: 2023.1/stable
-    revision: 234
-    config:
-      debug: True
-terraform:
-  fake-plan:
-    source: /home/ubuntu/tfplan
+software:
+  charms:
+    keystone-k8s:
+      channel: 2023.1/stable
+      revision: 234
+      config:
+        debug: True
+  terraform:
+    fake-plan:
+      source: /home/ubuntu/tfplan
 """
 
 
@@ -114,18 +118,18 @@ class TestManifest:
         manifest_file = tmpdir.mkdir("manifests").join("test_manifest.yaml")
         manifest_file.write(test_manifest)
         manifest_obj = manifest.Manifest.load(cclient, manifest_file)
-        ks_manifest = manifest_obj.charms.get("keystone-k8s")
+        ks_manifest = manifest_obj.software.charms.get("keystone-k8s")
         assert ks_manifest.channel == "2023.1/stable"
         assert ks_manifest.revision == 234
         assert ks_manifest.config == {"debug": True}
 
         # Assert defaults does not exist
-        assert "nova" not in manifest_obj.charms.keys()
+        assert "nova" not in manifest_obj.software.charms.keys()
 
         test_manifest_dict = yaml.safe_load(test_manifest)
-        assert manifest_obj.juju.bootstrap_args == test_manifest_dict.get(
-            "juju", {}
-        ).get("bootstrap_args", [])
+        assert manifest_obj.software.juju.bootstrap_args == test_manifest_dict.get(
+            "software", {}
+        ).get("juju", {}).get("bootstrap_args", [])
 
     def test_load_on_default(self, mocker, snap, cclient, pluginmanager, tmpdir):
         mocker.patch.object(manifest, "Snap", return_value=snap)
@@ -136,13 +140,13 @@ class TestManifest:
         )
 
         # Check updates from manifest file
-        ks_manifest = manifest_obj.charms.get("keystone-k8s")
+        ks_manifest = manifest_obj.software.charms.get("keystone-k8s")
         assert ks_manifest.channel == "2023.1/stable"
         assert ks_manifest.revision == 234
         assert ks_manifest.config == {"debug": True}
 
         # Check default ones
-        nova_manifest = manifest_obj.charms.get("nova-k8s")
+        nova_manifest = manifest_obj.software.charms.get("nova-k8s")
         assert nova_manifest.channel == OPENSTACK_CHANNEL
         assert nova_manifest.revision is None
         assert nova_manifest.config is None
@@ -151,13 +155,13 @@ class TestManifest:
         mocker.patch.object(manifest, "Snap", return_value=snap)
         cclient.cluster.get_latest_manifest.return_value = {"data": test_manifest}
         manifest_obj = manifest.Manifest.load_latest_from_clusterdb(cclient)
-        ks_manifest = manifest_obj.charms.get("keystone-k8s")
+        ks_manifest = manifest_obj.software.charms.get("keystone-k8s")
         assert ks_manifest.channel == "2023.1/stable"
         assert ks_manifest.revision == 234
         assert ks_manifest.config == {"debug": True}
 
         # Assert defaults does not exist
-        assert "nova-k8s" not in manifest_obj.charms.keys()
+        assert "nova-k8s" not in manifest_obj.software.charms.keys()
 
     def test_load_latest_from_clusterdb_on_default(
         self, mocker, snap, cclient, pluginmanager
@@ -167,13 +171,13 @@ class TestManifest:
         manifest_obj = manifest.Manifest.load_latest_from_clusterdb(
             cclient, include_defaults=True
         )
-        ks_manifest = manifest_obj.charms.get("keystone-k8s")
+        ks_manifest = manifest_obj.software.charms.get("keystone-k8s")
         assert ks_manifest.channel == "2023.1/stable"
         assert ks_manifest.revision == 234
         assert ks_manifest.config == {"debug": True}
 
         # Check default ones
-        nova_manifest = manifest_obj.charms.get("nova-k8s")
+        nova_manifest = manifest_obj.software.charms.get("nova-k8s")
         assert nova_manifest.channel == OPENSTACK_CHANNEL
         assert nova_manifest.revision is None
         assert nova_manifest.config is None
@@ -181,7 +185,7 @@ class TestManifest:
     def test_get_default_manifest(self, mocker, snap, cclient, pluginmanager):
         mocker.patch.object(manifest, "Snap", return_value=snap)
         default_manifest = manifest.Manifest.get_default_manifest(cclient)
-        nova_manifest = default_manifest.charms.get("nova-k8s")
+        nova_manifest = default_manifest.software.charms.get("nova-k8s")
         assert nova_manifest.channel == OPENSTACK_CHANNEL
         assert nova_manifest.revision is None
         assert nova_manifest.config is None
@@ -243,7 +247,8 @@ class TestManifest:
         test_manifest_dict = yaml.safe_load(test_manifest)
         copytree.assert_called_once_with(
             Path(
-                test_manifest_dict.get("terraform", {})
+                test_manifest_dict.get("software", "")
+                .get("terraform", {})
                 .get("openstack-plan", {})
                 .get("source")
             ),
