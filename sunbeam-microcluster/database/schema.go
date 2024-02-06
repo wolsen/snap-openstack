@@ -14,6 +14,7 @@ var SchemaExtensions = map[int]schema.Update{
 	1: NodesSchemaUpdate,
 	2: ConfigSchemaUpdate,
 	3: JujuUserSchemaUpdate,
+	4: AddSystemIDToNodes,
 }
 
 // NodesSchemaUpdate is schema for table nodes
@@ -60,6 +61,17 @@ CREATE TABLE jujuuser (
   token                         TEXT     NOT  NULL,
   UNIQUE(username)
 );
+  `
+
+	_, err := tx.Exec(stmt)
+
+	return err
+}
+
+// AddSystemIDToNodes is schema update for table nodes
+func AddSystemIDToNodes(_ context.Context, tx *sql.Tx) error {
+	stmt := `
+ALTER TABLE nodes ADD COLUMN system_id TEXT default '';
   `
 
 	_, err := tx.Exec(stmt)

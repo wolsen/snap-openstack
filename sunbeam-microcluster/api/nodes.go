@@ -70,7 +70,7 @@ func cmdNodesPost(s *state.State, r *http.Request) response.Response {
 		return response.InternalError(err)
 	}
 
-	err = sunbeam.AddNode(s, req.Name, req.Role, req.MachineID)
+	err = sunbeam.AddNode(s, req.Name, req.Role, req.MachineID, req.SystemID)
 	if err != nil {
 		return response.InternalError(err)
 	}
@@ -91,7 +91,7 @@ func cmdNodesPut(s *state.State, r *http.Request) response.Response {
 		return response.InternalError(err)
 	}
 
-	err = sunbeam.UpdateNode(s, name, req.Role, req.MachineID)
+	err = sunbeam.UpdateNode(s, name, req.Role, req.MachineID, req.SystemID)
 	if err != nil {
 		return response.InternalError(err)
 	}

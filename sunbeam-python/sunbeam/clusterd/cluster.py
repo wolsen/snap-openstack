@@ -15,7 +15,7 @@
 
 import json
 import logging
-from typing import Any, List, Optional, Union
+from typing import Any, List, Union
 
 from requests import codes
 from requests.models import HTTPError
@@ -107,9 +107,16 @@ class MicroClusterService(service.BaseService):
 class ExtendedAPIService(service.BaseService):
     """Client for Sunbeam extended Cluster API."""
 
-    def add_node_info(self, name: str, role: List[str], machineid: int = -1) -> None:
+    def add_node_info(
+        self, name: str, role: List[str], machineid: int = -1, systemid: str = ""
+    ) -> None:
         """Add Node information to cluster database."""
-        data = {"name": name, "role": role, "machineid": machineid}
+        data = {
+            "name": name,
+            "role": role,
+            "machineid": machineid,
+            "systemid": systemid,
+        }
         self._post("/1.0/nodes", data=json.dumps(data))
 
     def list_nodes(self) -> list[dict]:
@@ -126,10 +133,14 @@ class ExtendedAPIService(service.BaseService):
         self._delete(f"1.0/nodes/{name}")
 
     def update_node_info(
-        self, name: str, role: Optional[List[str]] = None, machineid: int = -1
+        self,
+        name: str,
+        role: list[str] | None = None,
+        machineid: int = -1,
+        systemid: str = "",
     ) -> None:
         """Update role and machineid for node."""
-        data = {"role": role, "machineid": machineid}
+        data = {"role": role, "machineid": machineid, "systemid": systemid}
         self._put(f"1.0/nodes/{name}", data=json.dumps(data))
 
     def add_juju_user(self, name: str, token: str) -> None:

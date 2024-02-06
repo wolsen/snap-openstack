@@ -521,8 +521,8 @@ class TestMaasBootstrapJujuStep:
         mocker.patch(
             "sunbeam.commands.maas.list_machines",
             return_value=[
-                {"hostname": "machine1"},
-                {"hostname": "machine2"},
+                {"hostname": "machine1", "system_id": "1st"},
+                {"hostname": "machine2", "system_id": "2nd"},
             ],
         )
         mocker.patch(
@@ -539,14 +539,14 @@ class TestMaasBootstrapJujuStep:
         result = step.is_skip()
         assert result.result_type == ResultType.COMPLETED
         assert "--to" in step.bootstrap_args
-        assert step.bootstrap_args[-1] == "machine1"
+        assert step.bootstrap_args[-1].endswith("1st")
 
     def test_is_skip_with_single_machine(self, mocker):
         maas_client = Mock()
         mocker.patch(
             "sunbeam.commands.maas.list_machines",
             return_value=[
-                {"hostname": "machine1"},
+                {"hostname": "machine1", "system_id": "1st"},
             ],
         )
         mocker.patch(
@@ -563,7 +563,7 @@ class TestMaasBootstrapJujuStep:
         result = step.is_skip()
         assert result.result_type == ResultType.COMPLETED
         assert "--to" in step.bootstrap_args
-        assert step.bootstrap_args[-1] == "machine1"
+        assert step.bootstrap_args[-1].endswith("1st")
 
 
 class TestMaasScaleJujuStep:
@@ -660,9 +660,18 @@ class TestMaasScaleJujuStep:
         step = MaasScaleJujuStep(maas_client, controller)
         step.n = 3
         mocker.patch.object(
-            step, "get_controller", return_value={"controller-machines": [1, 2]}
+            step,
+            "get_controller",
+            return_value={"controller-machines": {"1": {"instance-id": "1st"}}},
         )
-        mocker.patch("sunbeam.commands.maas.list_machines", return_value=[1, 2, 3])
+        mocker.patch(
+            "sunbeam.commands.maas.list_machines",
+            return_value=[
+                {"hostname": "machine1", "system_id": "1st"},
+                {"hostname": "machine2", "system_id": "2nd"},
+                {"hostname": "machine3", "system_id": "3rd"},
+            ],
+        )
         result = step.is_skip()
         assert result.result_type == ResultType.COMPLETED
 
@@ -705,8 +714,16 @@ class TestMaasAddMachinesToClusterdStep:
 
     def test_run_with_machines_and_nodes(self, maas_add_machines_to_clusterd_step):
         maas_add_machines_to_clusterd_step.machines = [
-            {"hostname": "machine1", "roles": [RoleTags.CONTROL.value]},
-            {"hostname": "machine2", "roles": [RoleTags.COMPUTE.value]},
+            {
+                "hostname": "machine1",
+                "roles": [RoleTags.CONTROL.value],
+                "system_id": "1st",
+            },
+            {
+                "hostname": "machine2",
+                "roles": [RoleTags.COMPUTE.value],
+                "system_id": "2nd",
+            },
         ]
         maas_add_machines_to_clusterd_step.nodes = [
             ("machine1", [RoleTags.CONTROL.value]),
@@ -755,8 +772,8 @@ class TestMaasDeployMachinesStep:
 
     def test_run(self, maas_deploy_machines_step):
         maas_deploy_machines_step.nodes_to_deploy = [
-            {"name": "test_node1"},
-            {"name": "test_node2"},
+            {"name": "test_node1", "systemid": "1st"},
+            {"name": "test_node2", "systemid": "2nd"},
         ]
         maas_deploy_machines_step.nodes_to_update = [
             {"name": "test_node3"},
