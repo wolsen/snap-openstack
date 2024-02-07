@@ -58,14 +58,14 @@ from sunbeam.commands.juju import (
     SaveJujuUserLocallyStep,
 )
 from sunbeam.commands.microceph import (
-    AddMicrocephUnitStep,
+    AddMicrocephUnitsStep,
     ConfigureMicrocephOSDStep,
     DeployMicrocephApplicationStep,
     RemoveMicrocephUnitStep,
 )
 from sunbeam.commands.microk8s import (
     AddMicrok8sCloudStep,
-    AddMicrok8sUnitStep,
+    AddMicrok8sUnitsStep,
     DeployMicrok8sApplicationStep,
     RemoveMicrok8sUnitStep,
     StoreMicrok8sConfigStep,
@@ -77,7 +77,7 @@ from sunbeam.commands.openstack import (
     PatchLoadBalancerServicesStep,
 )
 from sunbeam.commands.sunbeam_machine import (
-    AddSunbeamMachineUnitStep,
+    AddSunbeamMachineUnitsStep,
     DeploySunbeamMachineApplicationStep,
     RemoveSunbeamMachineStep,
 )
@@ -321,7 +321,7 @@ def bootstrap(
     plan4.append(
         DeploySunbeamMachineApplicationStep(client, tfhelper_sunbeam_machine, jhelper)
     )
-    plan4.append(AddSunbeamMachineUnitStep(client, fqdn, jhelper))
+    plan4.append(AddSunbeamMachineUnitsStep(client, fqdn, jhelper))
     # Deploy Microk8s application during bootstrap irrespective of node role.
     plan4.append(TerraformInitStep(tfhelper))
     plan4.append(
@@ -333,7 +333,7 @@ def bootstrap(
             preseed_file=preseed,
         )
     )
-    plan4.append(AddMicrok8sUnitStep(client, fqdn, jhelper))
+    plan4.append(AddMicrok8sUnitsStep(client, fqdn, jhelper))
     plan4.append(StoreMicrok8sConfigStep(client, jhelper))
     plan4.append(AddMicrok8sCloudStep(client, jhelper))
     # Deploy Microceph application during bootstrap irrespective of node role.
@@ -343,7 +343,7 @@ def bootstrap(
     )
 
     if is_storage_node:
-        plan4.append(AddMicrocephUnitStep(client, fqdn, jhelper))
+        plan4.append(AddMicrocephUnitsStep(client, fqdn, jhelper))
         plan4.append(
             ConfigureMicrocephOSDStep(
                 client,
@@ -550,14 +550,14 @@ def join(
     plan2 = []
     plan2.append(ClusterUpdateNodeStep(client, name, machine_id=machine_id))
     plan2.append(
-        AddSunbeamMachineUnitStep(client, name, jhelper),
+        AddSunbeamMachineUnitsStep(client, name, jhelper),
     )
 
     if is_control_node:
-        plan2.append(AddMicrok8sUnitStep(client, name, jhelper))
+        plan2.append(AddMicrok8sUnitsStep(client, name, jhelper))
 
     if is_storage_node:
-        plan2.append(AddMicrocephUnitStep(client, name, jhelper))
+        plan2.append(AddMicrocephUnitsStep(client, name, jhelper))
         plan2.append(
             ConfigureMicrocephOSDStep(
                 client,

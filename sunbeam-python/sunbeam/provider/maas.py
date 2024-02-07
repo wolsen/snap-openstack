@@ -15,6 +15,7 @@
 
 
 import logging
+import shutil
 import sys
 from collections import Counter
 from datetime import datetime
@@ -27,18 +28,35 @@ from rich.console import Console
 from rich.table import Table
 from snaphelpers import Snap
 
+from sunbeam.clusterd.client import Client
 from sunbeam.commands import resize as resize_cmds
 from sunbeam.commands import utils
+from sunbeam.commands.bootstrap_state import SetBootstrapped
 from sunbeam.commands.clusterd import DeploySunbeamClusterdApplicationStep
 from sunbeam.commands.deployment import Deployment, DeploymentsConfig, deployment_path
-from sunbeam.commands.juju import AddCloudJujuStep, AddCredentialsJujuStep
+from sunbeam.commands.hypervisor import (
+    AddHypervisorUnitStep,
+    DeployHypervisorApplicationStep,
+)
+from sunbeam.commands.juju import (
+    INFRASTRUCTURE_MODEL,
+    AddCloudJujuStep,
+    AddCredentialsJujuStep,
+    AddInfrastructureModelStep,
+)
 from sunbeam.commands.maas import (
     AddMaasDeployment,
     DeploymentMachinesCheck,
+    DeploymentNetworkingCheck,
     DeploymentTopologyCheck,
+    MaasAddMachinesToClusterdStep,
     MaasBootstrapJujuStep,
     MaasClient,
+    MaasConfigureMicrocephOSDStep,
+    MaasDeployMachinesStep,
     MaasDeployment,
+    MaasDeployMicrok8sApplicationStep,
+    MaasSaveClusterdAddressStep,
     MaasSaveControllerStep,
     MaasScaleJujuStep,
     MachineNetworkCheck,
@@ -58,6 +76,25 @@ from sunbeam.commands.maas import (
     str_presenter,
     unmap_space,
 )
+from sunbeam.commands.microceph import (
+    AddMicrocephUnitsStep,
+    DeployMicrocephApplicationStep,
+)
+from sunbeam.commands.microk8s import (
+    AddMicrok8sCloudStep,
+    AddMicrok8sUnitsStep,
+    StoreMicrok8sConfigStep,
+)
+from sunbeam.commands.mysql import ConfigureMySQLStep
+from sunbeam.commands.openstack import (
+    DeployControlPlaneStep,
+    PatchLoadBalancerServicesStep,
+)
+from sunbeam.commands.sunbeam_machine import (
+    AddSunbeamMachineUnitsStep,
+    DeploySunbeamMachineApplicationStep,
+)
+from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
 from sunbeam.jobs.checks import (
     DiagnosticsCheck,
     DiagnosticsResult,
@@ -129,6 +166,7 @@ class MaasProvider(ProviderBase):
     ):
         init.add_command(cluster)
         cluster.add_command(bootstrap)
+        cluster.add_command(deploy)
         cluster.add_command(list_nodes)
         cluster.add_command(resize_cmds.resize)
         deployment.add_command(machine)
@@ -180,7 +218,8 @@ def bootstrap(
     maas_client = MaasClient.from_deployment(deployment)
 
     if not is_maas_deployment(deployment):
-        raise ValueError("Not a MAAS deployment.")
+        click.echo("Not a MAAS deployment.", sys.stderr)
+        sys.exit(1)
 
     preflight_checks = []
     preflight_checks.append(NetworkMappingCompleteCheck(deployment))
@@ -209,6 +248,7 @@ def bootstrap(
     )
     plan.append(
         MaasBootstrapJujuStep(
+            maas_client,
             deployment.name,
             cloud_definition["clouds"][deployment.name]["type"],
             deployment.controller,
@@ -229,16 +269,253 @@ def bootstrap(
     run_plan(plan, console)
 
     if deployment.juju_account is None:
-        raise ValueError("Juju account should have been saved in previous step.")
+        console.print("Juju account should have been saved in previous step.")
+        sys.exit(1)
     if deployment.juju_controller is None:
-        raise ValueError("Controller should have been saved in previous step.")
-
+        console.print("Controller should have been saved in previous step.")
+        sys.exit(1)
     jhelper = JujuHelper(None, Path())  # type: ignore
     jhelper.controller = deployment.get_connected_controller()
     plan2 = []
     plan2.append(DeploySunbeamClusterdApplicationStep(jhelper))
+    plan2.append(MaasSaveClusterdAddressStep(jhelper, deployment.name, deployments))
     run_plan(plan2, console)
+
+    client_url = deployment.clusterd_address
+    if not client_url:
+        console.print("Clusterd address should have been saved in previous step.")
+        sys.exit(1)
+
     console.print("Bootstrap controller components complete.")
+
+
+@click.command()
+@click.option("-a", "--accept-defaults", help="Accept all defaults.", is_flag=True)
+@click.option(
+    "-p",
+    "--preseed",
+    help="Preseed file.",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+def deploy(
+    preseed: Path | None = None,
+    accept_defaults: bool = False,
+) -> None:
+    """Deploy the MAAS-backed deployment.
+
+    Deploy the sunbeam cluster.
+    """
+    snap = Snap()
+    preflight_checks = []
+    preflight_checks.append(JujuSnapCheck())
+    preflight_checks.append(LocalShareCheck())
+    preflight_checks.append(VerifyClusterdNotBootstrappedCheck())
+    run_preflight_checks(preflight_checks, console)
+
+    deployment_location = deployment_path(snap)
+    deployments = DeploymentsConfig.load(deployment_location)
+    deployment = deployments.get_active()
+    maas_client = MaasClient.from_deployment(deployment)
+
+    if not is_maas_deployment(deployment):
+        console.print("Not a MAAS deployment.")
+        sys.exit(1)
+
+    if (
+        deployment.clusterd_address is None
+        or deployment.juju_account is None  # noqa: W503
+        or deployment.juju_controller is None  # noqa: W503
+    ):
+        LOG.error(
+            "Clusterd address: %r, Juju account: %r, Juju controller: %r",
+            deployment.clusterd_address,
+            deployment.juju_account,
+            deployment.juju_controller,
+        )
+        console.print(
+            f"{deployment.name!r} deployment is not complete, was bootstrap completed ?"
+        )
+        sys.exit(1)
+
+    jhelper = JujuHelper(None, Path())  # type: ignore
+    try:
+        jhelper.controller = deployment.get_connected_controller()
+    except OSError as e:
+        console.print(f"Could not connect to controller: {e}")
+        sys.exit(1)
+    clusterd_plan = [MaasSaveClusterdAddressStep(jhelper, deployment.name, deployments)]
+    run_plan(clusterd_plan, console)  # type: ignore
+
+    client = Client.from_http(deployment.clusterd_address)
+    preflight_checks = []
+    preflight_checks.append(NetworkMappingCompleteCheck(deployment))
+    run_preflight_checks(preflight_checks, console)
+    tfplan_dirs = [
+        "deploy-sunbeam-machine",
+        "deploy-microk8s",
+        "deploy-microceph",
+        "deploy-openstack",
+        "deploy-openstack-hypervisor",
+    ]
+
+    deployment_base_dir = snap.paths.user_common / "etc" / deployment.name
+    for tfplan_dir in tfplan_dirs:
+        src = snap.paths.snap / "etc" / tfplan_dir
+        dst = deployment_base_dir / tfplan_dir
+        LOG.debug(f"Updating {dst} from {src}...")
+        shutil.copytree(src, dst, dirs_exist_ok=True)
+    controller_env = dict(
+        JUJU_USERNAME=deployment.juju_account.user,
+        JUJU_PASSWORD=deployment.juju_account.password,
+        JUJU_CONTROLLER_ADDRESSES=",".join(deployment.juju_controller.api_endpoints),
+        JUJU_CA_CERT=deployment.juju_controller.ca_cert,
+    )
+    tfhelper_sunbeam_machine = TerraformHelper(
+        path=deployment_base_dir / "deploy-sunbeam-machine",
+        plan="sunbeam-machine-plan",
+        backend="http",
+        clusterd_address=deployment.clusterd_address,
+        env=controller_env,
+    )
+    tfhelper_microk8s = TerraformHelper(
+        path=deployment_base_dir / "deploy-microk8s",
+        plan="microk8s-plan",
+        backend="http",
+        clusterd_address=deployment.clusterd_address,
+        env=controller_env,
+    )
+    tfhelper_microceph = TerraformHelper(
+        path=deployment_base_dir / "deploy-microceph",
+        plan="microceph-plan",
+        backend="http",
+        clusterd_address=deployment.clusterd_address,
+        env=controller_env,
+    )
+    tfhelper_openstack_deploy = TerraformHelper(
+        path=deployment_base_dir / "deploy-openstack",
+        plan="openstack-plan",
+        backend="http",
+        clusterd_address=deployment.clusterd_address,
+        env=controller_env,
+    )
+    tfhelper_hypervisor_deploy = TerraformHelper(
+        path=deployment_base_dir / "deploy-openstack-hypervisor",
+        plan="hypervisor-plan",
+        backend="http",
+        clusterd_address=deployment.clusterd_address,
+        env=controller_env,
+    )
+
+    plan = []
+    plan.append(AddInfrastructureModelStep(jhelper))
+    plan.append(MaasAddMachinesToClusterdStep(client, maas_client))
+    plan.append(MaasDeployMachinesStep(client, jhelper))
+    run_plan(plan, console)
+
+    def _name_mapper(node: dict) -> str:
+        return node["name"]
+
+    control = list(
+        map(_name_mapper, client.cluster.list_nodes_by_role(RoleTags.CONTROL.value))
+    )
+    nb_control = len(control)
+    compute = list(
+        map(_name_mapper, client.cluster.list_nodes_by_role(RoleTags.COMPUTE.value))
+    )
+    nb_compute = len(compute)
+    storage = list(
+        map(_name_mapper, client.cluster.list_nodes_by_role(RoleTags.STORAGE.value))
+    )
+    nb_storage = len(storage)
+    workers = list(set(compute + control + storage))
+
+    if nb_control + nb_compute + nb_storage < 3:
+        console.print(
+            "Deployments needs at least one of each role to work correctly:"
+            f"\n\tcontrol: {len(control)}"
+            f"\n\tcompute: {len(compute)}"
+            f"\n\tstorage: {len(storage)}"
+        )
+        sys.exit(1)
+
+    plan2 = []
+    plan2.append(TerraformInitStep(tfhelper_sunbeam_machine))
+    plan2.append(
+        DeploySunbeamMachineApplicationStep(
+            client,
+            tfhelper_sunbeam_machine,
+            jhelper,
+            INFRASTRUCTURE_MODEL,
+        )
+    )
+    plan2.append(
+        AddSunbeamMachineUnitsStep(client, workers, jhelper, INFRASTRUCTURE_MODEL)
+    )
+    plan2.append(TerraformInitStep(tfhelper_microk8s))
+    plan2.append(
+        MaasDeployMicrok8sApplicationStep(
+            client,
+            maas_client,
+            tfhelper_microk8s,
+            jhelper,
+            str(deployment.network_mapping[Networks.PUBLIC.value]),
+            str(deployment.network_mapping[Networks.INTERNAL.value]),
+            INFRASTRUCTURE_MODEL,
+            preseed,
+            accept_defaults,
+        )
+    )
+    plan2.append(AddMicrok8sUnitsStep(client, control, jhelper, INFRASTRUCTURE_MODEL))
+    plan2.append(StoreMicrok8sConfigStep(client, jhelper, INFRASTRUCTURE_MODEL))
+    plan2.append(AddMicrok8sCloudStep(client, jhelper))
+    plan2.append(TerraformInitStep(tfhelper_microceph))
+    plan2.append(
+        DeployMicrocephApplicationStep(
+            client, tfhelper_microceph, jhelper, INFRASTRUCTURE_MODEL
+        )
+    )
+    plan2.append(AddMicrocephUnitsStep(client, storage, jhelper, INFRASTRUCTURE_MODEL))
+    plan2.append(
+        MaasConfigureMicrocephOSDStep(
+            client,
+            maas_client,
+            jhelper,
+            storage,
+            INFRASTRUCTURE_MODEL,
+        )
+    )
+    plan2.append(TerraformInitStep(tfhelper_openstack_deploy))
+    plan2.append(
+        DeployControlPlaneStep(
+            client,
+            tfhelper_openstack_deploy,
+            jhelper,
+            "auto",
+            "auto",  # TODO(gboutry): use the right values
+            INFRASTRUCTURE_MODEL,
+        )
+    )
+    plan2.append(ConfigureMySQLStep(jhelper))
+    plan2.append(PatchLoadBalancerServicesStep(client))
+    plan2.append(TerraformInitStep(tfhelper_hypervisor_deploy))
+    plan2.append(
+        DeployHypervisorApplicationStep(
+            client,
+            tfhelper_hypervisor_deploy,
+            tfhelper_openstack_deploy,
+            jhelper,
+            INFRASTRUCTURE_MODEL,
+        )
+    )
+    plan2.append(AddHypervisorUnitStep(client, compute, jhelper, INFRASTRUCTURE_MODEL))
+    plan2.append(SetBootstrapped(client))
+    run_plan(plan2, console)
+
+    console.print(
+        f"Deployment complete with {nb_control} control,"
+        f" {nb_compute} compute and {nb_storage} storage nodes."
+        f" Total nodes in cluster: {len(workers)}"
+    )
 
 
 @click.command("list")
@@ -352,7 +629,9 @@ def show_machine_cmd(hostname: str, format: str) -> None:
             header.format(
                 "Storage Devices",
             ),
-            ", ".join(f"{tag}({count})" for tag, count in machine["storage"].items()),
+            ", ".join(
+                f"{tag}({len(devices)})" for tag, devices in machine["storage"].items()
+            ),
         )
         table.add_row(header.format("Zone"), machine["zone"])
         table.add_row(header.format("Status"), machine["status"])
@@ -665,6 +944,7 @@ def validate_deployment_cmd():
     validation_checks = [
         DeploymentMachinesCheck(deployment, machines),
         DeploymentTopologyCheck(machines),
+        DeploymentNetworkingCheck(client, deployment),
     ]
     report = _run_maas_meta_checks(validation_checks, console)
     report_path = _save_report(snap, "validate-deployment-" + deployment.name, report)

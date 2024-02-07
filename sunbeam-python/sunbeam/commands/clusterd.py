@@ -449,7 +449,7 @@ class DeploySunbeamClusterdApplicationStep(BaseStep):
             return Result(ResultType.COMPLETED)
         return Result(ResultType.SKIPPED)
 
-    def run(self, status: Status | None) -> Result:
+    def run(self, status: Status | None = None) -> Result:
         """Deploy sunbeam clusterd to controller machines."""
         self.update_status(status, "fetching controller application")
         machines = self._get_controller_machines()

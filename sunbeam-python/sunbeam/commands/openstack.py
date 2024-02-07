@@ -135,6 +135,7 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         jhelper: JujuHelper,
         topology: str,
         database: str,
+        machine_model: str = CONTROLLER_MODEL,
     ):
         super().__init__(
             "Deploying OpenStack Control Plane",
@@ -147,6 +148,7 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         self.model = OPENSTACK_MODEL
         self.cloud = MICROK8S_CLOUD
         self.client = client
+        self.machine_model = machine_model
 
     def get_storage_tfvars(self) -> dict:
         """Create terraform variables related to storage."""
@@ -154,7 +156,7 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         storage_nodes = self.client.cluster.list_nodes_by_role("storage")
         if storage_nodes:
             tfvars["enable-ceph"] = True
-            tfvars["ceph-offer-url"] = f"{CONTROLLER_MODEL}.{MICROCEPH_APPLICATION}"
+            tfvars["ceph-offer-url"] = f"{self.machine_model}.{MICROCEPH_APPLICATION}"
         else:
             tfvars["enable-ceph"] = False
 

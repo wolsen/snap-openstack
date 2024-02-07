@@ -34,7 +34,7 @@ from sunbeam.jobs.juju import (
     run_sync,
 )
 from sunbeam.jobs.steps import (
-    AddMachineUnitStep,
+    AddMachineUnitsStep,
     DeployMachineApplicationStep,
     RemoveMachineUnitStep,
 )
@@ -66,6 +66,7 @@ class DeployMicrocephApplicationStep(DeployMachineApplicationStep):
         client: Client,
         tfhelper: TerraformHelper,
         jhelper: JujuHelper,
+        model: str = MODEL,
     ):
         super().__init__(
             client,
@@ -73,7 +74,7 @@ class DeployMicrocephApplicationStep(DeployMachineApplicationStep):
             jhelper,
             CONFIG_KEY,
             APPLICATION,
-            MODEL,
+            model,
             "Deploy MicroCeph",
             "Deploying MicroCeph",
         )
@@ -82,17 +83,23 @@ class DeployMicrocephApplicationStep(DeployMachineApplicationStep):
         return MICROCEPH_APP_TIMEOUT
 
 
-class AddMicrocephUnitStep(AddMachineUnitStep):
+class AddMicrocephUnitsStep(AddMachineUnitsStep):
     """Add Microceph Unit."""
 
-    def __init__(self, client: Client, name: str, jhelper: JujuHelper):
+    def __init__(
+        self,
+        client: Client,
+        names: list[str] | str,
+        jhelper: JujuHelper,
+        model: str = MODEL,
+    ):
         super().__init__(
             client,
-            name,
+            names,
             jhelper,
             CONFIG_KEY,
             APPLICATION,
-            MODEL,
+            model,
             "Add MicroCeph unit",
             "Adding MicroCeph unit to machine",
         )

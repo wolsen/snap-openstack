@@ -38,7 +38,7 @@ from sunbeam.jobs.juju import (
     run_sync,
 )
 from sunbeam.jobs.steps import (
-    AddMachineUnitStep,
+    AddMachineUnitsStep,
     DeployMachineApplicationStep,
     RemoveMachineUnitStep,
 )
@@ -94,6 +94,7 @@ class DeployMicrok8sApplicationStep(DeployMachineApplicationStep):
         client: Client,
         tfhelper: TerraformHelper,
         jhelper: JujuHelper,
+        model: str = MODEL,
         preseed_file: Optional[Path] = None,
         accept_defaults: bool = False,
     ):
@@ -103,7 +104,7 @@ class DeployMicrok8sApplicationStep(DeployMachineApplicationStep):
             jhelper,
             MICROK8S_CONFIG_KEY,
             APPLICATION,
-            MODEL,
+            model,
             "Deploy MicroK8S",
             "Deploying MicroK8S",
         )
@@ -157,17 +158,23 @@ class DeployMicrok8sApplicationStep(DeployMachineApplicationStep):
         return True
 
 
-class AddMicrok8sUnitStep(AddMachineUnitStep):
+class AddMicrok8sUnitsStep(AddMachineUnitsStep):
     """Add Microk8s Unit."""
 
-    def __init__(self, client: Client, name: str, jhelper: JujuHelper):
+    def __init__(
+        self,
+        client: Client,
+        names: list[str] | str,
+        jhelper: JujuHelper,
+        model: str = MODEL,
+    ):
         super().__init__(
             client,
-            name,
+            names,
             jhelper,
             MICROK8S_CONFIG_KEY,
             APPLICATION,
-            MODEL,
+            model,
             "Add MicroK8S unit",
             "Adding MicroK8S unit to machine",
         )
@@ -238,13 +245,14 @@ class AddMicrok8sCloudStep(BaseStep, JujuStepHelper):
 class StoreMicrok8sConfigStep(BaseStep, JujuStepHelper):
     _CONFIG = MICROK8S_KUBECONFIG_KEY
 
-    def __init__(self, client: Client, jhelper: JujuHelper):
+    def __init__(self, client: Client, jhelper: JujuHelper, model: str = MODEL):
         super().__init__(
             "Store MicroK8S config",
             "Storing MicroK8S configuration in sunbeam database",
         )
         self.client = client
         self.jhelper = jhelper
+        self.model = model
 
     def is_skip(self, status: Optional[Status] = None) -> Result:
         """Determines if the step should be skipped or not.
@@ -262,8 +270,8 @@ class StoreMicrok8sConfigStep(BaseStep, JujuStepHelper):
     def run(self, status: Optional[Status] = None) -> Result:
         """Store MicroK8S config in clusterd."""
         try:
-            unit = run_sync(self.jhelper.get_leader_unit(APPLICATION, MODEL))
-            result = run_sync(self.jhelper.run_action(unit, MODEL, "kubeconfig"))
+            unit = run_sync(self.jhelper.get_leader_unit(APPLICATION, self.model))
+            result = run_sync(self.jhelper.run_action(unit, self.model, "kubeconfig"))
             if not result.get("content"):
                 return Result(
                     ResultType.FAILED,

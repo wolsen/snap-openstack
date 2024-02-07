@@ -112,7 +112,7 @@ class ExtendedAPIService(service.BaseService):
         data = {"name": name, "role": role, "machineid": machineid}
         self._post("/1.0/nodes", data=json.dumps(data))
 
-    def list_nodes(self) -> list:
+    def list_nodes(self) -> list[dict]:
         """List all nodes."""
         nodes = self._get("/1.0/nodes")
         return nodes.get("metadata")
