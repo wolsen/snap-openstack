@@ -28,7 +28,7 @@ from sunbeam.clusterd.service import (
 from sunbeam.commands.juju import JujuStepHelper
 from sunbeam.commands.openstack import OPENSTACK_MODEL
 from sunbeam.commands.openstack_api import guests_on_hypervisor, remove_hypervisor
-from sunbeam.commands.terraform import TerraformException, TerraformHelper
+from sunbeam.commands.terraform import TerraformException
 from sunbeam.jobs.common import BaseStep, Result, ResultType, read_config, update_config
 from sunbeam.jobs.juju import (
     CONTROLLER_MODEL,
@@ -38,6 +38,7 @@ from sunbeam.jobs.juju import (
     TimeoutException,
     run_sync,
 )
+from sunbeam.jobs.manifest import Manifest
 
 LOG = logging.getLogger(__name__)
 CONFIG_KEY = "TerraformVarsHypervisor"
@@ -51,23 +52,24 @@ HYPERVISOR_UNIT_TIMEOUT = (
 class DeployHypervisorApplicationStep(BaseStep, JujuStepHelper):
     """Deploy openstack-hyervisor application using Terraform cloud"""
 
+    _CONFIG = CONFIG_KEY
+
     def __init__(
         self,
         client: Client,
-        tfhelper: TerraformHelper,
-        tfhelper_openstack: TerraformHelper,
+        manifest: Manifest,
         jhelper: JujuHelper,
     ):
         super().__init__(
             "Deploy OpenStack Hypervisor",
             "Deploying OpenStack Hypervisor",
         )
-        self.tfhelper = tfhelper
-        self.tfhelper_openstack = tfhelper_openstack
+        self.manifest = manifest
         self.jhelper = jhelper
         self.client = client
         self.hypervisor_model = CONTROLLER_MODEL.split("/")[-1]
         self.openstack_model = OPENSTACK_MODEL
+        self.tfplan = "hypervisor-plan"
 
     def is_skip(self, status: Optional[Status] = None) -> Result:
         """Determines if the step should be skipped or not.
@@ -91,26 +93,22 @@ class DeployHypervisorApplicationStep(BaseStep, JujuStepHelper):
         except ApplicationNotFoundException as e:
             LOG.debug(str(e))
 
-        try:
-            tfvars = read_config(self.client, CONFIG_KEY)
-        except ConfigItemNotFoundException:
-            tfvars = {}
-
-        openstack_backend_config = self.tfhelper_openstack.backend_config()
-        tfvars.update(
-            {
-                "hypervisor_model": self.hypervisor_model,
-                "openstack_model": self.openstack_model,
-                "machine_ids": machine_ids,
-                "openstack-state-backend": self.tfhelper_openstack.backend,
-                "openstack-state-config": openstack_backend_config,
-            }
-        )
-        update_config(self.client, CONFIG_KEY, tfvars)
-        self.tfhelper.write_tfvars(tfvars)
+        tfhelper_openstack = self.manifest.get_tfhelper("openstack-plan")
+        openstack_backend_config = tfhelper_openstack.backend_config()
+        extra_tfvars = {
+            "hypervisor_model": self.hypervisor_model,
+            "openstack_model": self.openstack_model,
+            "machine_ids": machine_ids,
+            "openstack-state-backend": tfhelper_openstack.backend,
+            "openstack-state-config": openstack_backend_config,
+        }
 
         try:
-            self.tfhelper.apply()
+            self.manifest.update_tfvars_and_apply_tf(
+                tfplan=self.tfplan,
+                tfvar_config=self._CONFIG,
+                override_tfvars=extra_tfvars,
+            )
         except TerraformException as e:
             return Result(ResultType.FAILED, str(e))
 
@@ -324,10 +322,12 @@ class RemoveHypervisorUnitStep(BaseStep, JujuStepHelper):
 class ReapplyHypervisorTerraformPlanStep(BaseStep):
     """Reapply openstack-hyervisor terraform plan"""
 
+    _CONFIG = CONFIG_KEY
+
     def __init__(
         self,
         client: Client,
-        tfhelper: TerraformHelper,
+        manifest: Manifest,
         jhelper: JujuHelper,
         extra_tfvars: dict = {},
     ):
@@ -335,10 +335,11 @@ class ReapplyHypervisorTerraformPlanStep(BaseStep):
             "Reapply OpenStack Hypervisor Terraform plan",
             "Reapply OpenStack Hypervisor Terraform plan",
         )
-        self.tfhelper = tfhelper
+        self.manifest = manifest
         self.jhelper = jhelper
         self.extra_tfvars = extra_tfvars
         self.client = client
+        self.tfplan = "hypervisor-plan"
 
     def is_skip(self, status: Optional[Status] = None) -> Result:
         """Determines if the step should be skipped or not.
@@ -354,16 +355,11 @@ class ReapplyHypervisorTerraformPlanStep(BaseStep):
     def run(self, status: Optional[Status] = None) -> Result:
         """Apply terraform configuration to deploy hypervisor"""
         try:
-            tfvars = read_config(self.client, CONFIG_KEY)
-        except ConfigItemNotFoundException:
-            tfvars = {}
-
-        tfvars.update(self.extra_tfvars)
-        update_config(self.client, CONFIG_KEY, tfvars)
-        self.tfhelper.write_tfvars(tfvars)
-
-        try:
-            self.tfhelper.apply()
+            self.manifest.update_tfvars_and_apply_tf(
+                tfplan=self.tfplan,
+                tfvar_config=self._CONFIG,
+                override_tfvars=self.extra_tfvars,
+            )
         except TerraformException as e:
             return Result(ResultType.FAILED, str(e))
 

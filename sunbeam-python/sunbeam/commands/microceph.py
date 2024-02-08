@@ -15,7 +15,6 @@
 
 import ast
 import logging
-from pathlib import Path
 from typing import Optional
 
 import click
@@ -23,7 +22,6 @@ from rich.console import Console
 from rich.status import Status
 
 from sunbeam.clusterd.client import Client
-from sunbeam.commands.terraform import TerraformHelper
 from sunbeam.jobs import questions
 from sunbeam.jobs.common import BaseStep, Result, ResultType
 from sunbeam.jobs.juju import (
@@ -33,6 +31,7 @@ from sunbeam.jobs.juju import (
     UnitNotFoundException,
     run_sync,
 )
+from sunbeam.jobs.manifest import Manifest
 from sunbeam.jobs.steps import (
     AddMachineUnitStep,
     DeployMachineApplicationStep,
@@ -64,18 +63,21 @@ class DeployMicrocephApplicationStep(DeployMachineApplicationStep):
     def __init__(
         self,
         client: Client,
-        tfhelper: TerraformHelper,
+        manifest: Manifest,
         jhelper: JujuHelper,
+        refresh: bool = False,
     ):
         super().__init__(
             client,
-            tfhelper,
+            manifest,
             jhelper,
             CONFIG_KEY,
             APPLICATION,
             MODEL,
+            "microceph-plan",
             "Deploy MicroCeph",
             "Deploying MicroCeph",
+            refresh,
         )
 
     def get_application_timeout(self) -> int:
@@ -130,14 +132,14 @@ class ConfigureMicrocephOSDStep(BaseStep):
         client: Client,
         name: str,
         jhelper: JujuHelper,
-        preseed_file: Optional[Path] = None,
+        deployment_preseed: dict | None = None,
         accept_defaults: bool = False,
     ):
         super().__init__("Configure MicroCeph storage", "Configuring MicroCeph storage")
         self.client = client
         self.name = name
         self.jhelper = jhelper
-        self.preseed_file = preseed_file
+        self.preseed = deployment_preseed
         self.accept_defaults = accept_defaults
         self.variables = {}
         self.machine_id = ""
@@ -194,24 +196,22 @@ class ConfigureMicrocephOSDStep(BaseStep):
         self.variables.setdefault("microceph_config", {})
         self.variables["microceph_config"].setdefault(self.name, {"osd_devices": ""})
 
-        if self.preseed_file:
-            preseed = questions.read_preseed(self.preseed_file)
-        else:
-            preseed = {}
         # Set defaults
-        preseed.setdefault("microceph_config", {})
-        preseed["microceph_config"].setdefault(self.name, {"osd_devices": None})
+        self.preseed.setdefault("microceph_config", {})
+        self.preseed["microceph_config"].setdefault(self.name, {"osd_devices": None})
 
         # Preseed can have osd_devices as list. If so, change to comma separated str
-        osd_devices = preseed.get("microceph_config").get(self.name).get("osd_devices")
+        osd_devices = (
+            self.preseed.get("microceph_config").get(self.name).get("osd_devices")
+        )
         if isinstance(osd_devices, list):
             osd_devices_str = ",".join(osd_devices)
-            preseed["microceph_config"][self.name]["osd_devices"] = osd_devices_str
+            self.preseed["microceph_config"][self.name]["osd_devices"] = osd_devices_str
 
         microceph_config_bank = questions.QuestionBank(
             questions=self.microceph_config_questions(),
             console=console,  # type: ignore
-            preseed=preseed.get("microceph_config").get(self.name),
+            preseed=self.preseed.get("microceph_config").get(self.name),
             previous_answers=self.variables.get("microceph_config").get(self.name),
             accept_defaults=self.accept_defaults,
         )

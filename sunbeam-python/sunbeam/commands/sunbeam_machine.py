@@ -16,8 +16,8 @@
 import logging
 
 from sunbeam.clusterd.client import Client
-from sunbeam.commands.terraform import TerraformHelper
 from sunbeam.jobs.juju import MODEL, JujuHelper
+from sunbeam.jobs.manifest import Manifest
 from sunbeam.jobs.steps import (
     AddMachineUnitStep,
     DeployMachineApplicationStep,
@@ -39,18 +39,21 @@ class DeploySunbeamMachineApplicationStep(DeployMachineApplicationStep):
     def __init__(
         self,
         client: Client,
-        tfhelper: TerraformHelper,
+        manifest: Manifest,
         jhelper: JujuHelper,
+        refresh: bool = False,
     ):
         super().__init__(
             client,
-            tfhelper,
+            manifest,
             jhelper,
             CONFIG_KEY,
             APPLICATION,
             MODEL,
+            "sunbeam-machine-plan",
             "Deploy sunbeam-machine",
             "Deploying Sunbeam Machine",
+            refresh,
         )
 
     def extra_tfvars(self) -> dict:

@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
-import shutil
 
 import click
 from rich.console import Console
@@ -21,9 +20,10 @@ from snaphelpers import Snap
 
 from sunbeam.clusterd.client import Client
 from sunbeam.commands.openstack import ResizeControlPlaneStep
-from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
+from sunbeam.commands.terraform import TerraformInitStep
 from sunbeam.jobs.common import click_option_topology, run_plan
 from sunbeam.jobs.juju import JujuHelper
+from sunbeam.jobs.manifest import Manifest
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -38,25 +38,15 @@ snap = Snap()
 @click.pass_context
 def resize(ctx: click.Context, topology: str, force: bool = False) -> None:
     """Expand the control plane to fit available nodes."""
-
-    tfplan = "deploy-openstack"
-    src = snap.paths.snap / "etc" / tfplan
-    dst = snap.paths.user_common / "etc" / tfplan
-    LOG.debug(f"Updating {dst} from {src}...")
-    shutil.copytree(src, dst, dirs_exist_ok=True)
-
-    data_location = snap.paths.user_data
     client: Client = ctx.obj
-    tfhelper = TerraformHelper(
-        path=snap.paths.user_common / "etc" / tfplan,
-        plan="openstack-plan",
-        backend="http",
-        data_location=data_location,
-    )
+    manifest_obj = Manifest.load_latest_from_clusterdb(client, include_defaults=True)
+
+    tfplan = "openstack-plan"
+    data_location = snap.paths.user_data
     jhelper = JujuHelper(client, data_location)
     plan = [
-        TerraformInitStep(tfhelper),
-        ResizeControlPlaneStep(client, tfhelper, jhelper, topology, force),
+        TerraformInitStep(manifest_obj.get_tfhelper(tfplan)),
+        ResizeControlPlaneStep(client, manifest_obj, jhelper, topology, force),
     ]
 
     run_plan(plan, console)

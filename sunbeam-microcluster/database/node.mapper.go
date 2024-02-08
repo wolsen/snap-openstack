@@ -106,7 +106,7 @@ func getNodes(ctx context.Context, stmt *sql.Stmt, args ...any) ([]Node, error) 
 	return objects, nil
 }
 
-// getNodes can be used to run handwritten query strings to return a slice of objects.
+// getNodesRaw can be used to run handwritten query strings to return a slice of objects.
 func getNodesRaw(ctx context.Context, tx *sql.Tx, sql string, args ...any) ([]Node, error) {
 	objects := make([]Node, 0)
 

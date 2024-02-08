@@ -14,9 +14,7 @@
 # limitations under the License.
 
 import logging
-import shutil
-from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 import click
 import yaml
@@ -60,7 +58,7 @@ from sunbeam.commands.sunbeam_machine import (
     AddSunbeamMachineUnitStep,
     RemoveSunbeamMachineStep,
 )
-from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
+from sunbeam.commands.terraform import TerraformInitStep
 from sunbeam.jobs.checks import (
     DaemonGroupCheck,
     JujuSnapCheck,
@@ -84,6 +82,7 @@ from sunbeam.jobs.common import (
     validate_roles,
 )
 from sunbeam.jobs.juju import CONTROLLER, JujuHelper
+from sunbeam.jobs.manifest import Manifest
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -155,12 +154,6 @@ def add(ctx: click.Context, name: str, format: str) -> None:
 
 @click.command()
 @click.option("-a", "--accept-defaults", help="Accept all defaults.", is_flag=True)
-@click.option(
-    "-p",
-    "--preseed",
-    help="Preseed file.",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-)
 @click.option("--token", type=str, help="Join token")
 @click.option(
     "--role",
@@ -176,7 +169,6 @@ def join(
     ctx: click.Context,
     token: str,
     roles: List[Role],
-    preseed: Optional[Path] = None,
     accept_defaults: bool = False,
 ) -> None:
     """Join node to the cluster.
@@ -212,31 +204,6 @@ def join(
     controller = CONTROLLER
     data_location = snap.paths.user_data
     client: Client = ctx.obj
-
-    # NOTE: install to user writable location
-    tfplan_dirs = ["deploy-sunbeam-machine"]
-    if is_control_node:
-        tfplan_dirs.extend(["deploy-microk8s", "deploy-microceph", "deploy-openstack"])
-    if is_compute_node:
-        tfplan_dirs.extend(["deploy-openstack-hypervisor"])
-    for tfplan_dir in tfplan_dirs:
-        src = snap.paths.snap / "etc" / tfplan_dir
-        dst = snap.paths.user_common / "etc" / tfplan_dir
-        LOG.debug(f"Updating {dst} from {src}...")
-        shutil.copytree(src, dst, dirs_exist_ok=True)
-
-    tfhelper_openstack_deploy = TerraformHelper(
-        path=snap.paths.user_common / "etc" / "deploy-openstack",
-        plan="openstack-plan",
-        backend="http",
-        data_location=data_location,
-    )
-    tfhelper_hypervisor_deploy = TerraformHelper(
-        path=snap.paths.user_common / "etc" / "deploy-openstack-hypervisor",
-        plan="hypervisor-plan",
-        backend="http",
-        data_location=data_location,
-    )
     jhelper = JujuHelper(client, data_location)
 
     plan1 = [
@@ -247,6 +214,10 @@ def join(
         AddJujuMachineStep(ip),
     ]
     plan1_results = run_plan(plan1, console)
+
+    # Get manifest object once the cluster is joined
+    manifest_obj = Manifest.load_latest_from_clusterdb(client, include_defaults=True)
+    preseed = manifest_obj.deployment
 
     machine_id = -1
     machine_id_result = get_step_message(plan1_results, AddJujuMachineStep)
@@ -271,23 +242,18 @@ def join(
                 name,
                 jhelper,
                 accept_defaults=accept_defaults,
-                preseed_file=preseed,
+                deployment_preseed=preseed,
             )
         )
 
     if is_compute_node:
         plan2.extend(
             [
-                TerraformInitStep(tfhelper_hypervisor_deploy),
-                DeployHypervisorApplicationStep(
-                    client,
-                    tfhelper_hypervisor_deploy,
-                    tfhelper_openstack_deploy,
-                    jhelper,
-                ),
+                TerraformInitStep(manifest_obj.get_tfhelper("hypervisor-plan")),
+                DeployHypervisorApplicationStep(client, manifest_obj, jhelper),
                 AddHypervisorUnitStep(client, name, jhelper),
                 SetLocalHypervisorOptions(
-                    client, name, jhelper, join_mode=True, preseed_file=preseed
+                    client, name, jhelper, join_mode=True, deployment_preseed=preseed
                 ),
             ]
         )
