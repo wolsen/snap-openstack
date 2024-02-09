@@ -63,6 +63,7 @@ class TestDeployControlPlaneStep(unittest.TestCase):
 
     def setUp(self):
         self.jhelper = AsyncMock()
+        self.jhelper.run_action.return_value = {}
         self.manifest = Mock()
         self.client = Mock()
 
@@ -186,6 +187,7 @@ class TestResizeControlPlaneStep(unittest.TestCase):
         )
         self.read_config.start()
         self.jhelper = AsyncMock()
+        self.jhelper.run_action.return_value = {}
         self.manifest = Mock()
 
     def tearDown(self):
@@ -412,16 +414,16 @@ def test_compute_ingress_scale(topology, control_nodes, scale):
 
 
 @pytest.mark.parametrize(
-    "topology,storage_nodes,scale",
+    "osds,scale",
     [
-        ("single", 1, 1),
-        ("multi", 1, 1),
-        ("multi", 9, 3),
-        ("multi", 2, 2),
+        (1, 1),
+        (1, 1),
+        (9, 3),
+        (2, 2),
     ],
 )
-def test_compute_ceph_replica_scale(topology, storage_nodes, scale):
-    assert compute_ceph_replica_scale(topology, storage_nodes) == scale
+def test_compute_ceph_replica_scale(osds, scale):
+    assert compute_ceph_replica_scale(osds) == scale
 
 
 class TestReapplyOpenStackTerraformPlanStep(unittest.TestCase):

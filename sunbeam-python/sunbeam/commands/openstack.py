@@ -22,10 +22,10 @@ from lightkube.core.client import KubeConfig
 from lightkube.resources.core_v1 import Service
 from rich.status import Status
 
+import sunbeam.commands.microceph as microceph
 from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import ConfigItemNotFoundException
 from sunbeam.commands.juju import JujuStepHelper
-from sunbeam.commands.microceph import APPLICATION as MICROCEPH_APPLICATION
 from sunbeam.commands.microk8s import (
     CREDENTIAL_SUFFIX,
     MICROK8S_CLOUD,
@@ -117,10 +117,15 @@ def compute_ingress_scale(topology: str, control_nodes: int) -> int:
     return control_nodes
 
 
-def compute_ceph_replica_scale(topology: str, storage_nodes: int) -> int:
-    if topology == "single" or storage_nodes < 2:
-        return 1
-    return min(storage_nodes, 3)
+def compute_ceph_replica_scale(osds: int) -> int:
+    return min(osds, 3)
+
+
+async def _get_number_of_osds(jhelper: JujuHelper) -> int:
+    """Fetch the number of osds from the microceph application"""
+    leader = await jhelper.get_leader_unit(microceph.APPLICATION, microceph.MODEL)
+    osds, _ = await microceph.list_disks(jhelper, microceph.MODEL, leader)
+    return len(osds)
 
 
 class DeployControlPlaneStep(BaseStep, JujuStepHelper):
@@ -154,8 +159,11 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         tfvars = {}
         storage_nodes = self.client.cluster.list_nodes_by_role("storage")
         if storage_nodes:
+            tfvars["ceph-osd-replication-count"] = compute_ceph_replica_scale(
+                run_sync(_get_number_of_osds(self.jhelper))
+            )
             tfvars["enable-ceph"] = True
-            tfvars["ceph-offer-url"] = f"{CONTROLLER_MODEL}.{MICROCEPH_APPLICATION}"
+            tfvars["ceph-offer-url"] = f"{CONTROLLER_MODEL}.{microceph.APPLICATION}"
         else:
             tfvars["enable-ceph"] = False
 
@@ -325,11 +333,11 @@ class ResizeControlPlaneStep(BaseStep, JujuStepHelper):
             "ha-scale": compute_ha_scale(topology, len(control_nodes)),
             "os-api-scale": compute_os_api_scale(topology, len(control_nodes)),
             "ingress-scale": compute_ingress_scale(topology, len(control_nodes)),
-            "ceph-osd-replication-count": compute_ceph_replica_scale(
-                topology, len(storage_nodes)
-            ),
             "enable-ceph": len(storage_nodes) > 0,
-            "ceph-offer-url": f"{CONTROLLER_MODEL}.{MICROCEPH_APPLICATION}",
+            "ceph-offer-url": f"{CONTROLLER_MODEL}.{microceph.APPLICATION}",
+            "ceph-osd-replication-count": compute_ceph_replica_scale(
+                run_sync(_get_number_of_osds(self.jhelper))
+            ),
         }
 
         self.update_status(status, "scaling services")
