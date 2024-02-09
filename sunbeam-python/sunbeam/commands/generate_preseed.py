@@ -20,7 +20,6 @@ from rich.console import Console
 
 import sunbeam.jobs.questions
 from sunbeam import utils
-from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import ClusterServiceUnavailableException
 from sunbeam.commands.configure import (
     CLOUD_CONFIG_SECTION,
@@ -34,6 +33,7 @@ from sunbeam.commands.microk8s import (
     MICROK8S_ADDONS_CONFIG_KEY,
     microk8s_addons_questions,
 )
+from sunbeam.jobs.deployment import Deployment
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -70,7 +70,8 @@ def show_questions(
 def generate_preseed(ctx: click.Context) -> None:
     """Generate preseed file."""
     name = utils.get_fqdn()
-    client: Client = ctx.obj
+    deployment: Deployment = ctx.obj
+    client = deployment.get_client()
     try:
         variables = sunbeam.jobs.questions.load_answers(client, BOOTSTRAP_CONFIG_KEY)
     except ClusterServiceUnavailableException:

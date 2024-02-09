@@ -1,4 +1,4 @@
-# Copyright (c) 2023 Canonical Ltd.
+# Copyright (c) 2024 Canonical Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,31 +13,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""MAAS management."""
-
 import ast
 import builtins
-import collections
 import copy
-import enum
 import logging
 import ssl
 import textwrap
-from typing import Type, TypeGuard, overload
 
-import pydantic
 import yaml
-from maas.client import bones, connect
+from maas.client import bones
 from rich.console import Console
 from rich.status import Status
 
 import sunbeam.commands.microceph as microceph
 import sunbeam.commands.microk8s as microk8s
+import sunbeam.provider.maas.client as maas_client
+import sunbeam.provider.maas.deployment as maas_deployment
 from sunbeam.clusterd.client import Client
 from sunbeam.commands.clusterd import APPLICATION as CLUSTERD_APPLICATION
-from sunbeam.commands.deployment import Deployment, DeploymentsConfig
 from sunbeam.commands.juju import (
-    INFRASTRUCTURE_MODEL,
     BootstrapJujuStep,
     ControllerNotFoundException,
     JujuStepHelper,
@@ -51,6 +45,7 @@ from sunbeam.jobs.common import (
     Result,
     ResultType,
 )
+from sunbeam.jobs.deployments import DeploymentsConfig
 from sunbeam.jobs.juju import (
     ActionFailedException,
     JujuController,
@@ -65,347 +60,8 @@ from sunbeam.jobs.manifest import Manifest
 LOG = logging.getLogger(__name__)
 console = Console()
 
-MAAS_CONFIG = "maas.yaml"
-
-MAAS_PUBLIC_IP_RANGE = "sunbeam-public-api"
-MAAS_INTERNAL_IP_RANGE = "sunbeam-internal-api"
-
-
-class Networks(enum.Enum):
-    PUBLIC = "public"
-    STORAGE = "storage"
-    STORAGE_CLUSTER = "storage-cluster"
-    INTERNAL = "internal"
-    DATA = "data"
-    MANAGEMENT = "management"
-
-    @classmethod
-    def values(cls) -> list[str]:
-        """Return list of tag values."""
-        return [tag.value for tag in cls]
-
-
-class MaasDeployment(Deployment):
-    type: str = "maas"
-    token: str
-    resource_pool: str
-    network_mapping: dict[str, str | None] = {}
-    clusterd_address: str | None = None
-
-    @property
-    def controller(self) -> str:
-        """Return controller name."""
-        return self.name + "-controller"
-
-    @pydantic.validator("type")
-    def type_validator(cls, v: str, values: dict) -> str:
-        if v != "maas":
-            raise ValueError("Deployment type must be MAAS.")
-        return v
-
-    @classmethod
-    def import_step(cls) -> Type["AddMaasDeployment"]:
-        """Return a step for importing a deployment.
-
-        This step will be used to make sure the deployment is valid.
-        The step must take as constructor arguments: DeploymentsConfig, Deployment.
-        The Deployment must be of the type that the step is registered for.
-        """
-        return AddMaasDeployment
-
-
-def is_maas_deployment(deployment: Deployment) -> TypeGuard[MaasDeployment]:
-    """Check if deployment is a MAAS deployment."""
-    return isinstance(deployment, MaasDeployment)
-
-
-class RoleTags(enum.Enum):
-    CONTROL = "control"
-    COMPUTE = "compute"
-    STORAGE = "storage"
-    JUJU_CONTROLLER = "juju-controller"
-
-    @classmethod
-    def values(cls) -> list[str]:
-        """Return list of tag values."""
-        return [tag.value for tag in cls]
-
-
-ROLE_NETWORK_MAPPING = {
-    RoleTags.CONTROL: [
-        Networks.INTERNAL,
-        Networks.MANAGEMENT,
-        Networks.PUBLIC,
-        Networks.STORAGE,
-    ],
-    RoleTags.COMPUTE: [
-        Networks.DATA,
-        Networks.INTERNAL,
-        Networks.MANAGEMENT,
-        Networks.STORAGE,
-    ],
-    RoleTags.STORAGE: [
-        Networks.DATA,
-        Networks.INTERNAL,
-        Networks.MANAGEMENT,
-        Networks.STORAGE,
-        Networks.STORAGE_CLUSTER,
-    ],
-    RoleTags.JUJU_CONTROLLER: [
-        Networks.MANAGEMENT,
-        # TODO(gboutry): missing public access network to reach charmhub...
-    ],
-}
-
-
-class StorageTags(enum.Enum):
-    CEPH = "ceph"
-
-    @classmethod
-    def values(cls) -> list[str]:
-        """Return list of tag values."""
-        return [tag.value for tag in cls]
-
-
-class MaasClient:
-    """Facade to MAAS APIs."""
-
-    def __init__(self, url: str, token: str, resource_pool: str | None = None):
-        self._client = connect(url, apikey=token)
-        self.resource_pool = resource_pool
-
-    def get_resource_pool(self, name: str) -> object:
-        """Fetch resource pool from MAAS."""
-        return self._client.resource_pools.get(name)  # type: ignore
-
-    def list_machines(self, **kwargs) -> list[dict]:
-        """List machines."""
-        if self.resource_pool:
-            kwargs["pool"] = self.resource_pool
-        try:
-            return self._client.machines.list.__self__._handler.read(**kwargs)  # type: ignore # noqa
-        except bones.CallError as e:
-            if "No such pool" in str(e):
-                raise ValueError(f"Resource pool {self.resource_pool!r} not found.")
-            raise e
-
-    def get_machine(self, machine: str) -> dict:
-        """Get machine."""
-        kwargs = {
-            "hostname": machine,
-        }
-        if self.resource_pool:
-            kwargs["pool"] = self.resource_pool
-        machines = self._client.machines.list.__self__._handler.read(**kwargs)  # type: ignore # noqa
-        if len(machines) == 0:
-            raise ValueError(f"Machine {machine!r} not found.")
-        if len(machines) > 1:
-            raise ValueError(f"Machine {machine!r} not unique.")
-        return machines[0]
-
-    def list_spaces(self) -> list[dict]:
-        """List spaces."""
-        return self._client.spaces.list.__self__._handler.read()  # type: ignore
-
-    def get_space(self, space: str) -> dict:
-        """Get a specific space."""
-        for space_raw in self.list_spaces():
-            if space_raw["name"] == space:
-                return space_raw
-        else:
-            raise ValueError(f"Space {space!r} not found.")
-
-    def get_subnets(self, space: str | None = None) -> list[dict]:
-        """List subnets."""
-        if space:
-            # check if space exists
-            _ = self.get_space(space)
-        subnets_response: list = self._client.subnets.list()  # type: ignore
-        subnets = []
-        for subnet in subnets_response:
-            if space is None or subnet.space == space:
-                subnets.append(subnet._data)
-        return subnets
-
-    def get_ip_ranges(self, subnet: dict) -> list[dict]:
-        """List ip ranges.
-
-        Only list reserved types as it is the only one we are interested in.
-        """
-        ip_ranges_response: list = self._client.ip_ranges.list()  # type: ignore
-
-        subnet_id = subnet["id"]
-        ip_ranges = []
-        for ip_range in ip_ranges_response:
-            if ip_range.subnet.id == subnet_id and ip_range.type.value == "reserved":
-                ip_ranges.append(ip_range._data)
-        return ip_ranges
-
-    @classmethod
-    def from_deployment(cls, deployment: Deployment) -> "MaasClient":
-        """Return client connected to active deployment."""
-        if not is_maas_deployment(deployment):
-            raise ValueError("Deployment is not a MAAS deployment.")
-        return cls(
-            deployment.url,
-            deployment.token,
-            deployment.resource_pool,
-        )
-
-
-def _convert_raw_machine(machine_raw: dict) -> dict:
-    storage_tags = StorageTags.values()
-    storage_devices = {tag: [] for tag in storage_tags}
-    for blockdevice in machine_raw["blockdevice_set"]:
-        for tag in blockdevice["tags"]:
-            if tag in storage_tags:
-                storage_devices[tag].append(
-                    {
-                        "name": blockdevice["name"],
-                        "id_path": blockdevice["id_path"],
-                    }
-                )
-
-    spaces = []
-    for interface in machine_raw["interface_set"]:
-        if (vlan := interface.get("vlan")) and (space := vlan.get("space")):
-            spaces.append(space)
-    return {
-        "system_id": machine_raw["system_id"],
-        "hostname": machine_raw["hostname"],
-        "roles": list(set(machine_raw["tag_names"]).intersection(RoleTags.values())),
-        "zone": machine_raw["zone"]["name"],
-        "status": machine_raw["status_name"],
-        "storage": storage_devices,
-        "spaces": list(set(spaces)),
-        "cores": machine_raw["cpu_count"],
-        "memory": machine_raw["memory"],
-    }
-
-
-def list_machines(client: MaasClient, **extra_args) -> list[dict]:
-    """List machines in deployment, return consumable list of dicts."""
-    machines_raw = client.list_machines(**extra_args)
-
-    machines = []
-    for machine in machines_raw:
-        machines.append(_convert_raw_machine(machine))
-    return machines
-
-
-def get_machine(client: MaasClient, machine: str) -> dict:
-    """Get machine in deployment, return consumable dict."""
-    machine_raw = client.get_machine(machine)
-    machine_dict = _convert_raw_machine(machine_raw)
-    LOG.debug("Retrieved machine %s: %r", machine, machine_dict)
-    return machine_dict
-
-
-def _group_machines_by_zone(machines: list[dict]) -> dict[str, list[dict]]:
-    """Helper to list machines by zone, return consumable dict."""
-    result = collections.defaultdict(list)
-    for machine in machines:
-        result[machine["zone"]].append(machine)
-    return dict(result)
-
-
-def list_machines_by_zone(client: MaasClient) -> dict[str, list[dict]]:
-    """List machines by zone, return consumable dict."""
-    machines_raw = list_machines(client)
-    return _group_machines_by_zone(machines_raw)
-
-
-def list_spaces(client: MaasClient) -> list[dict]:
-    """List spaces in deployment, return consumable list of dicts."""
-    spaces_raw = client.list_spaces()
-    spaces = []
-    for space_raw in spaces_raw:
-        space = {
-            "name": space_raw["name"],
-            "subnets": [subnet_raw["cidr"] for subnet_raw in space_raw["subnets"]],
-        }
-        spaces.append(space)
-    return spaces
-
-
-def map_space(
-    deployments_config: DeploymentsConfig,
-    client: MaasClient,
-    space: str,
-    network: Networks,
-):
-    """Map space to network."""
-    deployment = deployments_config.get_active()
-    if not is_maas_deployment(deployment):
-        raise ValueError("Active deployment is not a MAAS deployment.")
-    space_raw = client.get_space(space)
-    deployment.network_mapping[network.value] = space_raw["name"]
-    deployments_config.write()
-
-
-def unmap_space(deployments_config: DeploymentsConfig, network: Networks):
-    """Unmap network."""
-    deployment = deployments_config.get_active()
-    if not is_maas_deployment(deployment):
-        raise ValueError("Active deployment is not a MAAS deployment.")
-    deployment.network_mapping.pop(network.value, None)
-    deployments_config.write()
-
-
-@overload
-def get_network_mapping(deployment: MaasDeployment) -> dict[str, str | None]:
-    pass
-
-
-@overload
-def get_network_mapping(deployment: DeploymentsConfig) -> dict[str, str | None]:
-    pass
-
-
-def get_network_mapping(
-    deployment: MaasDeployment | DeploymentsConfig,
-) -> dict[str, str | None]:
-    """Return network mapping."""
-    if isinstance(deployment, DeploymentsConfig):
-        dep = deployment.get_active()
-    else:
-        dep = deployment
-    if not is_maas_deployment(dep):
-        raise ValueError(f"Deployment {dep.name} is not a MAAS deployment.")
-    mapping = dep.network_mapping.copy()
-    for network in Networks:
-        mapping.setdefault(network.value, None)
-    return mapping
-
-
-def _convert_raw_ip_range(ip_range_raw: dict) -> dict:
-    """Convert raw ip range to consumable dict."""
-    return {
-        "label": ip_range_raw["comment"],
-        "start": ip_range_raw["start_ip"],
-        "end": ip_range_raw["end_ip"],
-    }
-
-
-def get_ip_ranges_from_space(client: MaasClient, space: str) -> dict[str, list[dict]]:
-    """Return all IP ranges from a space.
-
-    Return a dict with the CIDR as key and a list of IP ranges as value.
-    """
-    subnets = client.get_subnets(space)
-    ip_ranges = {}
-    for subnet in subnets:
-        ranges_raw = client.get_ip_ranges(subnet)
-        ranges = []
-        for ip_range in ranges_raw:
-            ranges.append(_convert_raw_ip_range(ip_range))
-        if len(ranges) > 0:
-            ip_ranges[subnet["cidr"]] = ranges
-    return ip_ranges
-
-
 ROLES_NEEDED_ERROR = f"""A machine needs roles to be a part of an openstack deployment.
-Available roles are: {RoleTags.values()}.
+Available roles are: {maas_deployment.RoleTags.values()}.
 Roles can be assigned to a machine by applying tags in MAAS.
 More on assigning tags: https://maas.io/docs/using-machine-tags
 """
@@ -415,7 +71,7 @@ class AddMaasDeployment(BaseStep):
     def __init__(
         self,
         deployments_config: DeploymentsConfig,
-        deployment: MaasDeployment,
+        deployment: maas_deployment.MaasDeployment,
     ) -> None:
         super().__init__(
             "Add MAAS-backed deployment",
@@ -437,7 +93,7 @@ class AddMaasDeployment(BaseStep):
 
         current_deployments = set()
         for deployment in self.deployments_config.deployments:
-            if is_maas_deployment(deployment):
+            if maas_deployment.is_maas_deployment(deployment):
                 current_deployments.add(
                     (
                         deployment.url,
@@ -456,7 +112,7 @@ class AddMaasDeployment(BaseStep):
     def run(self, status: Status | None = None) -> Result:
         """Check MAAS is working, Resource Pool exists, write to local configuration."""
         try:
-            client = MaasClient(self.deployment.url, self.deployment.token)
+            client = maas_client.MaasClient(self.deployment.url, self.deployment.token)
             _ = client.get_resource_pool(self.deployment.resource_pool)
         except ValueError as e:
             LOG.debug("Failed to connect to maas", exc_info=True)
@@ -496,7 +152,7 @@ class AddMaasDeployment(BaseStep):
         spaces = [space for space in spaces if space is not None]
         if len(spaces) > 0:
             try:
-                maas_spaces = list_spaces(client)
+                maas_spaces = maas_client.list_spaces(client)
             except ValueError as e:
                 LOG.debug("Failed to list spaces", exc_info=True)
                 return Result(ResultType.FAILED, str(e))
@@ -574,7 +230,7 @@ class MachineRolesCheck(DiagnosticsCheck):
 class MachineNetworkCheck(DiagnosticsCheck):
     """Check machine has the right networks assigned."""
 
-    def __init__(self, deployment: MaasDeployment, machine: dict):
+    def __init__(self, deployment: maas_deployment.MaasDeployment, machine: dict):
         super().__init__(
             "Network check",
             "Checking networks",
@@ -584,9 +240,9 @@ class MachineNetworkCheck(DiagnosticsCheck):
 
     def run(self) -> DiagnosticsResult:
         """Check machine has access to required networks."""
-        network_to_space_mapping = get_network_mapping(self.deployment)
+        network_to_space_mapping = maas_client.get_network_mapping(self.deployment)
         spaces = network_to_space_mapping.values()
-        if len(spaces) != len(Networks.values()) or not all(spaces):
+        if len(spaces) != len(maas_deployment.Networks.values()) or not all(spaces):
             return DiagnosticsResult.fail(
                 self.name,
                 "network mapping is incomplete",
@@ -609,9 +265,11 @@ class MachineNetworkCheck(DiagnosticsCheck):
             )
         assigned_spaces = self.machine["spaces"]
         LOG.debug(f"{self.machine['hostname']=!r} assigned spaces: {assigned_spaces!r}")
-        required_networks: set[Networks] = set()
+        required_networks: set[maas_deployment.Networks] = set()
         for role in assigned_roles:
-            required_networks.update(ROLE_NETWORK_MAPPING[RoleTags(role)])
+            required_networks.update(
+                maas_deployment.ROLE_NETWORK_MAPPING[maas_deployment.RoleTags(role)]
+            )
         LOG.debug(
             f"{self.machine['hostname']=!r} required networks: {required_networks!r}"
         )
@@ -664,7 +322,7 @@ class MachineStorageCheck(DiagnosticsCheck):
                 ROLES_NEEDED_ERROR,
                 machine=self.machine["hostname"],
             )
-        if RoleTags.STORAGE.value not in assigned_roles:
+        if maas_deployment.RoleTags.STORAGE.value not in assigned_roles:
             self.message = "not a storage node."
             return DiagnosticsResult.success(
                 self.name,
@@ -672,7 +330,10 @@ class MachineStorageCheck(DiagnosticsCheck):
                 machine=self.machine["hostname"],
             )
         # TODO(gboutry): check number of storage ?
-        if len(self.machine["storage"].get(StorageTags.CEPH.value, [])) < 1:
+        ceph_storage = self.machine["storage"].get(
+            maas_deployment.StorageTags.CEPH.value, []
+        )
+        if len(ceph_storage) < 1:
             return DiagnosticsResult.fail(
                 self.name,
                 "storage node has no ceph storage",
@@ -681,7 +342,8 @@ class MachineStorageCheck(DiagnosticsCheck):
                     A storage node needs to have ceph storage to be a part of
                     an openstack deployment. Either add ceph storage to the
                     machine or remove the storage role. Add the tag
-                    `{StorageTags.CEPH.value}` to the storage device in MAAS.
+                    `{maas_deployment.StorageTags.CEPH.value}` to the storage device in\
+                     MAAS.
                     More on assigning tags: https://maas.io/docs/using-storage-tags"""
                 ),
                 machine=self.machine["hostname"],
@@ -708,7 +370,7 @@ class MachineRequirementsCheck(DiagnosticsCheck):
 
     def run(self) -> DiagnosticsResult:
         """Check machine meets requirements."""
-        if [RoleTags.JUJU_CONTROLLER.value] == self.machine["roles"]:
+        if [maas_deployment.RoleTags.JUJU_CONTROLLER.value] == self.machine["roles"]:
             memory_min = RAM_4_GB_IN_MB
             core_min = 2
         else:
@@ -765,7 +427,9 @@ def _run_check_list(checks: list[DiagnosticsCheck]) -> list[DiagnosticsResult]:
 class DeploymentMachinesCheck(DiagnosticsCheck):
     """Check all machines inside deployment."""
 
-    def __init__(self, deployment: MaasDeployment, machines: list[dict]):
+    def __init__(
+        self, deployment: maas_deployment.MaasDeployment, machines: list[dict]
+    ):
         super().__init__(
             "Deployment check",
             "Checking machines, roles, networks and storage",
@@ -882,7 +546,7 @@ class ZoneBalanceCheck(DiagnosticsCheck):
         LOG.debug(f"{zone_role_counts=!r}")
         unbalanced_roles = []
         distribution = ""
-        for role in RoleTags.values():
+        for role in maas_deployment.RoleTags.values():
             counts = [zone_role_counts[zone].get(role, 0) for zone in zone_role_counts]
             max_count = max(counts)
             min_count = min(counts)
@@ -933,7 +597,11 @@ class IpRangesCheck(DiagnosticsCheck):
         """
     )
 
-    def __init__(self, client: MaasClient, deployment: MaasDeployment):
+    def __init__(
+        self,
+        client: maas_client.MaasClient,
+        deployment: maas_deployment.MaasDeployment,
+    ):
         super().__init__(
             "IP ranges check",
             "Checking IP ranges",
@@ -958,8 +626,12 @@ class IpRangesCheck(DiagnosticsCheck):
     ) -> DiagnosticsResult:
         """Check Public and Internal ip ranges are set."""
 
-        public_space = self.deployment.network_mapping.get(Networks.PUBLIC.value)
-        internal_space = self.deployment.network_mapping.get(Networks.INTERNAL.value)
+        public_space = self.deployment.network_mapping.get(
+            maas_deployment.Networks.PUBLIC.value
+        )
+        internal_space = self.deployment.network_mapping.get(
+            maas_deployment.Networks.INTERNAL.value
+        )
         if public_space is None or internal_space is None:
             return DiagnosticsResult.fail(
                 self.name,
@@ -972,14 +644,18 @@ class IpRangesCheck(DiagnosticsCheck):
                 ),
             )
 
-        public_subnet_ranges = get_ip_ranges_from_space(self.client, public_space)
-        internal_subnet_ranges = get_ip_ranges_from_space(self.client, internal_space)
+        public_subnet_ranges = maas_client.get_ip_ranges_from_space(
+            self.client, public_space
+        )
+        internal_subnet_ranges = maas_client.get_ip_ranges_from_space(
+            self.client, internal_space
+        )
 
         public_ip_ranges = self._get_ranges_for_label(
-            public_subnet_ranges, MAAS_PUBLIC_IP_RANGE
+            public_subnet_ranges, maas_deployment.MAAS_PUBLIC_IP_RANGE
         )
         internal_ip_ranges = self._get_ranges_for_label(
-            internal_subnet_ranges, MAAS_INTERNAL_IP_RANGE
+            internal_subnet_ranges, maas_deployment.MAAS_INTERNAL_IP_RANGE
         )
         if len(public_ip_ranges) == 0:
             return DiagnosticsResult.fail(
@@ -987,8 +663,8 @@ class IpRangesCheck(DiagnosticsCheck):
                 "Public IP ranges are not set",
                 self._missing_range_diagnostic.format(
                     space=public_space,
-                    network=Networks.PUBLIC.value,
-                    label=MAAS_PUBLIC_IP_RANGE,
+                    network=maas_deployment.Networks.PUBLIC.value,
+                    label=maas_deployment.MAAS_PUBLIC_IP_RANGE,
                 ),
             )
 
@@ -998,8 +674,8 @@ class IpRangesCheck(DiagnosticsCheck):
                 "Internal IP ranges are not set",
                 self._missing_range_diagnostic.format(
                     space=internal_space,
-                    network=Networks.INTERNAL.value,
-                    label=MAAS_INTERNAL_IP_RANGE,
+                    network=maas_deployment.Networks.INTERNAL.value,
+                    label=maas_deployment.MAAS_INTERNAL_IP_RANGE,
                 ),
             )
 
@@ -1023,21 +699,29 @@ class DeploymentTopologyCheck(DiagnosticsCheck):
 
     def run(self) -> list[DiagnosticsResult]:
         """Run a sequence of checks to validate deployment topology.""" ""
-        machines_by_zone = _group_machines_by_zone(self.machines)
+        machines_by_zone = maas_client._group_machines_by_zone(self.machines)
         checks = []
         checks.append(
             DeploymentRolesCheck(
-                self.machines, "juju controllers", RoleTags.JUJU_CONTROLLER.value
+                self.machines,
+                "juju controllers",
+                maas_deployment.RoleTags.JUJU_CONTROLLER.value,
             )
         )
         checks.append(
-            DeploymentRolesCheck(self.machines, "control nodes", RoleTags.CONTROL.value)
+            DeploymentRolesCheck(
+                self.machines, "control nodes", maas_deployment.RoleTags.CONTROL.value
+            )
         )
         checks.append(
-            DeploymentRolesCheck(self.machines, "compute nodes", RoleTags.COMPUTE.value)
+            DeploymentRolesCheck(
+                self.machines, "compute nodes", maas_deployment.RoleTags.COMPUTE.value
+            )
         )
         checks.append(
-            DeploymentRolesCheck(self.machines, "storage nodes", RoleTags.STORAGE.value)
+            DeploymentRolesCheck(
+                self.machines, "storage nodes", maas_deployment.RoleTags.STORAGE.value
+            )
         )
         checks.append(ZonesCheck(list(machines_by_zone.keys())))
         checks.append(ZoneBalanceCheck(machines_by_zone))
@@ -1052,7 +736,11 @@ class DeploymentTopologyCheck(DiagnosticsCheck):
 class DeploymentNetworkingCheck(DiagnosticsCheck):
     """Check deployment networking."""
 
-    def __init__(self, client: MaasClient, deployment: MaasDeployment):
+    def __init__(
+        self,
+        client: maas_client.MaasClient,
+        deployment: maas_deployment.MaasDeployment,
+    ):
         super().__init__(
             "Networking check",
             "Checking networking",
@@ -1075,7 +763,7 @@ class DeploymentNetworkingCheck(DiagnosticsCheck):
 class NetworkMappingCompleteCheck(Check):
     """Check network mapping is complete."""
 
-    def __init__(self, deployment: MaasDeployment):
+    def __init__(self, deployment: maas_deployment.MaasDeployment):
         super().__init__(
             "NetworkMapping Check",
             "Checking network mapping is complete",
@@ -1086,7 +774,7 @@ class NetworkMappingCompleteCheck(Check):
         """Check network mapping is complete."""
         network_to_space_mapping = self.deployment.network_mapping
         spaces = network_to_space_mapping.values()
-        if len(spaces) != len(Networks.values()) or not all(spaces):
+        if len(spaces) != len(maas_deployment.Networks.values()) or not all(spaces):
             self.message = (
                 "A complete map of networks to spaces is required to proceed."
                 " Complete network mapping to using `sunbeam deployment space map...`."
@@ -1100,7 +788,7 @@ class MaasBootstrapJujuStep(BootstrapJujuStep):
 
     def __init__(
         self,
-        maas_client: MaasClient,
+        maas_client: maas_client.MaasClient,
         cloud: str,
         cloud_type: str,
         controller: str,
@@ -1113,7 +801,7 @@ class MaasBootstrapJujuStep(BootstrapJujuStep):
         bootstrap_args.extend(
             (
                 "--bootstrap-constraints",
-                f"tags={RoleTags.JUJU_CONTROLLER.value}",
+                f"tags={maas_deployment.RoleTags.JUJU_CONTROLLER.value}",
                 "--bootstrap-base",
                 "ubuntu@22.04",
                 "--config",
@@ -1151,11 +839,12 @@ class MaasBootstrapJujuStep(BootstrapJujuStep):
 
     def is_skip(self, status: Status | None = None) -> Result:
         """Determines if the step should be skipped or not."""
-        machines = list_machines(self.maas_client, tags=RoleTags.JUJU_CONTROLLER.value)
+        controller_tag = maas_deployment.RoleTags.JUJU_CONTROLLER.value
+        machines = maas_client.list_machines(self.maas_client, tags=controller_tag)
         if len(machines) == 0:
             return Result(
                 ResultType.FAILED,
-                f"No machines with tag {RoleTags.JUJU_CONTROLLER.value!r} found.",
+                f"No machines with tag {controller_tag!r} found.",
             )
         controller = sorted(machines, key=lambda x: x["hostname"])[0]
         self.bootstrap_args.extend(("--to", "system-id=" + controller["system_id"]))
@@ -1167,7 +856,7 @@ class MaasScaleJujuStep(ScaleJujuStep):
 
     def __init__(
         self,
-        maas_client: MaasClient,
+        maas_client: maas_client.MaasClient,
         controller: str,
         extra_args: list[str] | None = None,
     ):
@@ -1175,7 +864,7 @@ class MaasScaleJujuStep(ScaleJujuStep):
         extra_args.extend(
             (
                 "--constraints",
-                f"tags={RoleTags.JUJU_CONTROLLER.value}",
+                f"tags={maas_deployment.RoleTags.JUJU_CONTROLLER.value}",
             )
         )
         super().__init__(controller, extra_args=extra_args)
@@ -1207,7 +896,9 @@ class MaasScaleJujuStep(ScaleJujuStep):
                 f"Can't scale down controllers from {nb_controllers} to {self.n}.",
             )
 
-        machines = list_machines(self.client, tags=RoleTags.JUJU_CONTROLLER.value)
+        machines = maas_client.list_machines(
+            self.client, tags=maas_deployment.RoleTags.JUJU_CONTROLLER.value
+        )
 
         if len(machines) < self.n:
             LOG.debug(
@@ -1259,7 +950,7 @@ class MaasSaveControllerStep(BaseStep, JujuStepHelper):
     def is_skip(self, status: Status | None = None) -> Result:
         """Determines if the step should be skipped or not."""
         deployment = self.deployments_config.get_deployment(self.deployment_name)
-        if not is_maas_deployment(deployment):
+        if not maas_deployment.is_maas_deployment(deployment):
             return Result(ResultType.SKIPPED)
         if deployment.juju_controller is None:
             return Result(ResultType.COMPLETED)
@@ -1280,7 +971,7 @@ class MaasSaveControllerStep(BaseStep, JujuStepHelper):
             return Result(ResultType.FAILED, f"Controller {self.controller} not found")
 
         deployment = self.deployments_config.get_deployment(self.deployment_name)
-        if not is_maas_deployment(deployment):
+        if not maas_deployment.is_maas_deployment(deployment):
             return Result(ResultType.FAILED)
 
         deployment.juju_controller = controller
@@ -1308,7 +999,7 @@ class MaasSaveClusterdAddressStep(BaseStep):
     def is_skip(self, status: Status | None = None) -> Result:
         """Determines if the step should be skipped or not."""
         deployment = self.deployments_config.get_deployment(self.deployment_name)
-        if not is_maas_deployment(deployment):
+        if not maas_deployment.is_maas_deployment(deployment):
             return Result(ResultType.SKIPPED)
         return Result(ResultType.COMPLETED)
 
@@ -1341,7 +1032,7 @@ class MaasSaveClusterdAddressStep(BaseStep):
         except Exception as e:
             return Result(ResultType.FAILED, str(e))
         deployment = self.deployments_config.get_deployment(self.deployment_name)
-        if not is_maas_deployment(deployment):
+        if not maas_deployment.is_maas_deployment(deployment):
             return Result(ResultType.FAILED)
 
         deployment.clusterd_address = url
@@ -1352,7 +1043,7 @@ class MaasSaveClusterdAddressStep(BaseStep):
 class MaasAddMachinesToClusterdStep(BaseStep):
     """Add machines from MAAS to Clusterd."""
 
-    def __init__(self, client: Client, maas_client: MaasClient):
+    def __init__(self, client: Client, maas_client: maas_client.MaasClient):
         super().__init__("Add machines", "Adding machines to Clusterd")
         self.client = client
         self.maas_client = maas_client
@@ -1361,15 +1052,15 @@ class MaasAddMachinesToClusterdStep(BaseStep):
 
     def is_skip(self, status: Status | None = None) -> Result:
         """Determines if the step should be skipped or not."""
-        maas_machines = list_machines(self.maas_client)
+        maas_machines = maas_client.list_machines(self.maas_client)
         LOG.debug(f"Machines fetched: {maas_machines}")
         filtered_machines = []
         for machine in maas_machines:
             if set(machine["roles"]).intersection(
                 {
-                    RoleTags.CONTROL.value,
-                    RoleTags.COMPUTE.value,
-                    RoleTags.STORAGE.value,
+                    maas_deployment.RoleTags.CONTROL.value,
+                    maas_deployment.RoleTags.COMPUTE.value,
+                    maas_deployment.RoleTags.STORAGE.value,
                 }
             ):
                 filtered_machines.append(machine)
@@ -1406,9 +1097,7 @@ class MaasAddMachinesToClusterdStep(BaseStep):
 class MaasDeployMachinesStep(BaseStep):
     """Deploy machines stored in Clusterd in Juju."""
 
-    def __init__(
-        self, client: Client, jhelper: JujuHelper, model: str = INFRASTRUCTURE_MODEL
-    ):
+    def __init__(self, client: Client, jhelper: JujuHelper, model: str):
         super().__init__("Deploy machines", "Deploying machines in Juju")
         self.client = client
         self.jhelper = jhelper
@@ -1492,10 +1181,10 @@ class MaasConfigureMicrocephOSDStep(BaseStep):
     def __init__(
         self,
         client: Client,
-        maas_client: MaasClient,
+        maas_client: maas_client.MaasClient,
         jhelper: JujuHelper,
         names: list[str],
-        model: str = INFRASTRUCTURE_MODEL,
+        model: str,
     ):
         super().__init__("Configure MicroCeph storage", "Configuring MicroCeph storage")
         self.client = client
@@ -1574,12 +1263,12 @@ class MaasConfigureMicrocephOSDStep(BaseStep):
                 "<machine>": ["<disk1_path>", "<disk2_path>"]
             }
         """
-        machines = list_machines(self.maas_client, hostname=self.names)
+        machines = maas_client.list_machines(self.maas_client, hostname=self.names)
         disks = {}
         for machine in machines:
             disks[machine["hostname"]] = [
                 device["id_path"]
-                for device in machine["storage"][StorageTags.CEPH.value]
+                for device in machine["storage"][maas_deployment.StorageTags.CEPH.value]
             ]
 
         return disks
@@ -1594,7 +1283,7 @@ class MaasConfigureMicrocephOSDStep(BaseStep):
         if len(maas_disks) == 0:
             raise ValueError(
                 f"Machine {machine_unit!r} does not have any"
-                f" {StorageTags.CEPH.value!r} disk defined."
+                f" {maas_deployment.StorageTags.CEPH.value!r} disk defined."
             )
         # Get all disks that are in Ceph but not in MAAS
         unknown_osds = machine_osds - maas_disks
@@ -1695,12 +1384,12 @@ class MaasDeployMicrok8sApplicationStep(microk8s.DeployMicrok8sApplicationStep):
     def __init__(
         self,
         client: Client,
-        maas_client: MaasClient,
+        maas_client: maas_client.MaasClient,
         manifest: Manifest,
         jhelper: JujuHelper,
         public_space: str,
         internal_space: str,
-        model: str = INFRASTRUCTURE_MODEL,
+        model: str,
         deployment_preseed: dict | None = None,
         accept_defaults: bool = False,
     ):
@@ -1755,7 +1444,7 @@ class MaasDeployMicrok8sApplicationStep(microk8s.DeployMicrok8sApplicationStep):
     def is_skip(self, status: Status | None = None):
         """Determines if the step should be skipped or not."""
         try:
-            public_ranges = get_ip_ranges_from_space(
+            public_ranges = maas_client.get_ip_ranges_from_space(
                 self.maas_client, self.public_space
             )
             LOG.debug("Public ip ranges: %r", public_ranges)
@@ -1766,17 +1455,19 @@ class MaasDeployMicrok8sApplicationStep(microk8s.DeployMicrok8sApplicationStep):
             return Result(ResultType.FAILED, str(e))
         try:
             public_metallb_range = self._to_joined_range(
-                public_ranges, MAAS_PUBLIC_IP_RANGE
+                public_ranges, maas_deployment.MAAS_PUBLIC_IP_RANGE
             )
         except ValueError:
             LOG.debug(
-                "No iprange with label %r found", MAAS_PUBLIC_IP_RANGE, exc_info=True
+                "No iprange with label %r found",
+                maas_deployment.MAAS_PUBLIC_IP_RANGE,
+                exc_info=True,
             )
             return Result(ResultType.FAILED, "No public ip range found")
         self.ranges = public_metallb_range
 
         try:
-            internal_ranges = get_ip_ranges_from_space(
+            internal_ranges = maas_client.get_ip_ranges_from_space(
                 self.maas_client, self.internal_space
             )
             LOG.debug("Internal ip ranges: %r", internal_ranges)
@@ -1789,11 +1480,13 @@ class MaasDeployMicrok8sApplicationStep(microk8s.DeployMicrok8sApplicationStep):
             # TODO(gboutry): use this range when cni (or sunbeam) easily supports
             # using different ip pools
             internal_metallb_range = self._to_joined_range(  # noqa
-                internal_ranges, MAAS_INTERNAL_IP_RANGE
+                internal_ranges, maas_deployment.MAAS_INTERNAL_IP_RANGE
             )
         except ValueError:
             LOG.debug(
-                "No iprange with label %r found", MAAS_PUBLIC_IP_RANGE, exc_info=True
+                "No iprange with label %r found",
+                maas_deployment.MAAS_PUBLIC_IP_RANGE,
+                exc_info=True,
             )
             return Result(ResultType.FAILED, "No internal ip range found")
 

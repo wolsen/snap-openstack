@@ -16,7 +16,7 @@
 import click
 from packaging.version import Version
 
-from sunbeam.clusterd.client import Client
+from sunbeam.jobs.deployment import Deployment
 from sunbeam.plugins.interface.v1.base import PluginRequirement
 from sunbeam.plugins.interface.v1.openstack import (
     OpenStackControlPlanePlugin,
@@ -30,10 +30,10 @@ class SecretsPlugin(OpenStackControlPlanePlugin):
 
     requires = {PluginRequirement("vault")}
 
-    def __init__(self, client: Client) -> None:
+    def __init__(self, deployment: Deployment) -> None:
         super().__init__(
             "secrets",
-            client,
+            deployment,
             tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO,
         )
 

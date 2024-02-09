@@ -48,14 +48,18 @@ class TestConfigureMicrocephOSDStep(unittest.TestCase):
         self.name = "test-0"
 
     def test_is_skip(self):
-        step = ConfigureMicrocephOSDStep(self.client, self.name, self.jhelper)
+        step = ConfigureMicrocephOSDStep(
+            self.client, self.name, self.jhelper, "test-model"
+        )
         step.disks = "/dev/sdb,/dev/sdc"
         result = step.is_skip()
 
         assert result.result_type == ResultType.COMPLETED
 
     def test_run(self):
-        step = ConfigureMicrocephOSDStep(self.client, self.name, self.jhelper)
+        step = ConfigureMicrocephOSDStep(
+            self.client, self.name, self.jhelper, "test-model"
+        )
         step.disks = "/dev/sdb,/dev/sdc"
         result = step.run()
 
@@ -65,7 +69,9 @@ class TestConfigureMicrocephOSDStep(unittest.TestCase):
     def test_run_action_failed(self):
         self.jhelper.run_action.side_effect = ActionFailedException("Action failed...")
 
-        step = ConfigureMicrocephOSDStep(self.client, self.name, self.jhelper)
+        step = ConfigureMicrocephOSDStep(
+            self.client, self.name, self.jhelper, "test-model"
+        )
         step.disks = "/dev/sdb,/dev/sdc"
         result = step.run()
 

@@ -18,18 +18,16 @@ from typing import Optional
 
 import click
 from rich.console import Console
-from snaphelpers import Snap
 
-from sunbeam.clusterd.client import Client
 from sunbeam.commands.upgrades.inter_channel import ChannelUpgradeCoordinator
 from sunbeam.commands.upgrades.intra_channel import LatestInChannelCoordinator
 from sunbeam.jobs.common import run_plan
+from sunbeam.jobs.deployment import Deployment
 from sunbeam.jobs.juju import JujuHelper
 from sunbeam.jobs.manifest import AddManifestStep, Manifest
 
 LOG = logging.getLogger(__name__)
 console = Console()
-snap = Snap()
 
 
 @click.command()
@@ -71,31 +69,32 @@ def refresh(
             "Options manifest and clear_manifest are mutually exclusive"
         )
 
-    client: Client = ctx.obj
-
+    deployment: Deployment = ctx.obj
+    client = deployment.get_client()
     # Validate manifest file
     manifest_obj = None
     if clear_manifest:
         run_plan([AddManifestStep(client)], console)
     elif manifest:
         manifest_obj = Manifest.load(
-            client, manifest_file=manifest, include_defaults=True
+            deployment, manifest_file=manifest, include_defaults=True
         )
         run_plan([AddManifestStep(client, manifest)], console)
 
     if not manifest_obj:
         LOG.debug("Getting latest manifest from cluster db")
         manifest_obj = Manifest.load_latest_from_clusterdb(
-            client, include_defaults=True
+            deployment, include_defaults=True
         )
 
-    LOG.debug(f"Manifest used for deployment - software: {manifest_obj.software}")
-    data_location = snap.paths.user_data
-    jhelper = JujuHelper(client, data_location)
+    LOG.debug(
+        f"Manifest used for deployment - software: {manifest_obj.software_config}"
+    )
+    jhelper = JujuHelper(deployment.get_connected_controller())
     if upgrade_release:
-        a = ChannelUpgradeCoordinator(client, jhelper, manifest_obj)
+        a = ChannelUpgradeCoordinator(deployment, client, jhelper, manifest_obj)
         a.run_plan()
     else:
-        a = LatestInChannelCoordinator(client, jhelper, manifest_obj)
+        a = LatestInChannelCoordinator(deployment, client, jhelper, manifest_obj)
         a.run_plan()
     click.echo("Refresh complete.")

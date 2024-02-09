@@ -18,7 +18,7 @@ import logging
 import click
 from packaging.version import Version
 
-from sunbeam.clusterd.client import Client
+from sunbeam.jobs.deployment import Deployment
 from sunbeam.plugins.interface.v1.openstack import (
     OpenStackControlPlanePlugin,
     TerraformPlanLocation,
@@ -31,10 +31,10 @@ LOG = logging.getLogger(__name__)
 class LoadbalancerPlugin(OpenStackControlPlanePlugin):
     version = Version("0.0.1")
 
-    def __init__(self, client: Client) -> None:
+    def __init__(self, deployment: Deployment) -> None:
         super().__init__(
             "loadbalancer",
-            client,
+            deployment,
             tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO,
         )
 

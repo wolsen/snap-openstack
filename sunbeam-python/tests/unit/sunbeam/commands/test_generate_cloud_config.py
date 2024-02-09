@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import asyncio
-import json
 from unittest.mock import Mock, patch
 
 import pytest
@@ -44,6 +43,11 @@ def cclient():
 
 
 @pytest.fixture()
+def tfhelper():
+    yield Mock()
+
+
+@pytest.fixture()
 def load_answers():
     with patch.object(sunbeam.jobs.questions, "load_answers") as p:
         yield p
@@ -56,56 +60,55 @@ def cprint():
 
 
 class TestConfigureCloudsYamlStep:
-    def test_is_skip_with_demo_setup(self, tmp_path, cclient, load_answers):
+    def test_is_skip_with_demo_setup(self, tmp_path, cclient, tfhelper, load_answers):
         clouds_yaml = tmp_path / ".config" / "openstack" / "clouds.yaml"
         load_answers.return_value = {"user": {"run_demo_setup": True}}
         admin_credentials = {"OS_AUTH_URL": "http://keystone:5000"}
         step = generate.GenerateCloudConfigStep(
-            cclient, admin_credentials, "sunbeam", False, True, clouds_yaml
+            cclient, tfhelper, admin_credentials, "sunbeam", False, True, clouds_yaml
         )
         result = step.is_skip()
         assert result.result_type == ResultType.COMPLETED
 
-    def test_is_skip(self, tmp_path, cclient, load_answers):
+    def test_is_skip(self, tmp_path, cclient, tfhelper, load_answers):
         clouds_yaml = tmp_path / ".config" / "openstack" / "clouds.yaml"
         load_answers.return_value = {"user": {"run_demo_setup": False}}
         admin_credentials = {"OS_AUTH_URL": "http://keystone:5000"}
         step = generate.GenerateCloudConfigStep(
-            cclient, admin_credentials, "sunbeam", False, True, clouds_yaml
+            cclient, tfhelper, admin_credentials, "sunbeam", False, True, clouds_yaml
         )
         result = step.is_skip()
         assert result.result_type == ResultType.SKIPPED
 
-    def test_is_skip_with_admin(self, tmp_path, cclient):
+    def test_is_skip_with_admin(self, tmp_path, cclient, tfhelper):
         clouds_yaml = tmp_path / ".config" / "openstack" / "clouds.yaml"
         admin_credentials = {"OS_AUTH_URL": "http://keystone:5000"}
         step = generate.GenerateCloudConfigStep(
-            cclient, admin_credentials, "sunbeam", True, True, clouds_yaml
+            cclient, tfhelper, admin_credentials, "sunbeam", True, True, clouds_yaml
         )
         result = step.is_skip()
         assert result.result_type == ResultType.COMPLETED
 
-    def test_run(self, mocker, tmp_path, cclient, run, snap, environ):
-        mocker.patch.object(generate, "Snap", return_value=snap)
-        environ.copy.return_value = {}
-
+    def test_run(
+        self,
+        tmp_path,
+        cclient,
+        tfhelper,
+    ):
         snap_real_home_dir = tmp_path
-        environ.get.return_value = snap_real_home_dir
         clouds_yaml = snap_real_home_dir / ".config" / "openstack" / "clouds.yaml"
-        runout_mock = Mock()
         creds = {
-            "OS_USERNAME": {"value": "user1"},
-            "OS_PASSWORD": {"value": "reallyhardpassword"},
-            "OS_USER_DOMAIN_NAME": {"value": "userdomain"},
-            "OS_PROJECT_DOMAIN_NAME": {"value": "projectdomain"},
-            "OS_PROJECT_NAME": {"value": "projectname"},
+            "OS_USERNAME": "user1",
+            "OS_PASSWORD": "reallyhardpassword",
+            "OS_USER_DOMAIN_NAME": "userdomain",
+            "OS_PROJECT_DOMAIN_NAME": "projectdomain",
+            "OS_PROJECT_NAME": "projectname",
         }
-        runout_mock.stdout = json.dumps(creds)
-        runout_mock.sterr = ""
-        run.return_value = runout_mock
+        tfhelper.output.return_value = creds
+
         admin_credentials = {"OS_AUTH_URL": "http://keystone:5000"}
         step = generate.GenerateCloudConfigStep(
-            cclient, admin_credentials, "sunbeam", False, True, clouds_yaml
+            cclient, tfhelper, admin_credentials, "sunbeam", False, True, clouds_yaml
         )
         step.run()
 
@@ -116,20 +119,16 @@ class TestConfigureCloudsYamlStep:
   sunbeam:
     auth:
       auth_url: {admin_credentials["OS_AUTH_URL"]}
-      password: {creds["OS_PASSWORD"]["value"]}
-      project_domain_name: {creds["OS_PROJECT_DOMAIN_NAME"]["value"]}
-      project_name: {creds["OS_PROJECT_NAME"]["value"]}
-      user_domain_name: {creds["OS_USER_DOMAIN_NAME"]["value"]}
-      username: {creds["OS_USERNAME"]["value"]}
+      password: {creds["OS_PASSWORD"]}
+      project_domain_name: {creds["OS_PROJECT_DOMAIN_NAME"]}
+      project_name: {creds["OS_PROJECT_NAME"]}
+      user_domain_name: {creds["OS_USER_DOMAIN_NAME"]}
+      username: {creds["OS_USERNAME"]}
 """
         assert contents == expect
 
-    def test_run_for_admin_user(self, mocker, tmp_path, cclient, run, snap, environ):
-        mocker.patch.object(generate, "Snap", return_value=snap)
-        environ.copy.return_value = {}
-
+    def test_run_for_admin_user(self, tmp_path, cclient, tfhelper):
         snap_real_home_dir = tmp_path
-        environ.get.return_value = snap_real_home_dir
         clouds_yaml = snap_real_home_dir / ".config" / "openstack" / "clouds.yaml"
         admin_credentials = {
             "OS_AUTH_URL": "http://keystone:5000",
@@ -140,7 +139,7 @@ class TestConfigureCloudsYamlStep:
             "OS_PROJECT_NAME": "projectname",
         }
         step = generate.GenerateCloudConfigStep(
-            cclient, admin_credentials, "sunbeam", True, True, clouds_yaml
+            cclient, tfhelper, admin_credentials, "sunbeam", True, True, clouds_yaml
         )
         step.run()
 
@@ -159,24 +158,23 @@ class TestConfigureCloudsYamlStep:
 """
         assert contents == expect
 
-    def test_run_with_update_false(self, mocker, cclient, run, snap, environ, cprint):
+    def test_run_with_update_false(
+        self, mocker, cclient, tfhelper, snap, environ, cprint
+    ):
         mocker.patch.object(generate, "Snap", return_value=snap)
         environ.copy.return_value = {}
 
-        runout_mock = Mock()
         creds = {
-            "OS_USERNAME": {"value": "user1"},
-            "OS_PASSWORD": {"value": "reallyhardpassword"},
-            "OS_USER_DOMAIN_NAME": {"value": "userdomain"},
-            "OS_PROJECT_DOMAIN_NAME": {"value": "projectdomain"},
-            "OS_PROJECT_NAME": {"value": "projectname"},
+            "OS_USERNAME": "user1",
+            "OS_PASSWORD": "reallyhardpassword",
+            "OS_USER_DOMAIN_NAME": "userdomain",
+            "OS_PROJECT_DOMAIN_NAME": "projectdomain",
+            "OS_PROJECT_NAME": "projectname",
         }
-        runout_mock.stdout = json.dumps(creds)
-        runout_mock.sterr = ""
-        run.return_value = runout_mock
+        tfhelper.output.return_value = creds
         admin_credentials = {"OS_AUTH_URL": "http://keystone:5000"}
         step = generate.GenerateCloudConfigStep(
-            cclient, admin_credentials, "sunbeam", False, False, None
+            cclient, tfhelper, admin_credentials, "sunbeam", False, False, None
         )
         step.run()
 
@@ -184,10 +182,10 @@ class TestConfigureCloudsYamlStep:
   sunbeam:
     auth:
       auth_url: {admin_credentials["OS_AUTH_URL"]}
-      password: {creds["OS_PASSWORD"]["value"]}
-      project_domain_name: {creds["OS_PROJECT_DOMAIN_NAME"]["value"]}
-      project_name: {creds["OS_PROJECT_NAME"]["value"]}
-      user_domain_name: {creds["OS_USER_DOMAIN_NAME"]["value"]}
-      username: {creds["OS_USERNAME"]["value"]}
+      password: {creds["OS_PASSWORD"]}
+      project_domain_name: {creds["OS_PROJECT_DOMAIN_NAME"]}
+      project_name: {creds["OS_PROJECT_NAME"]}
+      user_domain_name: {creds["OS_USER_DOMAIN_NAME"]}
+      username: {creds["OS_USERNAME"]}
 """
         cprint.assert_called_with(expect)

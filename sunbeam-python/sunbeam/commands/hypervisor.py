@@ -31,7 +31,6 @@ from sunbeam.commands.openstack_api import guests_on_hypervisor, remove_hypervis
 from sunbeam.commands.terraform import TerraformException
 from sunbeam.jobs.common import BaseStep, Result, ResultType, read_config, update_config
 from sunbeam.jobs.juju import (
-    MODEL,
     ApplicationNotFoundException,
     JujuHelper,
     TimeoutException,
@@ -59,7 +58,7 @@ class DeployHypervisorApplicationStep(DeployMachineApplicationStep):
         client: Client,
         manifest: Manifest,
         jhelper: JujuHelper,
-        model: str = MODEL,
+        model: str,
     ):
         super().__init__(
             client,
@@ -87,13 +86,13 @@ class DeployHypervisorApplicationStep(DeployMachineApplicationStep):
         return HYPERVISOR_APP_TIMEOUT
 
 
-class AddHypervisorUnitStep(AddMachineUnitsStep):
+class AddHypervisorUnitsStep(AddMachineUnitsStep):
     def __init__(
         self,
         client: Client,
         names: list[str] | str,
         jhelper: JujuHelper,
-        model: str = MODEL,
+        model: str,
     ):
         super().__init__(
             client,
@@ -116,18 +115,20 @@ class RemoveHypervisorUnitStep(BaseStep, JujuStepHelper):
         client: Client,
         name: str,
         jhelper: JujuHelper,
+        model: str,
         force: bool = False,
     ):
         super().__init__(
             "Remove openstack-hypervisor unit",
             "Remove openstack-hypervisor unit from machine",
         )
+        self.client = client
         self.name = name
         self.jhelper = jhelper
+        self.model = model
         self.force = force
         self.unit = None
         self.machine_id = ""
-        self.client = client
 
     def is_skip(self, status: Optional[Status] = None) -> Result:
         """Determines if the step should be skipped or not.
@@ -143,7 +144,9 @@ class RemoveHypervisorUnitStep(BaseStep, JujuStepHelper):
             return Result(ResultType.SKIPPED)
 
         try:
-            application = run_sync(self.jhelper.get_application(APPLICATION, MODEL))
+            application = run_sync(
+                self.jhelper.get_application(APPLICATION, self.model)
+            )
         except ApplicationNotFoundException as e:
             LOG.debug(str(e))
             return Result(
@@ -190,12 +193,12 @@ class RemoveHypervisorUnitStep(BaseStep, JujuStepHelper):
                 f"OpenStack guests are running on {self.name}, aborting",
             )
         try:
-            run_sync(self.jhelper.remove_unit(APPLICATION, str(self.unit), MODEL))
+            run_sync(self.jhelper.remove_unit(APPLICATION, str(self.unit), self.model))
             self.remove_machine_id_from_tfvar()
             run_sync(
                 self.jhelper.wait_application_ready(
                     APPLICATION,
-                    MODEL,
+                    self.model,
                     accepted_status=["active", "unknown"],
                     timeout=HYPERVISOR_UNIT_TIMEOUT,
                 )
@@ -228,16 +231,18 @@ class ReapplyHypervisorTerraformPlanStep(BaseStep):
         client: Client,
         manifest: Manifest,
         jhelper: JujuHelper,
+        model: str,
         extra_tfvars: dict = {},
     ):
         super().__init__(
             "Reapply OpenStack Hypervisor Terraform plan",
             "Reapply OpenStack Hypervisor Terraform plan",
         )
+        self.client = client
         self.manifest = manifest
         self.jhelper = jhelper
+        self.model = model
         self.extra_tfvars = extra_tfvars
-        self.client = client
         self.tfplan = "hypervisor-plan"
 
     def is_skip(self, status: Optional[Status] = None) -> Result:
@@ -255,6 +260,7 @@ class ReapplyHypervisorTerraformPlanStep(BaseStep):
         """Apply terraform configuration to deploy hypervisor"""
         try:
             self.manifest.update_tfvars_and_apply_tf(
+                self.client,
                 tfplan=self.tfplan,
                 tfvar_config=self._CONFIG,
                 override_tfvars=self.extra_tfvars,
@@ -266,7 +272,7 @@ class ReapplyHypervisorTerraformPlanStep(BaseStep):
             run_sync(
                 self.jhelper.wait_application_ready(
                     APPLICATION,
-                    MODEL,
+                    self.model,
                     accepted_status=["active", "unknown"],
                     timeout=HYPERVISOR_APP_TIMEOUT,
                 )

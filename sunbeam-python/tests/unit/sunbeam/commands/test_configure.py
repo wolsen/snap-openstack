@@ -14,7 +14,6 @@
 
 import asyncio
 import io
-import json
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -71,7 +70,7 @@ def jhelper():
 
 
 @pytest.fixture()
-def thelper():
+def tfhelper():
     yield Mock(path=Path())
 
 
@@ -113,7 +112,7 @@ def is_nic_connected():
 class SetHypervisorCharmConfigStep:
     def test_is_skip(self, cclient, jhelper):
         step = configure.SetHypervisorCharmConfigStep(
-            cclient, jhelper, "/tmp/dummypath"
+            cclient, jhelper, "/tmp/dummypath", "test-model"
         )
         result = step.is_skip()
         assert result.result_type == ResultType.COMPLETED
@@ -124,7 +123,7 @@ class SetHypervisorCharmConfigStep:
             "external_network": {"physical_network": "physnet1"},
         }
         step = configure.SetHypervisorCharmConfigStep(
-            cclient, jhelper, "/tmp/dummypath"
+            cclient, jhelper, "/tmp/dummypath", "test-model"
         )
         step.run()
         jhelper.set_application_config.assert_called_once_with(
@@ -148,7 +147,7 @@ class SetHypervisorCharmConfigStep:
             },
         }
         step = configure.SetHypervisorCharmConfigStep(
-            cclient, jhelper, "/tmp/dummypath"
+            cclient, jhelper, "/tmp/dummypath", "test-model"
         )
         step.run()
         jhelper.set_application_config.assert_called_once_with(
@@ -164,7 +163,7 @@ class SetHypervisorCharmConfigStep:
 
 
 class TestUserQuestions:
-    def test_has_prompts(self, cclient):
+    def test_has_prompts(self, cclient, jhelper):
         step = configure.UserQuestions(cclient, jhelper)
         assert step.has_prompts()
 
@@ -202,7 +201,7 @@ class TestUserQuestions:
         return user_bank_mock, net_bank_mock
 
     def test_prompt_remote_demo_setup(
-        self, cclient, load_answers, question_bank, write_answers, get_nic_macs
+        self, cclient, load_answers, question_bank, jhelper, write_answers, get_nic_macs
     ):
         load_answers.return_value = {}
         user_bank_mock, net_bank_mock = self.configure_mocks(question_bank)
@@ -214,7 +213,7 @@ class TestUserQuestions:
         self.check_remote_questions(net_bank_mock)
 
     def test_prompt_remote_no_demo_setup(
-        self, cclient, load_answers, question_bank, write_answers, get_nic_macs
+        self, cclient, load_answers, question_bank, jhelper, write_answers, get_nic_macs
     ):
         load_answers.return_value = {}
         user_bank_mock, net_bank_mock = self.configure_mocks(question_bank)
@@ -226,7 +225,7 @@ class TestUserQuestions:
         self.check_remote_questions(net_bank_mock)
 
     def test_prompt_local_demo_setup(
-        self, cclient, load_answers, question_bank, write_answers
+        self, cclient, load_answers, question_bank, jhelper, write_answers
     ):
         load_answers.return_value = {}
         user_bank_mock, net_bank_mock = self.configure_mocks(question_bank)
@@ -238,7 +237,7 @@ class TestUserQuestions:
         self.check_not_remote_questions(net_bank_mock)
 
     def test_prompt_local_no_demo_setup(
-        self, cclient, load_answers, question_bank, write_answers
+        self, cclient, load_answers, question_bank, jhelper, write_answers
     ):
         load_answers.return_value = {}
         user_bank_mock, net_bank_mock = self.configure_mocks(question_bank)
@@ -251,100 +250,101 @@ class TestUserQuestions:
 
 
 class TestUserOpenRCStep:
-    def test_is_skip_with_demo(self, tmpdir, cclient, load_answers):
+    def test_is_skip_with_demo(self, tmpdir, cclient, tfhelper, load_answers):
         outfile = tmpdir + "/" + "openrc"
         load_answers.return_value = {"user": {"run_demo_setup": True}}
-        step = configure.UserOpenRCStep(cclient, "http://keystone:5000", "3", outfile)
+        step = configure.UserOpenRCStep(
+            cclient, tfhelper, "http://keystone:5000", "3", outfile
+        )
         result = step.is_skip()
         assert result.result_type == ResultType.COMPLETED
 
-    def test_is_skip(self, tmpdir, cclient, load_answers):
+    def test_is_skip(self, tmpdir, cclient, tfhelper, load_answers):
         outfile = tmpdir + "/" + "openrc"
         load_answers.return_value = {"user": {"run_demo_setup": False}}
-        step = configure.UserOpenRCStep(cclient, "http://keystone:5000", "3", outfile)
+        step = configure.UserOpenRCStep(
+            cclient, tfhelper, "http://keystone:5000", "3", outfile
+        )
         result = step.is_skip()
         assert result.result_type == ResultType.SKIPPED
 
-    def test_run(self, mocker, tmpdir, cclient, run, snap, environ):
-        mocker.patch.object(configure, "Snap", return_value=snap)
-        environ.copy.return_value = {}
+    def test_run(self, tmpdir, cclient, tfhelper):
         outfile = tmpdir + "/" + "openrc"
-        runout_mock = Mock()
         creds = {
-            "OS_USERNAME": {"value": "user1"},
-            "OS_PASSWORD": {"value": "reallyhardpassword"},
-            "OS_USER_DOMAIN_NAME": {"value": "userdomain"},
-            "OS_PROJECT_DOMAIN_NAME": {"value": "projectdomain"},
-            "OS_PROJECT_NAME": {"value": "projectname"},
+            "OS_USERNAME": "user1",
+            "OS_PASSWORD": "reallyhardpassword",
+            "OS_USER_DOMAIN_NAME": "userdomain",
+            "OS_PROJECT_DOMAIN_NAME": "projectdomain",
+            "OS_PROJECT_NAME": "projectname",
         }
-        runout_mock.stdout = json.dumps(creds)
-        runout_mock.sterr = ""
-        run.return_value = runout_mock
+        tfhelper.output.return_value = creds
         auth_url = "http://keystone:5000"
         auth_version = 3
-        step = configure.UserOpenRCStep(cclient, auth_url, "3", outfile)
+        step = configure.UserOpenRCStep(cclient, tfhelper, auth_url, "3", outfile)
         step.run()
         with open(outfile, "r") as f:
             contents = f.read()
-        expect = f"""# openrc for {creds["OS_USERNAME"]["value"]}
+        expect = f"""# openrc for {creds["OS_USERNAME"]}
 export OS_AUTH_URL={auth_url}
-export OS_USERNAME={creds["OS_USERNAME"]["value"]}
-export OS_PASSWORD={creds["OS_PASSWORD"]["value"]}
-export OS_USER_DOMAIN_NAME={creds["OS_USER_DOMAIN_NAME"]["value"]}
-export OS_PROJECT_DOMAIN_NAME={creds["OS_PROJECT_DOMAIN_NAME"]["value"]}
-export OS_PROJECT_NAME={creds["OS_PROJECT_NAME"]["value"]}
+export OS_USERNAME={creds["OS_USERNAME"]}
+export OS_PASSWORD={creds["OS_PASSWORD"]}
+export OS_USER_DOMAIN_NAME={creds["OS_USER_DOMAIN_NAME"]}
+export OS_PROJECT_DOMAIN_NAME={creds["OS_PROJECT_DOMAIN_NAME"]}
+export OS_PROJECT_NAME={creds["OS_PROJECT_NAME"]}
 export OS_AUTH_VERSION={auth_version}
 export OS_IDENTITY_API_VERSION={auth_version}"""
         assert contents == expect
 
 
 class TestDemoSetup:
-    def test_is_skip_demo_setup(self, cclient, thelper, load_answers):
+    def test_is_skip_demo_setup(self, cclient, tfhelper, load_answers):
         load_answers.return_value = {"user": {"run_demo_setup": True}}
-        step = configure.DemoSetup(cclient, thelper, "/tmp/dummy")
+        step = configure.DemoSetup(cclient, tfhelper, "/tmp/dummy")
         result = step.is_skip()
         assert result.result_type == ResultType.COMPLETED
 
-    def test_is_skip(self, cclient, thelper, load_answers):
+    def test_is_skip(self, cclient, tfhelper, load_answers):
         load_answers.return_value = {"user": {"run_demo_setup": False}}
-        step = configure.DemoSetup(cclient, thelper, "/tmp/dummy")
+        step = configure.DemoSetup(cclient, tfhelper, "/tmp/dummy")
         result = step.is_skip()
         assert result.result_type == ResultType.SKIPPED
 
-    def test_run(self, cclient, thelper, load_answers):
+    def test_run(self, cclient, tfhelper, load_answers):
         answer_data = {"user": {"foo": "bar"}}
         load_answers.return_value = answer_data
-        step = configure.DemoSetup(cclient, thelper, "/tmp/dummy")
+        step = configure.DemoSetup(cclient, tfhelper, "/tmp/dummy")
         result = step.run()
-        thelper.write_tfvars.assert_called_once_with(answer_data, "/tmp/dummy")
+        tfhelper.write_tfvars.assert_called_once_with(answer_data, "/tmp/dummy")
         assert result.result_type == ResultType.COMPLETED
 
-    def test_run_fail(self, cclient, thelper, load_answers):
+    def test_run_fail(self, cclient, tfhelper, load_answers):
         answer_data = {"user": {"foo": "bar"}}
         load_answers.return_value = answer_data
-        thelper.apply.side_effect = TerraformException("Bad terraform")
-        step = configure.DemoSetup(cclient, thelper, "/tmp/dummy")
+        tfhelper.apply.side_effect = TerraformException("Bad terraform")
+        step = configure.DemoSetup(cclient, tfhelper, "/tmp/dummy")
         result = step.run()
         assert result.result_type == ResultType.FAILED
 
 
 class TestTerraformDemoInitStep:
-    def test_is_skip_demo_setup(self, cclient, thelper, load_answers):
+    def test_is_skip_demo_setup(self, cclient, tfhelper, load_answers):
         load_answers.return_value = {"user": {"run_demo_setup": True}}
-        step = configure.TerraformDemoInitStep(cclient, thelper)
+        step = configure.TerraformDemoInitStep(cclient, tfhelper)
         result = step.is_skip()
         assert result.result_type == ResultType.COMPLETED
 
-    def test_is_skip(self, cclient, thelper, load_answers):
+    def test_is_skip(self, cclient, tfhelper, load_answers):
         load_answers.return_value = {"user": {"run_demo_setup": False}}
-        step = configure.TerraformDemoInitStep(cclient, thelper)
+        step = configure.TerraformDemoInitStep(cclient, tfhelper)
         result = step.is_skip()
         assert result.result_type == ResultType.SKIPPED
 
 
 class TestSetLocalHypervisorOptions:
     def test_has_prompts(self, cclient, jhelper):
-        step = configure.SetLocalHypervisorOptions(cclient, "maas0.local", jhelper)
+        step = configure.SetLocalHypervisorOptions(
+            cclient, "maas0.local", jhelper, "test-model"
+        )
         assert step.has_prompts()
 
     def test_prompt_remote(
@@ -364,7 +364,9 @@ class TestSetLocalHypervisorOptions:
         local_hypervisor_bank_mock = Mock()
         question_bank.return_value = local_hypervisor_bank_mock
         local_hypervisor_bank_mock.nic.ask.return_value = "eth2"
-        step = configure.SetLocalHypervisorOptions(cclient, "maas0.local", jhelper)
+        step = configure.SetLocalHypervisorOptions(
+            cclient, "maas0.local", jhelper, "test-model"
+        )
         step.prompt()
         assert step.nic == "eth2"
 
@@ -385,7 +387,7 @@ class TestSetLocalHypervisorOptions:
         question_bank.return_value = local_hypervisor_bank_mock
         local_hypervisor_bank_mock.nic.ask.return_value = "eth2"
         step = configure.SetLocalHypervisorOptions(
-            cclient, "maas0.local", jhelper, join_mode=True
+            cclient, "maas0.local", jhelper, "test-model", join_mode=True
         )
         step.prompt()
         assert step.nic == "eth2"
@@ -395,7 +397,9 @@ class TestSetLocalHypervisorOptions:
         local_hypervisor_bank_mock = Mock()
         question_bank.return_value = local_hypervisor_bank_mock
         local_hypervisor_bank_mock.nic.ask.return_value = "eth12"
-        step = configure.SetLocalHypervisorOptions(cclient, "maas0.local", jhelper)
+        step = configure.SetLocalHypervisorOptions(
+            cclient, "maas0.local", jhelper, "tes-model"
+        )
         step.prompt()
         assert step.nic is None
 
@@ -416,7 +420,7 @@ class TestSetLocalHypervisorOptions:
         question_bank.return_value = local_hypervisor_bank_mock
         local_hypervisor_bank_mock.nic.ask.return_value = "eth2"
         step = configure.SetLocalHypervisorOptions(
-            cclient, "maas0.local", jhelper, join_mode=True
+            cclient, "maas0.local", jhelper, "test-model", join_mode=True
         )
         step.prompt()
         assert step.nic == "eth2"
@@ -426,12 +430,14 @@ class TestSetLocalHypervisorOptions:
         unit_mock = Mock()
         unit_mock.entity_id = "openstack-hypervisor/0"
         jhelper.get_unit_from_machine.return_value = unit_mock
-        step = configure.SetLocalHypervisorOptions(cclient, "maas0.local", jhelper)
+        step = configure.SetLocalHypervisorOptions(
+            cclient, "maas0.local", jhelper, "test-model"
+        )
         step.nic = "eth11"
         result = step.run()
         jhelper.run_action.assert_called_once_with(
             "openstack-hypervisor/0",
-            "controller",
+            "test-model",
             "set-hypervisor-local-settings",
             action_params={"external-nic": "eth11"},
         )
@@ -440,13 +446,17 @@ class TestSetLocalHypervisorOptions:
     def test_run_fail(self, cclient, jhelper):
         jhelper.run_action.return_value = {"return-code": 2}
         jhelper.get_leader_unit.return_value = "openstack-hypervisor/0"
-        step = configure.SetLocalHypervisorOptions(cclient, "maas0.local", jhelper)
+        step = configure.SetLocalHypervisorOptions(
+            cclient, "maas0.local", jhelper, "test-model"
+        )
         step.nic = "eth11"
         result = step.run()
         assert result.result_type == ResultType.FAILED
 
     def test_run_skipped(self, cclient, jhelper):
-        step = configure.SetLocalHypervisorOptions(cclient, "maas0.local", jhelper)
+        step = configure.SetLocalHypervisorOptions(
+            cclient, "maas0.local", jhelper, "test-model"
+        )
         step.nic = None
         step.run()
         assert not jhelper.run_action.called

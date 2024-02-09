@@ -1,4 +1,4 @@
-# Copyright (c) 2023 Canonical Ltd.
+# Copyright (c) 2024 Canonical Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,53 +27,18 @@ from rich.console import Console
 from rich.table import Table
 from snaphelpers import Snap
 
-from sunbeam.clusterd.client import Client
 from sunbeam.commands import resize as resize_cmds
 from sunbeam.commands import utils
 from sunbeam.commands.bootstrap_state import SetBootstrapped
 from sunbeam.commands.clusterd import DeploySunbeamClusterdApplicationStep
-from sunbeam.commands.deployment import Deployment, DeploymentsConfig, deployment_path
 from sunbeam.commands.hypervisor import (
-    AddHypervisorUnitStep,
+    AddHypervisorUnitsStep,
     DeployHypervisorApplicationStep,
 )
 from sunbeam.commands.juju import (
-    INFRASTRUCTURE_MODEL,
     AddCloudJujuStep,
     AddCredentialsJujuStep,
     AddInfrastructureModelStep,
-)
-from sunbeam.commands.maas import (
-    AddMaasDeployment,
-    DeploymentMachinesCheck,
-    DeploymentNetworkingCheck,
-    DeploymentTopologyCheck,
-    MaasAddMachinesToClusterdStep,
-    MaasBootstrapJujuStep,
-    MaasClient,
-    MaasConfigureMicrocephOSDStep,
-    MaasDeployMachinesStep,
-    MaasDeployment,
-    MaasDeployMicrok8sApplicationStep,
-    MaasSaveClusterdAddressStep,
-    MaasSaveControllerStep,
-    MaasScaleJujuStep,
-    MachineNetworkCheck,
-    MachineRequirementsCheck,
-    MachineRolesCheck,
-    MachineStorageCheck,
-    NetworkMappingCompleteCheck,
-    Networks,
-    RoleTags,
-    get_machine,
-    get_network_mapping,
-    is_maas_deployment,
-    list_machines,
-    list_machines_by_zone,
-    list_spaces,
-    map_space,
-    str_presenter,
-    unmap_space,
 )
 from sunbeam.commands.microceph import (
     AddMicrocephUnitsStep,
@@ -110,15 +75,50 @@ from sunbeam.jobs.common import (
     run_plan,
     run_preflight_checks,
 )
-from sunbeam.jobs.juju import JujuAccount, JujuHelper
+from sunbeam.jobs.deployment import Deployment
+from sunbeam.jobs.deployments import DeploymentsConfig, deployment_path
+from sunbeam.jobs.juju import CONTROLLER_MODEL, JujuAccount, JujuHelper
 from sunbeam.jobs.manifest import AddManifestStep, Manifest
 from sunbeam.provider.base import ProviderBase
+from sunbeam.provider.maas.client import (
+    MaasClient,
+    MaasDeployment,
+    Networks,
+    RoleTags,
+    get_machine,
+    get_network_mapping,
+    is_maas_deployment,
+    list_machines,
+    list_machines_by_zone,
+    list_spaces,
+    map_space,
+    unmap_space,
+)
+from sunbeam.provider.maas.deployment import MAAS_TYPE
+from sunbeam.provider.maas.steps import (
+    AddMaasDeployment,
+    DeploymentMachinesCheck,
+    DeploymentNetworkingCheck,
+    DeploymentTopologyCheck,
+    MaasAddMachinesToClusterdStep,
+    MaasBootstrapJujuStep,
+    MaasConfigureMicrocephOSDStep,
+    MaasDeployMachinesStep,
+    MaasDeployMicrok8sApplicationStep,
+    MaasSaveClusterdAddressStep,
+    MaasSaveControllerStep,
+    MaasScaleJujuStep,
+    MachineNetworkCheck,
+    MachineRequirementsCheck,
+    MachineRolesCheck,
+    MachineStorageCheck,
+    NetworkMappingCompleteCheck,
+    str_presenter,
+)
 from sunbeam.utils import CatchGroup
 
 LOG = logging.getLogger(__name__)
 console = Console()
-
-MAAS_TYPE = "maas"
 
 
 @click.group("cluster", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
@@ -206,24 +206,25 @@ def bootstrap(
     Initialize the sunbeam cluster.
     """
 
-    client: Client = ctx.obj
-
+    deployment: MaasDeployment = ctx.obj
     # Validate manifest file
     manifest_obj = None
     if manifest:
         manifest_obj = Manifest.load(
-            client, manifest_file=manifest, include_defaults=True
+            deployment, manifest_file=manifest, include_defaults=True
         )
     else:
-        manifest_obj = Manifest.get_default_manifest(client)
+        manifest_obj = Manifest.get_default_manifest(deployment)
 
-    LOG.debug(f"Manifest used for deployment - preseed: {manifest_obj.deployment}")
-    LOG.debug(f"Manifest used for deployment - software: {manifest_obj.software}")
-    preseed = manifest_obj.deployment
+    LOG.debug(
+        f"Manifest used for deployment - preseed: {manifest_obj.deployment_config}"
+    )
+    LOG.debug(
+        f"Manifest used for deployment - software: {manifest_obj.software_config}"
+    )
+    preseed = manifest_obj.deployment_config
 
-    del client
-
-    snap = Snap()
+    deployments = DeploymentsConfig.load(deployment_path(Snap()))
 
     preflight_checks = []
     preflight_checks.append(JujuSnapCheck())
@@ -231,9 +232,6 @@ def bootstrap(
     preflight_checks.append(VerifyClusterdNotBootstrappedCheck())
     run_preflight_checks(preflight_checks, console)
 
-    deployment_location = deployment_path(snap)
-    deployments = DeploymentsConfig.load(deployment_location)
-    deployment = deployments.get_active()
     maas_client = MaasClient.from_deployment(deployment)
 
     if not is_maas_deployment(deployment):
@@ -272,7 +270,7 @@ def bootstrap(
             cloud_definition["clouds"][deployment.name]["type"],
             deployment.controller,
             deployment.juju_account.password,
-            manifest_obj.software.juju.bootstrap_args,
+            manifest_obj.software_config.juju.bootstrap_args,
             deployment_preseed=preseed,
             accept_defaults=accept_defaults,
         )
@@ -281,7 +279,7 @@ def bootstrap(
         MaasScaleJujuStep(
             maas_client,
             deployment.controller,
-            manifest_obj.software.juju.scale_args,
+            manifest_obj.software_config.juju.scale_args,
         )
     )
     plan.append(
@@ -289,19 +287,27 @@ def bootstrap(
     )
     run_plan(plan, console)
 
+    # Reload deployment to get credentials
+    deployment = deployments.get_deployment(deployment.name)
+
     if deployment.juju_account is None:
         console.print("Juju account should have been saved in previous step.")
         sys.exit(1)
     if deployment.juju_controller is None:
         console.print("Controller should have been saved in previous step.")
         sys.exit(1)
-    jhelper = JujuHelper(None, Path())  # type: ignore
-    jhelper.controller = deployment.get_connected_controller()
+    jhelper = JujuHelper(deployment.get_connected_controller())
     plan2 = []
-    plan2.append(DeploySunbeamClusterdApplicationStep(jhelper, manifest_obj))
+    plan2.append(
+        DeploySunbeamClusterdApplicationStep(
+            jhelper, manifest_obj, CONTROLLER_MODEL.split("/")[-1]
+        )
+    )
     plan2.append(MaasSaveClusterdAddressStep(jhelper, deployment.name, deployments))
 
     run_plan(plan2, console)
+    # reload deployment to get clusterd address
+    deployment = deployments.get_deployment(deployment.name)
     client_url = deployment.clusterd_address
     if not client_url:
         console.print("Clusterd address should have been saved in previous step.")
@@ -309,7 +315,7 @@ def bootstrap(
 
     if manifest:
         plan3 = []
-        plan3.append(AddManifestStep(Client.from_http(client_url), manifest))
+        plan3.append(AddManifestStep(deployment.get_client()))
         run_plan(plan3, console)
 
     console.print("Bootstrap controller components complete.")
@@ -323,7 +329,9 @@ def bootstrap(
     help="Manifest file.",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
+@click.pass_context
 def deploy(
+    ctx: click.Context,
     manifest: Path | None = None,
     accept_defaults: bool = False,
 ) -> None:
@@ -331,21 +339,13 @@ def deploy(
 
     Deploy the sunbeam cluster.
     """
-    snap = Snap()
+    deployment: MaasDeployment = ctx.obj
+
     preflight_checks = []
     preflight_checks.append(JujuSnapCheck())
     preflight_checks.append(LocalShareCheck())
     preflight_checks.append(VerifyClusterdNotBootstrappedCheck())
     run_preflight_checks(preflight_checks, console)
-
-    deployment_location = deployment_path(snap)
-    deployments = DeploymentsConfig.load(deployment_location)
-    deployment = deployments.get_active()
-    maas_client = MaasClient.from_deployment(deployment)
-
-    if not is_maas_deployment(deployment):
-        console.print("Not a MAAS deployment.")
-        sys.exit(1)
 
     if (
         deployment.clusterd_address is None
@@ -363,16 +363,19 @@ def deploy(
         )
         sys.exit(1)
 
-    jhelper = JujuHelper(None, Path())  # type: ignore
+    deployment_location = deployment_path(Snap())
+    deployments = DeploymentsConfig.load(deployment_location)
+    maas_client = MaasClient.from_deployment(deployment)
     try:
-        jhelper.controller = deployment.get_connected_controller()
+        controller = deployment.get_connected_controller()
     except OSError as e:
         console.print(f"Could not connect to controller: {e}")
         sys.exit(1)
+    jhelper = JujuHelper(controller)
     clusterd_plan = [MaasSaveClusterdAddressStep(jhelper, deployment.name, deployments)]
     run_plan(clusterd_plan, console)  # type: ignore
 
-    client = Client.from_http(deployment.clusterd_address)
+    client = deployment.get_client()
     preflight_checks = []
     preflight_checks.append(NetworkMappingCompleteCheck(deployment))
     run_preflight_checks(preflight_checks, console)
@@ -380,58 +383,31 @@ def deploy(
     manifest_obj = None
     if manifest:
         manifest_obj = Manifest.load(
-            client, manifest_file=manifest, include_defaults=True
+            deployment, manifest_file=manifest, include_defaults=True
         )
         run_plan([AddManifestStep(client, manifest)], console)
     else:
         manifest_obj = Manifest.load_latest_from_clusterdb(
-            client, include_defaults=True
+            deployment, include_defaults=True
         )
 
     manifest: Manifest = manifest_obj  # type: ignore
-    LOG.debug(f"Manifest used for deployment - preseed: {manifest.deployment}")
-    LOG.debug(f"Manifest used for deployment - software: {manifest.software}")
-    preseed = manifest.deployment
+    LOG.debug(f"Manifest used for deployment - preseed: {manifest.deployment_config}")
+    LOG.debug(f"Manifest used for deployment - software: {manifest.software_config}")
+    preseed = manifest.deployment_config
 
-    controller_env = dict(
-        JUJU_USERNAME=deployment.juju_account.user,
-        JUJU_PASSWORD=deployment.juju_account.password,
-        JUJU_CONTROLLER_ADDRESSES=",".join(deployment.juju_controller.api_endpoints),
-        JUJU_CA_CERT=deployment.juju_controller.ca_cert,
-    )
-    tfhelper_sunbeam_machine = manifest.get_tfhelper(
-        "sunbeam-machine-plan", deployment.name
-    )
-    tfhelper_sunbeam_machine.clusterd_address = deployment.clusterd_address
-    tfhelper_sunbeam_machine.data_location = None
-    tfhelper_sunbeam_machine.env = controller_env
-
-    tfhelper_microk8s = manifest.get_tfhelper("microk8s-plan", deployment.name)
-    tfhelper_microk8s.clusterd_address = deployment.clusterd_address
-    tfhelper_microk8s.data_location = None
-    tfhelper_microk8s.env = controller_env
-
-    tfhelper_microceph = manifest.get_tfhelper("microceph-plan", deployment.name)
-    tfhelper_microceph.clusterd_address = deployment.clusterd_address
-    tfhelper_microceph.data_location = None
-    tfhelper_microceph.env = controller_env
-
-    tfhelper_openstack_deploy = manifest.get_tfhelper("openstack-plan", deployment.name)
-    tfhelper_openstack_deploy.clusterd_address = deployment.clusterd_address
-    tfhelper_openstack_deploy.data_location = None
-    tfhelper_openstack_deploy.env = controller_env
-
-    tfhelper_hypervisor_deploy = manifest.get_tfhelper(
-        "hypervisor-plan", deployment.name
-    )
-    tfhelper_hypervisor_deploy.data_location = None
-    tfhelper_hypervisor_deploy.clusterd_address = deployment.clusterd_address
-    tfhelper_hypervisor_deploy.env = controller_env
+    tfhelper_sunbeam_machine = manifest.get_tfhelper("sunbeam-machine-plan")
+    tfhelper_microk8s = manifest.get_tfhelper("microk8s-plan")
+    tfhelper_microceph = manifest.get_tfhelper("microceph-plan")
+    tfhelper_openstack_deploy = manifest.get_tfhelper("openstack-plan")
+    tfhelper_hypervisor_deploy = manifest.get_tfhelper("hypervisor-plan")
 
     plan = []
-    plan.append(AddInfrastructureModelStep(jhelper))
+    plan.append(AddInfrastructureModelStep(jhelper, deployment.infrastructure_model))
     plan.append(MaasAddMachinesToClusterdStep(client, maas_client))
-    plan.append(MaasDeployMachinesStep(client, jhelper))
+    plan.append(
+        MaasDeployMachinesStep(client, jhelper, deployment.infrastructure_model)
+    )
     run_plan(plan, console)
 
     def _name_mapper(node: dict) -> str:
@@ -467,11 +443,13 @@ def deploy(
             client,
             manifest,
             jhelper,
-            INFRASTRUCTURE_MODEL,
+            deployment.infrastructure_model,
         )
     )
     plan2.append(
-        AddSunbeamMachineUnitsStep(client, workers, jhelper, INFRASTRUCTURE_MODEL)
+        AddSunbeamMachineUnitsStep(
+            client, workers, jhelper, deployment.infrastructure_model
+        )
     )
     plan2.append(TerraformInitStep(tfhelper_microk8s))
     plan2.append(
@@ -482,26 +460,34 @@ def deploy(
             jhelper,
             str(deployment.network_mapping[Networks.PUBLIC.value]),
             str(deployment.network_mapping[Networks.INTERNAL.value]),
-            INFRASTRUCTURE_MODEL,
+            deployment.infrastructure_model,
             preseed,
             accept_defaults,
         )
     )
-    plan2.append(AddMicrok8sUnitsStep(client, control, jhelper, INFRASTRUCTURE_MODEL))
-    plan2.append(StoreMicrok8sConfigStep(client, jhelper, INFRASTRUCTURE_MODEL))
+    plan2.append(
+        AddMicrok8sUnitsStep(client, control, jhelper, deployment.infrastructure_model)
+    )
+    plan2.append(
+        StoreMicrok8sConfigStep(client, jhelper, deployment.infrastructure_model)
+    )
     plan2.append(AddMicrok8sCloudStep(client, jhelper))
     plan2.append(TerraformInitStep(tfhelper_microceph))
     plan2.append(
-        DeployMicrocephApplicationStep(client, manifest, jhelper, INFRASTRUCTURE_MODEL)
+        DeployMicrocephApplicationStep(
+            client, manifest, jhelper, deployment.infrastructure_model
+        )
     )
-    plan2.append(AddMicrocephUnitsStep(client, storage, jhelper, INFRASTRUCTURE_MODEL))
+    plan2.append(
+        AddMicrocephUnitsStep(client, storage, jhelper, deployment.infrastructure_model)
+    )
     plan2.append(
         MaasConfigureMicrocephOSDStep(
             client,
             maas_client,
             jhelper,
             storage,
-            INFRASTRUCTURE_MODEL,
+            deployment.infrastructure_model,
         )
     )
     plan2.append(TerraformInitStep(tfhelper_openstack_deploy))
@@ -512,7 +498,7 @@ def deploy(
             jhelper,
             "auto",
             "auto",  # TODO(gboutry): use the right values
-            INFRASTRUCTURE_MODEL,
+            deployment.infrastructure_model,
         )
     )
     plan2.append(ConfigureMySQLStep(jhelper))
@@ -523,10 +509,14 @@ def deploy(
             client,
             manifest,
             jhelper,
-            INFRASTRUCTURE_MODEL,
+            deployment.infrastructure_model,
         )
     )
-    plan2.append(AddHypervisorUnitStep(client, compute, jhelper, INFRASTRUCTURE_MODEL))
+    plan2.append(
+        AddHypervisorUnitsStep(
+            client, compute, jhelper, deployment.infrastructure_model
+        )
+    )
     plan2.append(SetBootstrapped(client))
     run_plan(plan2, console)
 
@@ -586,19 +576,16 @@ def add_maas(name: str, token: str, url: str, resource_pool: str) -> None:
     default=FORMAT_TABLE,
     help="Output format",
 )
-def list_machines_cmd(format: str) -> None:
+@click.pass_context
+def list_machines_cmd(ctx: click.Context, format: str) -> None:
     """List machines in active deployment."""
     preflight_checks = [
         LocalShareCheck(),
     ]
     run_preflight_checks(preflight_checks, console)
 
-    snap = Snap()
-
-    deployment_location = deployment_path(snap)
-    deployments_config = DeploymentsConfig.load(deployment_location)
-
-    client = MaasClient.from_deployment(deployments_config.get_active())
+    deployment: MaasDeployment = ctx.obj
+    client = MaasClient.from_deployment(deployment)
     machines = list_machines(client)
     if format == FORMAT_TABLE:
         table = Table()
@@ -625,18 +612,16 @@ def list_machines_cmd(format: str) -> None:
     default=FORMAT_TABLE,
     help="Output format",
 )
-def show_machine_cmd(hostname: str, format: str) -> None:
+@click.pass_context
+def show_machine_cmd(ctx: click.Context, hostname: str, format: str) -> None:
     """Show machine in active deployment."""
     preflight_checks = [
         LocalShareCheck(),
     ]
     run_preflight_checks(preflight_checks, console)
 
-    snap = Snap()
-    deployment_location = deployment_path(snap)
-    deployments_config = DeploymentsConfig.load(deployment_location)
-
-    client = MaasClient.from_deployment(deployments_config.get_active())
+    deployment: MaasDeployment = ctx.obj
+    client = MaasClient.from_deployment(deployment)
     machine = get_machine(client, hostname)
     header = "[bold]{}[/bold]"
     if format == FORMAT_TABLE:
@@ -717,18 +702,16 @@ def _zones_roles_table(zone_machines: dict[str, list[dict]]) -> Table:
     default=FORMAT_TABLE,
     help="Output format",
 )
-def list_zones_cmd(roles: bool, format: str) -> None:
+@click.pass_context
+def list_zones_cmd(ctx: click.Context, roles: bool, format: str) -> None:
     """List zones in active deployment."""
     preflight_checks = [
         LocalShareCheck(),
     ]
     run_preflight_checks(preflight_checks, console)
 
-    snap = Snap()
-    deployment_location = deployment_path(snap)
-    deployments_config = DeploymentsConfig.load(deployment_location)
-
-    client = MaasClient.from_deployment(deployments_config.get_active())
+    deployment: MaasDeployment = ctx.obj
+    client = MaasClient.from_deployment(deployment)
 
     zones_machines = list_machines_by_zone(client)
     if format == FORMAT_TABLE:
@@ -748,18 +731,16 @@ def list_zones_cmd(roles: bool, format: str) -> None:
     default=FORMAT_TABLE,
     help="Output format",
 )
-def list_spaces_cmd(format: str) -> None:
+@click.pass_context
+def list_spaces_cmd(ctx: click.Context, format: str) -> None:
     """List spaces in MAAS deployment."""
     preflight_checks = [
         LocalShareCheck(),
     ]
     run_preflight_checks(preflight_checks, console)
 
-    snap = Snap()
-    deployment_location = deployment_path(snap)
-    deployments_config = DeploymentsConfig.load(deployment_location)
-
-    client = MaasClient.from_deployment(deployments_config.get_active())
+    deployment: MaasDeployment = ctx.obj
+    client = MaasClient.from_deployment(deployment)
     spaces = list_spaces(client)
     if format == FORMAT_TABLE:
         table = Table()
@@ -775,7 +756,8 @@ def list_spaces_cmd(format: str) -> None:
 @click.command("map")
 @click.argument("space")
 @click.argument("network", type=click.Choice(Networks.values()))
-def map_space_cmd(space: str, network: str) -> None:
+@click.pass_context
+def map_space_cmd(ctx: click.Context, space: str, network: str) -> None:
     """Map space to network."""
     preflight_checks = [
         LocalShareCheck(),
@@ -785,15 +767,16 @@ def map_space_cmd(space: str, network: str) -> None:
     snap = Snap()
     deployment_location = deployment_path(snap)
     deployments_config = DeploymentsConfig.load(deployment_location)
-
-    client = MaasClient.from_deployment(deployments_config.get_active())
-    map_space(deployments_config, client, space, Networks(network))
+    deployment: MaasDeployment = ctx.obj
+    client = MaasClient.from_deployment(deployment)
+    map_space(deployments_config, deployment, client, space, Networks(network))
     console.print(f"Space {space} mapped to network {network}.")
 
 
 @click.command("unmap")
 @click.argument("network", type=click.Choice(Networks.values()))
-def unmap_space_cmd(network: str) -> None:
+@click.pass_context
+def unmap_space_cmd(ctx: click.Context, network: str) -> None:
     """Unmap space from network."""
     preflight_checks = [
         LocalShareCheck(),
@@ -803,8 +786,8 @@ def unmap_space_cmd(network: str) -> None:
     snap = Snap()
     deployment_location = deployment_path(snap)
     deployments_config = DeploymentsConfig.load(deployment_location)
-
-    unmap_space(deployments_config, Networks(network))
+    deployment: MaasDeployment = ctx.obj
+    unmap_space(deployments_config, deployment, Networks(network))
     console.print(f"Space unmapped from network {network}.")
 
 
@@ -815,18 +798,16 @@ def unmap_space_cmd(network: str) -> None:
     default=FORMAT_TABLE,
     help="Output format",
 )
-def list_networks_cmd(format: str):
+@click.pass_context
+def list_networks_cmd(ctx: click.Context, format: str):
     """List networks and associated spaces."""
     preflight_checks = [
         LocalShareCheck(),
     ]
     run_preflight_checks(preflight_checks, console)
 
-    snap = Snap()
-    deployment_location = deployment_path(snap)
-    deployments_config = DeploymentsConfig.load(deployment_location)
-
-    mapping = get_network_mapping(deployments_config)
+    deployment: MaasDeployment = ctx.obj
+    mapping = get_network_mapping(deployment)
     if format == FORMAT_TABLE:
         table = Table()
         table.add_column("Network")
@@ -907,19 +888,16 @@ def _save_report(snap: Snap, name: str, report: list[dict]) -> str:
 
 @click.command("validate")
 @click.argument("machine", type=str)
-def validate_machine_cmd(machine: str):
+@click.pass_context
+def validate_machine_cmd(ctx: click.Context, machine: str):
     """Validate machine configuration."""
     preflight_checks = [
         LocalShareCheck(),
     ]
     run_preflight_checks(preflight_checks, console)
 
+    deployment: MaasDeployment = ctx.obj
     snap = Snap()
-    deployment_location = deployment_path(snap)
-    deployments_config = DeploymentsConfig.load(deployment_location)
-    deployment = deployments_config.get_active()
-    if not is_maas_deployment(deployment):
-        raise ValueError("Not a MAAS deployment.")
 
     client = MaasClient.from_deployment(deployment)
     with console.status(f"Fetching {machine} ..."):
@@ -941,18 +919,15 @@ def validate_machine_cmd(machine: str):
 
 
 @click.command("validate")
-def validate_deployment_cmd():
+@click.pass_context
+def validate_deployment_cmd(ctx: click.Context):
     """Validate deployment."""
     preflight_checks = [
         LocalShareCheck(),
     ]
     run_preflight_checks(preflight_checks, console)
     snap = Snap()
-    path = deployment_path(snap)
-    deployments_config = DeploymentsConfig.load(path)
-    deployment = deployments_config.get_active()
-    if not is_maas_deployment(deployment):
-        raise ValueError("Not a MAAS deployment.")
+    deployment: MaasDeployment = ctx.obj
     client = MaasClient.from_deployment(deployment)
     with console.status(f"Fetching {deployment.name} machines ..."):
         try:

@@ -25,14 +25,6 @@ from rich.console import Console
 from rich.table import Table
 from snaphelpers import Snap
 
-from sunbeam.commands.deployment import (
-    Deployment,
-    DeploymentsConfig,
-    deployment_path,
-    list_deployments,
-    register_deployment_type,
-    store_deployment_as_yaml,
-)
 from sunbeam.jobs.checks import LocalShareCheck
 from sunbeam.jobs.common import (
     CONTEXT_SETTINGS,
@@ -41,49 +33,62 @@ from sunbeam.jobs.common import (
     run_plan,
     run_preflight_checks,
 )
+from sunbeam.jobs.deployment import Deployment, register_deployment_type
+from sunbeam.jobs.deployments import (
+    DeploymentsConfig,
+    deployment_path,
+    list_deployments,
+    store_deployment_as_yaml,
+)
 from sunbeam.provider.base import ProviderBase
-from sunbeam.provider.local import LOCAL_TYPE, LocalProvider
-from sunbeam.provider.maas import MAAS_TYPE, MaasProvider
+from sunbeam.provider.local.commands import LocalProvider
+from sunbeam.provider.local.deployment import LocalDeployment
+from sunbeam.provider.maas.commands import MaasProvider
 from sunbeam.utils import CatchGroup
 
 console = Console()
 LOG = logging.getLogger(__name__)
 
 
-DEFAULT = LOCAL_TYPE
-
-
-def guess_provider(path: Path) -> str:
-    """Guess provider from environment."""
-    provider = DEFAULT
-
+def load_deployment(path: Path) -> Deployment:
+    """Load deployment automatically."""
     if not path.exists():
-        return provider
+        return LocalDeployment()
 
     deployments = DeploymentsConfig.load(path)
 
     if deployments.active is None:
         LOG.debug("No active deployment found.")
-        return provider
+        return LocalDeployment()
 
-    return deployments.get_active().type
+    return deployments.get_active()
+
+
+def register_providers():
+    """Auto-register providers."""
+    providers: list[ProviderBase] = [LocalProvider(), MaasProvider()]
+    for provider_obj in providers:
+        deployment_type = provider_obj.deployment_type()
+        if deployment_type:
+            LOG.debug("Registering deployment type: %s", deployment_type)
+            register_deployment_type(*deployment_type)
 
 
 @click.group("deployment", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
 @click.pass_context
-def deployment(ctx):
+def deployment_group(ctx):
     """Manage deployments."""
     pass
 
 
-@deployment.group("add", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
+@deployment_group.group("add", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
 @click.pass_context
 def add(ctx):
     """Add a deployment."""
     pass
 
 
-@deployment.command()
+@deployment_group.command()
 @click.argument("name", type=str)
 def switch(name: str) -> None:
     """Switch deployment."""
@@ -103,7 +108,7 @@ def switch(name: str) -> None:
         sys.exit(1)
 
 
-@deployment.command("import")
+@deployment_group.command("import")
 @click.option(
     "--file",
     type=click.Path(exists=True, path_type=pathlib.Path),
@@ -129,6 +134,10 @@ def import_deployment(file: Path | None):
 
     import_step_class = deployment.import_step()
 
+    if import_step_class is NotImplemented:
+        click.echo(f"Import not supported for deployment type {deployment.type}.")
+        sys.exit(1)
+
     snap = Snap()
     path = deployment_path(snap)
     try:
@@ -145,7 +154,7 @@ def import_deployment(file: Path | None):
     console.print(f"Deployment {deployment.name!r} imported.")
 
 
-@deployment.command("export")
+@deployment_group.command("export")
 @click.argument("name", type=str)
 def export_deployment(name: str):
     """Export deployment."""
@@ -167,14 +176,14 @@ def export_deployment(name: str):
     console.print(f"Deployment exported to {str(stored_path)!r}")
 
 
-@deployment.command()
+@deployment_group.command("list")
 @click.option(
     "--format",
     type=click.Choice([FORMAT_TABLE, FORMAT_YAML]),
     default=FORMAT_TABLE,
     help="Output format",
 )
-def list(format: str) -> None:
+def list_providers(format: str) -> None:
     """List OpenStack deployments."""
     preflight_checks = [
         LocalShareCheck(),
@@ -204,7 +213,7 @@ def list(format: str) -> None:
         console.print(yaml.dump(deployment_list), end="")
 
 
-@deployment.command()
+@deployment_group.command()
 @click.argument("name", type=str)
 @click.option(
     "--format",
@@ -236,18 +245,21 @@ def show(name: str, format: str):
         console.print(yaml.dump(deployment), end="")
 
 
-def register_cli(cli: click.Group, provider: str):
+def register_cli(cli: click.Group, deployment: Deployment):
     """Register the CLI for the given provider."""
-    cli.add_command(deployment)
-    providers: dict[str, ProviderBase] = {
-        LOCAL_TYPE: LocalProvider(),
+    cli.add_command(deployment_group)
+    providers: list[ProviderBase] = [
+        LocalProvider(),
         # TODO(gboutry): hook to register deployment type automatically
-        MAAS_TYPE: MaasProvider(),
-    }
-    for provider_type, provider_obj in providers.items():
+        MaasProvider(),
+    ]
+    for provider_obj in providers:
         provider_obj.register_add_cli(add)
-        deployment_type = provider_obj.deployment_type()
-        if deployment_type:
-            register_deployment_type(*deployment_type)
-        if provider_type == provider:
-            provider_obj.register_cli(cli, deployment)
+        type_name, type_cls = provider_obj.deployment_type()
+        if isinstance(deployment, type_cls):
+            LOG.debug(
+                "Registering deployment type %r of cls %r",
+                type_name,
+                type_cls,
+            )
+            provider_obj.register_cli(cli, deployment_group)

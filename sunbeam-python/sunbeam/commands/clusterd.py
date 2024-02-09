@@ -43,7 +43,6 @@ from sunbeam.jobs.common import (
     update_status_background,
 )
 from sunbeam.jobs.juju import (
-    MODEL,
     ApplicationNotFoundException,
     JujuController,
     JujuHelper,
@@ -427,6 +426,7 @@ class DeploySunbeamClusterdApplicationStep(BaseStep):
         self,
         jhelper: JujuHelper,
         manifest: Manifest,
+        model: str,
     ):
         super().__init__(
             "Deploy sunbeam-clusterd",
@@ -434,7 +434,7 @@ class DeploySunbeamClusterdApplicationStep(BaseStep):
         )
         self.jhelper = jhelper
         self.manifest = manifest
-        self.model = MODEL
+        self.model = model
         self.app = APPLICATION
 
     def _get_controller_machines(self) -> list[str]:
@@ -465,7 +465,7 @@ class DeploySunbeamClusterdApplicationStep(BaseStep):
 
         num_units = num_machines
         self.update_status(status, "deploying application")
-        charm_manifest: CharmsManifest = self.manifest.software.charms[
+        charm_manifest: CharmsManifest = self.manifest.software_config.charms[
             "sunbeam-clusterd"
         ]
         charm_config = {"snap-channel": versions.SNAP_SUNBEAM_CLUSTERD_CHANNEL}

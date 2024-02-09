@@ -13,10 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import logging
 import os
-import subprocess
+import shutil
 from typing import Optional
 
 import click
@@ -25,10 +24,13 @@ import petname
 from rich.console import Console
 from snaphelpers import Snap
 
-from sunbeam.clusterd.client import Client
 from sunbeam.commands.configure import retrieve_admin_credentials
 from sunbeam.commands.openstack import OPENSTACK_MODEL
+from sunbeam.commands.terraform import TerraformException, TerraformHelper
+from sunbeam.jobs.deployment import Deployment
 from sunbeam.jobs.juju import JujuHelper, ModelNotFoundException, run_sync
+from sunbeam.jobs.manifest import Manifest
+from sunbeam.versions import TERRAFORM_DIR_NAMES
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -58,10 +60,11 @@ def launch(
     name: Optional[str] = None,
 ) -> None:
     """Launch an OpenStack instance on demo setup"""
-
+    snap = Snap()
     data_location = snap.paths.user_data
-    client: Client = ctx.obj
-    jhelper = JujuHelper(client, data_location)
+    deployment: Deployment = ctx.obj
+    jhelper = JujuHelper(deployment.get_connected_controller())
+    manifest = Manifest.load_latest_from_clusterdb(deployment, include_defaults=True)
     with console.status("Fetching user credentials ... "):
         try:
             run_sync(jhelper.get_model(OPENSTACK_MODEL))
@@ -71,36 +74,41 @@ def launch(
 
         admin_auth_info = retrieve_admin_credentials(jhelper, OPENSTACK_MODEL)
 
-        terraform_plan_location = snap.paths.user_common / "etc" / "demo-setup"
-        if not terraform_plan_location.exists():
-            raise click.ClickException("Please run `sunbeam configure` first")
-
+        tfplan = "demo-setup"
+        tfplan_dir: str = TERRAFORM_DIR_NAMES.get(tfplan)
+        manifest_tfplans = manifest.software_config.terraform
+        src = manifest_tfplans.get(tfplan).source
+        dst = snap.paths.user_common / "etc" / deployment.name / tfplan_dir
         try:
-            terraform = str(snap.paths.snap / "bin" / "terraform")
-            cmd = [terraform, "output", "-json"]
-            LOG.debug(f'Running command {" ".join(cmd)}')
-            process = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True,
-                cwd=terraform_plan_location,
+            os.mkdir(dst)
+        except FileExistsError:
+            pass
+        # NOTE: install to user writable location
+        LOG.debug(f"Updating {dst} from {src}...")
+        shutil.copytree(src, dst, dirs_exist_ok=True)
+        tfhelper = TerraformHelper(
+            path=snap.paths.user_common / "etc" / deployment.name / tfplan_dir,
+            plan=tfplan,
+            backend="http",
+            clusterd_address=deployment.get_clusterd_http_address(),
+        )
+        try:
+            tf_output = tfhelper.output(hide_output=True)
+        except TerraformException:
+            LOG.debug("Failed to load credentials from terraform", exc_info=True)
+            raise click.ClickException(
+                "Failed to load user credentials from deployment. See logs for details."
             )
-            tf_output = json.loads(process.stdout)
-
-        except subprocess.CalledProcessError:
-            LOG.exception("Error initializing Terraform")
-            raise click.ClickException("Please run `sunbeam configure` first")
 
     console.print("Launching an OpenStack instance ... ")
     try:
         conn = openstack.connect(
             auth_url=admin_auth_info.get("OS_AUTH_URL"),
-            username=tf_output["OS_USERNAME"]["value"],
-            password=tf_output["OS_PASSWORD"]["value"],
-            project_name=tf_output["OS_PROJECT_NAME"]["value"],
-            user_domain_name=tf_output["OS_USER_DOMAIN_NAME"]["value"],
-            project_domain_name=tf_output["OS_PROJECT_DOMAIN_NAME"]["value"],
+            username=tf_output["OS_USERNAME"],
+            password=tf_output["OS_PASSWORD"],
+            project_name=tf_output["OS_PROJECT_NAME"],
+            user_domain_name=tf_output["OS_USER_DOMAIN_NAME"],
+            project_domain_name=tf_output["OS_PROJECT_DOMAIN_NAME"],
         )
     except openstack.exceptions.SDKException:
         LOG.error("Could not authenticate to Keystone.")
@@ -126,9 +134,7 @@ def launch(
             instance_name = name if name else petname.Generate()
             image = conn.compute.find_image(image_name)
             flavor = conn.compute.find_flavor("m1.tiny")
-            network = conn.network.find_network(
-                f'{tf_output["OS_USERNAME"]["value"]}-network'
-            )
+            network = conn.network.find_network(f'{tf_output["OS_USERNAME"]}-network')
             keypair = conn.compute.find_keypair(key)
             server = conn.compute.create_server(
                 name=instance_name,

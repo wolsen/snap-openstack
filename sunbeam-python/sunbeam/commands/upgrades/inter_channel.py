@@ -36,6 +36,7 @@ from sunbeam.jobs.common import (
     run_plan,
     update_status_background,
 )
+from sunbeam.jobs.deployment import Deployment
 from sunbeam.jobs.juju import JujuHelper, JujuWaitException, TimeoutException, run_sync
 from sunbeam.jobs.manifest import Manifest
 from sunbeam.jobs.plugin import PluginManager
@@ -117,7 +118,9 @@ class BaseUpgrade(BaseStep, JujuStepHelper):
         expected_wls = ["active", "blocked", "unknown"]
         LOG.debug(f"Upgrading applications using terraform plan {tfplan}: {apps}")
         try:
-            self.manifest.update_partial_tfvars_and_apply_tf(charms, tfplan, config)
+            self.manifest.update_partial_tfvars_and_apply_tf(
+                self.client, charms, tfplan, config
+            )
         except TerraformException as e:
             LOG.exception("Error upgrading cloud")
             return Result(ResultType.FAILED, str(e))
@@ -145,6 +148,7 @@ class BaseUpgrade(BaseStep, JujuStepHelper):
 class UpgradeControlPlane(BaseUpgrade):
     def __init__(
         self,
+        deployment: Deployment,
         client: Client,
         jhelper: JujuHelper,
         manifest: Manifest,
@@ -165,6 +169,7 @@ class UpgradeControlPlane(BaseUpgrade):
             manifest,
             model,
         )
+        self.deployment = deployment
         self.tfplan = "openstack-plan"
         self.config = OPENSTACK_CONFIG_KEY
 
@@ -201,7 +206,7 @@ class UpgradeControlPlane(BaseUpgrade):
 
         # Step 3: Upgrade all plugins that uses openstack-plan
         LOG.debug("Upgrading openstack plugins that are enabled")
-        charms = PluginManager().get_all_charms_in_openstack_plan(self.client)
+        charms = PluginManager().get_all_charms_in_openstack_plan(self.deployment)
         apps = self.get_apps_filter_by_charms(self.model, charms)
         result = self.upgrade_applications(
             apps,
@@ -384,15 +389,23 @@ class UpgradeSunbeamMachineCharm(UpgradeMachineCharm):
 
 
 class ChannelUpgradeCoordinator(UpgradeCoordinator):
-    def __init__(self, client: Client, jhelper: JujuHelper, manifest: Manifest):
+    def __init__(
+        self,
+        deployment: Deployment,
+        client: Client,
+        jhelper: JujuHelper,
+        manifest: Manifest,
+    ):
         """Upgrade coordinator.
 
         Execute plan for conducting an upgrade.
 
+        :deployment: Deployment instance
         :client: Client for interacting with clusterd
         :jhelper: Helper for interacting with pylibjuju
         :manifest: Manifest object
         """
+        self.deployment = deployment
         self.client = client
         self.jhelper = jhelper
         self.manifest = manifest
@@ -404,7 +417,9 @@ class ChannelUpgradeCoordinator(UpgradeCoordinator):
         """
         plan = [
             ValidationCheck(self.jhelper, self.manifest),
-            UpgradeControlPlane(self.client, self.jhelper, self.manifest, "openstack"),
+            UpgradeControlPlane(
+                self.deployment, self.client, self.jhelper, self.manifest, "openstack"
+            ),
             UpgradeMicrocephCharm(
                 self.client, self.jhelper, self.manifest, "controller"
             ),
@@ -417,7 +432,7 @@ class ChannelUpgradeCoordinator(UpgradeCoordinator):
             UpgradeSunbeamMachineCharm(
                 self.client, self.jhelper, self.manifest, "controller"
             ),
-            UpgradePlugins(self.client, upgrade_release=True),
+            UpgradePlugins(self.deployment, upgrade_release=True),
         ]
         return plan
 

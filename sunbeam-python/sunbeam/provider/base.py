@@ -19,7 +19,7 @@ from typing import Tuple, Type
 import click
 from rich.console import Console
 
-from sunbeam.commands.deployment import Deployment
+from sunbeam.jobs.deployment import Deployment
 
 console = Console()
 
@@ -48,6 +48,6 @@ class ProviderBase(abc.ABC):
         """
         pass
 
-    def deployment_type(self) -> Tuple[str, Type[Deployment]] | None:
+    def deployment_type(self) -> Tuple[str, Type[Deployment]]:
         """Return a deployment type for the provider."""
-        pass
+        raise NotImplementedError

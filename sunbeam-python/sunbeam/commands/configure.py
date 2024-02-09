@@ -14,11 +14,9 @@
 # limitations under the License.
 
 import ipaddress
-import json
 import logging
 import os
 import shutil
-import subprocess
 from pathlib import Path
 from typing import Any, Optional, TextIO
 
@@ -46,12 +44,8 @@ from sunbeam.jobs.common import (
     run_plan,
     run_preflight_checks,
 )
-from sunbeam.jobs.juju import (
-    CONTROLLER_MODEL,
-    JujuHelper,
-    ModelNotFoundException,
-    run_sync,
-)
+from sunbeam.jobs.deployment import Deployment
+from sunbeam.jobs.juju import JujuHelper, ModelNotFoundException, run_sync
 from sunbeam.jobs.manifest import Manifest
 from sunbeam.versions import TERRAFORM_DIR_NAMES
 
@@ -291,17 +285,20 @@ class SetHypervisorCharmConfigStep(BaseStep):
 
     IPVANYNETWORK_UNSET = "0.0.0.0/0"
 
-    def __init__(self, client: Client, jhelper: JujuHelper, ext_network: Path):
+    def __init__(
+        self, client: Client, jhelper: JujuHelper, ext_network: Path, model: str
+    ):
         super().__init__(
             "Update charm config",
             "Updating openstack-hypervisor charm configuration",
         )
 
         # File path with external_network details in json format
-        self.ext_network_file = ext_network
-        self.ext_network = {}
         self.client = client
         self.jhelper = jhelper
+        self.ext_network_file = ext_network
+        self.model = model
+        self.ext_network = {}
         self.charm_config = {}
 
     def has_prompts(self) -> bool:
@@ -337,13 +334,12 @@ class SetHypervisorCharmConfigStep(BaseStep):
             "physical_network"
         )
         try:
-            model = CONTROLLER_MODEL.split("/")[-1]
             LOG.debug(
                 f"Config to apply on openstack-hypervisor snap: {self.charm_config}"
             )
             run_sync(
                 self.jhelper.set_application_config(
-                    model,
+                    self.model,
                     "openstack-hypervisor",
                     self.charm_config,
                 )
@@ -358,14 +354,22 @@ class SetHypervisorCharmConfigStep(BaseStep):
 class UserOpenRCStep(BaseStep):
     """Generate openrc for created cloud user."""
 
-    def __init__(self, client: Client, auth_url: str, auth_version: str, openrc: Path):
+    def __init__(
+        self,
+        client: Client,
+        tfhelper: TerraformHelper,
+        auth_url: str,
+        auth_version: str,
+        openrc: Path,
+    ):
         super().__init__(
             "Generate admin openrc", "Generating openrc for cloud admin usage"
         )
+        self.client = client
+        self.tfhelper = tfhelper
         self.auth_url = auth_url
         self.auth_version = auth_version
         self.openrc = openrc
-        self.client = client
 
     def is_skip(self, status: Optional[Status] = None) -> Result:
         """Determines if the step should be skipped or not.
@@ -386,34 +390,23 @@ class UserOpenRCStep(BaseStep):
 
     def run(self, status: Optional["Status"] = None) -> Result:
         try:
-            snap = Snap()
-            terraform = str(snap.paths.snap / "bin" / "terraform")
-            cmd = [terraform, "output", "-json"]
-            LOG.debug(f'Running command {" ".join(cmd)}')
-            process = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True,
-                cwd=snap.paths.user_common / "etc" / "demo-setup",
-            )
+            tf_output = self.tfhelper.output(hide_output=True)
             # Mask any passwords before printing process.stdout
-            tf_output = json.loads(process.stdout)
             self._print_openrc(tf_output)
             return Result(ResultType.COMPLETED)
-        except subprocess.CalledProcessError as e:
-            LOG.exception("Error initializing Terraform")
+        except TerraformException as e:
+            LOG.exception("Error getting terraform output")
             return Result(ResultType.FAILED, str(e))
 
     def _print_openrc(self, tf_output: dict) -> None:
         """Print openrc to console and save to disk using provided information"""
-        _openrc = f"""# openrc for {tf_output["OS_USERNAME"]["value"]}
+        _openrc = f"""# openrc for {tf_output["OS_USERNAME"]}
 export OS_AUTH_URL={self.auth_url}
-export OS_USERNAME={tf_output["OS_USERNAME"]["value"]}
-export OS_PASSWORD={tf_output["OS_PASSWORD"]["value"]}
-export OS_USER_DOMAIN_NAME={tf_output["OS_USER_DOMAIN_NAME"]["value"]}
-export OS_PROJECT_DOMAIN_NAME={tf_output["OS_PROJECT_DOMAIN_NAME"]["value"]}
-export OS_PROJECT_NAME={tf_output["OS_PROJECT_NAME"]["value"]}
+export OS_USERNAME={tf_output["OS_USERNAME"]}
+export OS_PASSWORD={tf_output["OS_PASSWORD"]}
+export OS_USER_DOMAIN_NAME={tf_output["OS_USER_DOMAIN_NAME"]}
+export OS_PROJECT_DOMAIN_NAME={tf_output["OS_PROJECT_DOMAIN_NAME"]}
+export OS_PROJECT_NAME={tf_output["OS_PROJECT_NAME"]}
 export OS_AUTH_VERSION={self.auth_version}
 export OS_IDENTITY_API_VERSION={self.auth_version}"""
         if self.openrc:
@@ -629,6 +622,7 @@ class SetLocalHypervisorOptions(BaseStep):
         client: Client,
         name: str,
         jhelper: JujuHelper,
+        model: str,
         join_mode: bool = False,
         deployment_preseed: dict | None = None,
     ):
@@ -638,6 +632,7 @@ class SetLocalHypervisorOptions(BaseStep):
         self.client = client
         self.name = name
         self.jhelper = jhelper
+        self.model = model
         self.join_mode = join_mode
         self.preseed = deployment_preseed or {}
 
@@ -700,12 +695,13 @@ class SetLocalHypervisorOptions(BaseStep):
         self.machine_id = str(node.get("machineid"))
         app = "openstack-hypervisor"
         action_cmd = "set-hypervisor-local-settings"
-        model = CONTROLLER_MODEL.split("/")[-1]
-        unit = run_sync(self.jhelper.get_unit_from_machine(app, self.machine_id, model))
+        unit = run_sync(
+            self.jhelper.get_unit_from_machine(app, self.machine_id, self.model)
+        )
         action_result = run_sync(
             self.jhelper.run_action(
                 unit.entity_id,
-                model,
+                self.model,
                 action_cmd,
                 action_params={
                     "external-nic": self.nic,
@@ -720,11 +716,12 @@ class SetLocalHypervisorOptions(BaseStep):
 
 
 def _configure(
-    client: Client,
+    deployment: Deployment,
     openrc: Optional[Path] = None,
     manifest: Optional[Path] = None,
     accept_defaults: bool = False,
 ):
+    client = deployment.get_client()
     preflight_checks = []
     preflight_checks.append(DaemonGroupCheck())
     preflight_checks.append(VerifyBootstrappedCheck(client))
@@ -734,24 +731,28 @@ def _configure(
     manifest_obj = None
     if manifest:
         manifest_obj = Manifest.load(
-            client, manifest_file=manifest, include_defaults=True
+            deployment, manifest_file=manifest, include_defaults=True
         )
     else:
         manifest_obj = Manifest.load_latest_from_clusterdb(
-            client, include_defaults=True
+            deployment, include_defaults=True
         )
 
-    LOG.debug(f"Manifest used for deployment - preseed: {manifest_obj.deployment}")
-    LOG.debug(f"Manifest used for deployment - software: {manifest_obj.software}")
-    preseed = manifest_obj.deployment or {}
+    LOG.debug(
+        f"Manifest used for deployment - preseed: {manifest_obj.deployment_config}"
+    )
+    LOG.debug(
+        f"Manifest used for deployment - software: {manifest_obj.software_config}"
+    )
+    preseed = manifest_obj.deployment_config or {}
 
     name = utils.get_fqdn()
     tfplan = "demo-setup"
-    tfplan_dir = TERRAFORM_DIR_NAMES.get(tfplan)
+    tfplan_dir: str = TERRAFORM_DIR_NAMES.get(tfplan)
     snap = Snap()
-    manifest_tfplans = manifest_obj.software.terraform
+    manifest_tfplans = manifest_obj.software_config.terraform
     src = manifest_tfplans.get(tfplan).source
-    dst = snap.paths.user_common / "etc" / tfplan_dir
+    dst = snap.paths.user_common / "etc" / deployment.name / tfplan_dir
     try:
         os.mkdir(dst)
     except FileExistsError:
@@ -760,8 +761,7 @@ def _configure(
     LOG.debug(f"Updating {dst} from {src}...")
     shutil.copytree(src, dst, dirs_exist_ok=True)
 
-    data_location = snap.paths.user_data
-    jhelper = JujuHelper(client, data_location)
+    jhelper = JujuHelper(deployment.get_connected_controller())
     try:
         run_sync(jhelper.get_model(OPENSTACK_MODEL))
     except ModelNotFoundException:
@@ -769,15 +769,15 @@ def _configure(
         raise click.ClickException("Please run `sunbeam cluster bootstrap` first")
     admin_credentials = retrieve_admin_credentials(jhelper, OPENSTACK_MODEL)
     tfhelper = TerraformHelper(
-        path=snap.paths.user_common / "etc" / tfplan_dir,
+        path=snap.paths.user_common / "etc" / deployment.name / tfplan_dir,
         env=admin_credentials,
         plan=tfplan,
         backend="http",
-        data_location=data_location,
+        clusterd_address=deployment.get_clusterd_http_address(),
     )
     answer_file = tfhelper.path / "config.auto.tfvars.json"
     plan = [
-        JujuLoginStep(data_location),
+        JujuLoginStep(deployment.juju_account),
         UserQuestions(
             client,
             answer_file=answer_file,
@@ -792,11 +792,17 @@ def _configure(
         ),
         UserOpenRCStep(
             client=client,
+            tfhelper=tfhelper,
             auth_url=admin_credentials["OS_AUTH_URL"],
             auth_version=admin_credentials["OS_AUTH_VERSION"],
             openrc=openrc,
         ),
-        SetHypervisorCharmConfigStep(client, jhelper, ext_network=answer_file),
+        SetHypervisorCharmConfigStep(
+            client,
+            jhelper,
+            ext_network=answer_file,
+            model=deployment.infrastructure_model,
+        ),
     ]
     compute_nodenames = [
         node["name"] for node in client.cluster.list_nodes_by_role("compute")
@@ -807,6 +813,7 @@ def _configure(
                 client,
                 name,
                 jhelper,
+                deployment.infrastructure_model,
                 # Accept preseed file but do not allow 'accept_defaults' as nic
                 # selection may vary from machine to machine and is potentially
                 # destructive if it takes over an unintended nic.
@@ -840,8 +847,8 @@ def configure(
     """Configure cloud with some sensible defaults."""
     if ctx.invoked_subcommand is not None:
         return
-    client: Client = ctx.obj
-    _configure(client, openrc, manifest, accept_defaults)
+    deployment: Deployment = ctx.obj
+    _configure(deployment, openrc, manifest, accept_defaults)
     for name, command in configure.commands.items():
         LOG.debug("Running configure %r", name)
         cmd_ctx = click.Context(

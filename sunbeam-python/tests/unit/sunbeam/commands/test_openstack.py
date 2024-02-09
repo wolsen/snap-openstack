@@ -40,6 +40,7 @@ from sunbeam.jobs.juju import (
 
 TOPOLOGY = "single"
 DATABASE = "single"
+MODEL = "test-model"
 
 
 @pytest.fixture(autouse=True)
@@ -73,7 +74,7 @@ class TestDeployControlPlaneStep(unittest.TestCase):
         )
 
         step = DeployControlPlaneStep(
-            self.client, self.manifest, self.jhelper, TOPOLOGY, DATABASE
+            self.client, self.manifest, self.jhelper, TOPOLOGY, DATABASE, MODEL
         )
         with patch(
             "sunbeam.commands.openstack.read_config",
@@ -90,7 +91,7 @@ class TestDeployControlPlaneStep(unittest.TestCase):
         )
 
         step = DeployControlPlaneStep(
-            self.client, self.manifest, self.jhelper, TOPOLOGY, DATABASE
+            self.client, self.manifest, self.jhelper, TOPOLOGY, DATABASE, MODEL
         )
         with patch(
             "sunbeam.commands.openstack.read_config",
@@ -106,7 +107,7 @@ class TestDeployControlPlaneStep(unittest.TestCase):
         self.jhelper.wait_until_active.side_effect = TimeoutException("timed out")
 
         step = DeployControlPlaneStep(
-            self.client, self.manifest, self.jhelper, TOPOLOGY, DATABASE
+            self.client, self.manifest, self.jhelper, TOPOLOGY, DATABASE, MODEL
         )
         with patch(
             "sunbeam.commands.openstack.read_config",
@@ -124,7 +125,7 @@ class TestDeployControlPlaneStep(unittest.TestCase):
         )
 
         step = DeployControlPlaneStep(
-            self.client, self.manifest, self.jhelper, TOPOLOGY, DATABASE
+            self.client, self.manifest, self.jhelper, TOPOLOGY, DATABASE, MODEL
         )
         with patch(
             "sunbeam.commands.openstack.read_config",
@@ -138,7 +139,7 @@ class TestDeployControlPlaneStep(unittest.TestCase):
 
     def test_is_skip_pristine(self):
         step = DeployControlPlaneStep(
-            self.client, self.manifest, self.jhelper, TOPOLOGY, DATABASE
+            self.client, self.manifest, self.jhelper, TOPOLOGY, DATABASE, MODEL
         )
         with patch(
             "sunbeam.commands.openstack.read_config",
@@ -150,7 +151,7 @@ class TestDeployControlPlaneStep(unittest.TestCase):
 
     def test_is_skip_subsequent_run(self):
         step = DeployControlPlaneStep(
-            self.client, self.manifest, self.jhelper, TOPOLOGY, DATABASE
+            self.client, self.manifest, self.jhelper, TOPOLOGY, DATABASE, MODEL
         )
         with patch(
             "sunbeam.commands.openstack.read_config",
@@ -162,7 +163,7 @@ class TestDeployControlPlaneStep(unittest.TestCase):
 
     def test_is_skip_database_changed(self):
         step = DeployControlPlaneStep(
-            self.client, self.manifest, self.jhelper, TOPOLOGY, DATABASE
+            self.client, self.manifest, self.jhelper, TOPOLOGY, DATABASE, MODEL
         )
         with patch(
             "sunbeam.commands.openstack.read_config",
@@ -199,7 +200,7 @@ class TestResizeControlPlaneStep(unittest.TestCase):
         )
 
         step = ResizeControlPlaneStep(
-            self.client, self.manifest, self.jhelper, "single", False
+            self.client, self.manifest, self.jhelper, "single", MODEL, False
         )
         result = step.run()
 
@@ -212,7 +213,7 @@ class TestResizeControlPlaneStep(unittest.TestCase):
         )
 
         step = ResizeControlPlaneStep(
-            self.client, self.manifest, self.jhelper, TOPOLOGY, False
+            self.client, self.manifest, self.jhelper, TOPOLOGY, MODEL, False
         )
         result = step.run()
 
@@ -224,7 +225,7 @@ class TestResizeControlPlaneStep(unittest.TestCase):
         self.jhelper.wait_until_active.side_effect = TimeoutException("timed out")
 
         step = ResizeControlPlaneStep(
-            self.client, self.manifest, self.jhelper, TOPOLOGY, False
+            self.client, self.manifest, self.jhelper, TOPOLOGY, MODEL, False
         )
         result = step.run()
 
@@ -238,7 +239,7 @@ class TestResizeControlPlaneStep(unittest.TestCase):
         )
 
         step = ResizeControlPlaneStep(
-            self.client, self.manifest, self.jhelper, TOPOLOGY, False
+            self.client, self.manifest, self.jhelper, TOPOLOGY, MODEL, False
         )
         result = step.run()
 
@@ -248,7 +249,7 @@ class TestResizeControlPlaneStep(unittest.TestCase):
 
     def test_run_incompatible_topology(self):
         step = ResizeControlPlaneStep(
-            self.client, self.manifest, self.jhelper, "large", force=False
+            self.client, self.manifest, self.jhelper, "large", MODEL, force=False
         )
         result = step.run()
 
@@ -257,7 +258,7 @@ class TestResizeControlPlaneStep(unittest.TestCase):
 
     def test_run_force_incompatible_topology(self):
         step = ResizeControlPlaneStep(
-            self.client, self.manifest, self.jhelper, "large", force=True
+            self.client, self.manifest, self.jhelper, "large", MODEL, force=True
         )
         result = step.run()
 
