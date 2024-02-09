@@ -269,8 +269,10 @@ def _convert_raw_machine(machine_raw: dict) -> dict:
 
     spaces = []
     for interface in machine_raw["interface_set"]:
-        spaces.append(interface["vlan"]["space"])
+        if (vlan := interface.get("vlan")) and (space := vlan.get("space")):
+            spaces.append(space)
     return {
+        "system_id": machine_raw["system_id"],
         "hostname": machine_raw["hostname"],
         "roles": list(set(machine_raw["tag_names"]).intersection(RoleTags.values())),
         "zone": machine_raw["zone"]["name"],
@@ -1156,8 +1158,8 @@ class MaasBootstrapJujuStep(BootstrapJujuStep):
                 ResultType.FAILED,
                 f"No machines with tag {RoleTags.JUJU_CONTROLLER.value!r} found.",
             )
-        controller = sorted(machine["hostname"] for machine in machines)[0]
-        self.bootstrap_args.extend(("--to", controller))
+        controller = sorted(machines, key=lambda x: x["hostname"])[0]
+        self.bootstrap_args.extend(("--to", "system-id=" + controller["system_id"]))
         return super().is_skip(status)
 
 
@@ -1214,6 +1216,16 @@ class MaasScaleJujuStep(ScaleJujuStep):
                 f" need {self.n} to scale, skipping..."
             )
             return Result(ResultType.SKIPPED)
+        machines = sorted(machines, key=lambda x: x["hostname"])
+
+        system_ids = [machine["system_id"] for machine in machines]
+        for controller_machine in controller_machines.values():
+            if controller_machine["instance-id"] in system_ids:
+                system_ids.remove(controller_machine["instance-id"])
+
+        placement = ",".join(f"system-id={system_id}" for system_id in system_ids)
+
+        self.extra_args.extend(("--to", placement))
         return Result(ResultType.COMPLETED)
 
 
@@ -1384,7 +1396,9 @@ class MaasAddMachinesToClusterdStep(BaseStep):
             # even if is_skip reported a failure
             return Result(ResultType.FAILED, "No machines to add / node to update.")
         for machine in self.machines:
-            self.client.cluster.add_node_info(machine["hostname"], machine["roles"])
+            self.client.cluster.add_node_info(
+                machine["hostname"], machine["roles"], systemid=machine["system_id"]
+            )
         for node in self.nodes:
             self.client.cluster.update_node_info(*node)
         return Result(ResultType.COMPLETED)
@@ -1422,6 +1436,16 @@ class MaasDeployMachinesStep(BaseStep):
                             f" {self.model} with id {id},"
                             f" expected the id {node['machineid']}.",
                         )
+                    if (
+                        node["systemid"] != machine.instance_id
+                        and node["systemid"] != ""  # noqa: W503
+                    ):
+                        return Result(
+                            ResultType.FAILED,
+                            f"Machine {node['name']} already exists in model"
+                            f" {self.model} with systemid {machine.instance_id},"
+                            f" expected the systemid {node['systemid']}.",
+                        )
                     if node_machine_id == -1:
                         nodes_to_update.append(node)
                     nodes_to_deploy.remove(node)
@@ -1437,7 +1461,9 @@ class MaasDeployMachinesStep(BaseStep):
         for node in self.nodes_to_deploy:
             self.update_status(status, f"deploying {node['name']}")
             LOG.debug(f"Adding machine {node['name']} to model {self.model}")
-            juju_machine = run_sync(self.jhelper.add_machine(node["name"], self.model))
+            juju_machine = run_sync(
+                self.jhelper.add_machine("system-id=" + node["systemid"], self.model)
+            )
             self.client.cluster.update_node_info(
                 node["name"], machineid=int(juju_machine.id)
             )
