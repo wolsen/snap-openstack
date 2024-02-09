@@ -33,7 +33,7 @@ variable "charm_microceph_config" {
 
 variable "microceph_channel" {
   description = "K8S channel to deploy, not the operator channel"
-  default     = "latest/stable"
+  default     = "reef/stable"
 }
 
 variable "machine_ids" {

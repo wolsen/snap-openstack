@@ -57,6 +57,22 @@ def microceph_questions():
     }
 
 
+async def list_disks(jhelper: JujuHelper, model: str, unit: str) -> tuple[dict, dict]:
+    """Call list-disks action on an unit."""
+    LOG.debug("Running list-disks on : %r", unit)
+    action_result = await jhelper.run_action(unit, model, "list-disks")
+    LOG.debug(
+        "Result after running action list-disks on %r: %r",
+        unit,
+        action_result,
+    )
+    osds = ast.literal_eval(action_result.get("osds", "[]"))
+    unpartitioned_disks = ast.literal_eval(
+        action_result.get("unpartitioned-disks", "[]")
+    )
+    return osds, unpartitioned_disks
+
+
 class DeployMicrocephApplicationStep(DeployMachineApplicationStep):
     """Deploy Microceph application using Terraform"""
 
@@ -165,14 +181,10 @@ class ConfigureMicrocephOSDStep(BaseStep):
             unit = run_sync(
                 self.jhelper.get_unit_from_machine(APPLICATION, self.machine_id, MODEL)
             )
-            LOG.debug(f"Running action list-disks on {unit.entity_id}")
-            action_result = run_sync(
-                self.jhelper.run_action(unit.entity_id, MODEL, "list-disks")
+            _, unpartitioned_disks = run_sync(
+                list_disks(self.jhelper, MODEL, unit.entity_id)
             )
-            LOG.debug(f"Result after running action list-disks: {action_result}")
-
-            disks = ast.literal_eval(action_result.get("unpartitioned-disks", "[]"))
-            unpartitioned_disks = [disk.get("path") for disk in disks]
+            unpartitioned_disks = [disk.get("path") for disk in unpartitioned_disks]
             # Remove duplicates if any
             unpartitioned_disks = list(set(unpartitioned_disks))
             if OSD_PATH_PREFIX in unpartitioned_disks:
