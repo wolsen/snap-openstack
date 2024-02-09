@@ -238,8 +238,6 @@ class Manifest:
             default_software = SoftwareConfig.get_default_software_as_dict(
                 client, plugin_manager
             )
-            LOG.warning(default_software)
-            LOG.warning(override_software)
             utils.merge_dict(default_software, override_software)
             return Manifest(
                 client, plugin_manager, override_deployment, default_software
