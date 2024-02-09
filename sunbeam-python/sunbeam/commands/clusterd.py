@@ -18,6 +18,7 @@ import logging
 import re
 from typing import List, Optional, Union
 
+import sunbeam.versions as versions
 from sunbeam import utils
 from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import (
@@ -50,6 +51,7 @@ from sunbeam.jobs.juju import (
     TimeoutException,
     run_sync,
 )
+from sunbeam.jobs.manifest import CharmsManifest, Manifest
 
 LOG = logging.getLogger(__name__)
 APPLICATION = "sunbeam-clusterd"
@@ -424,12 +426,14 @@ class DeploySunbeamClusterdApplicationStep(BaseStep):
     def __init__(
         self,
         jhelper: JujuHelper,
+        manifest: Manifest,
     ):
         super().__init__(
             "Deploy sunbeam-clusterd",
             "Deploying Sunbeam Clusterd",
         )
         self.jhelper = jhelper
+        self.manifest = manifest
         self.model = MODEL
         self.app = APPLICATION
 
@@ -461,17 +465,21 @@ class DeploySunbeamClusterdApplicationStep(BaseStep):
 
         num_units = num_machines
         self.update_status(status, "deploying application")
+        charm_manifest: CharmsManifest = self.manifest.software.charms[
+            "sunbeam-clusterd"
+        ]
+        charm_config = {"snap-channel": versions.SNAP_SUNBEAM_CLUSTERD_CHANNEL}
+        if charm_manifest.config:
+            charm_config.update(charm_manifest.config)
         run_sync(
             self.jhelper.deploy(
                 APPLICATION,
                 "sunbeam-clusterd",
-                MODEL,
+                self.model,
                 num_units,
-                # TODO(gboutry): Choose channel with manifest
-                channel="2023.2/edge",
+                channel=charm_manifest.channel,
                 to=machines,
-                # TODO(gboutry): Until snap is published to main branch, manifest also
-                config={"snap-channel": "2023.2/edge/maas"},
+                config=charm_config,
             )
         )
 

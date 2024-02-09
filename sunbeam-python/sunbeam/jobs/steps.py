@@ -23,7 +23,7 @@ from sunbeam.clusterd.service import (
     ConfigItemNotFoundException,
     NodeNotExistInClusterException,
 )
-from sunbeam.commands.terraform import TerraformException, TerraformHelper
+from sunbeam.commands.terraform import TerraformException
 from sunbeam.jobs.common import BaseStep, Result, ResultType, read_config, update_config
 from sunbeam.jobs.juju import (
     ApplicationNotFoundException,
@@ -31,6 +31,7 @@ from sunbeam.jobs.juju import (
     TimeoutException,
     run_sync,
 )
+from sunbeam.jobs.manifest import Manifest
 
 LOG = logging.getLogger(__name__)
 
@@ -41,21 +42,26 @@ class DeployMachineApplicationStep(BaseStep):
     def __init__(
         self,
         client: Client,
-        tfhelper: TerraformHelper,
+        manifest: Manifest,
         jhelper: JujuHelper,
         config: str,
         application: str,
         model: str,
+        tfplan: str,
         banner: str = "",
         description: str = "",
+        refresh: bool = False,
     ):
         super().__init__(banner, description)
-        self.client = client
-        self.tfhelper = tfhelper
+        self.manifest = manifest
         self.jhelper = jhelper
         self.config = config
         self.application = application
         self.model = model
+        self.client = client
+        self.tfplan = tfplan
+        # Set refresh flag to True to redeploy the application
+        self.refresh = refresh
 
     def extra_tfvars(self) -> dict:
         return {}
@@ -69,6 +75,9 @@ class DeployMachineApplicationStep(BaseStep):
         :return: ResultType.SKIPPED if the Step should be skipped,
                 ResultType.COMPLETED or ResultType.FAILED otherwise
         """
+        if self.refresh:
+            return Result(ResultType.COMPLETED)
+
         try:
             run_sync(self.jhelper.get_application(self.application, self.model))
         except ApplicationNotFoundException:
@@ -86,22 +95,18 @@ class DeployMachineApplicationStep(BaseStep):
             LOG.debug(str(e))
 
         try:
-            tfvars = read_config(self.client, self.config)
-        except ConfigItemNotFoundException:
-            tfvars = {}
-
-        tfvars.update(self.extra_tfvars())
-        tfvars.update(
-            {
-                "machine_ids": machine_ids,
-                "machine_model": self.model,
-            }
-        )
-        update_config(self.client, self.config, tfvars)
-        self.tfhelper.write_tfvars(tfvars)
-
-        try:
-            self.tfhelper.apply()
+            extra_tfvars = self.extra_tfvars()
+            extra_tfvars.update(
+                {
+                    "machine_ids": machine_ids,
+                    "machine_model": self.model,
+                }
+            )
+            self.manifest.update_tfvars_and_apply_tf(
+                tfplan=self.tfplan,
+                tfvar_config=self.config,
+                override_tfvars=extra_tfvars,
+            )
         except TerraformException as e:
             return Result(ResultType.FAILED, str(e))
 

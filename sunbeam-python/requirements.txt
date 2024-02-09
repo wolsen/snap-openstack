@@ -38,7 +38,8 @@ GitPython
 # Regression introduced in 1.3.3
 macaroonbakery!=1.3.3
 
+# For Manifest dataclasses
+pydantic
+
 # maas
 python-libmaas
-
-pydantic

@@ -23,16 +23,17 @@ from rich.console import Console
 from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import ClusterServiceUnavailableException
 from sunbeam.commands.openstack import OPENSTACK_MODEL, PatchLoadBalancerServicesStep
-from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
+from sunbeam.commands.terraform import TerraformInitStep
 from sunbeam.jobs.common import run_plan
 from sunbeam.jobs.juju import JujuHelper, run_sync
+from sunbeam.jobs.manifest import AddManifestStep
 from sunbeam.plugins.interface.v1.openstack import (
     ApplicationChannelData,
     EnableOpenStackApplicationStep,
     OpenStackControlPlanePlugin,
     TerraformPlanLocation,
 )
-from sunbeam.versions import OPENSTACK_CHANNEL
+from sunbeam.versions import BIND_CHANNEL, OPENSTACK_CHANNEL
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -54,21 +55,49 @@ class DnsPlugin(OpenStackControlPlanePlugin):
         )
         self.nameservers = None
 
+    def manifest_defaults(self) -> dict:
+        """Manifest plugin part in dict format."""
+        return {
+            "charms": {
+                "designate-k8s": {"channel": OPENSTACK_CHANNEL},
+                "designate-bind-k8s": {"channel": BIND_CHANNEL},
+            }
+        }
+
+    def manifest_attributes_tfvar_map(self) -> dict:
+        """Manifest attributes terraformvars map."""
+        return {
+            self.tfplan: {
+                "charms": {
+                    "designate-k8s": {
+                        "channel": "designate-channel",
+                        "revision": "designate-revision",
+                        "config": "designate-config",
+                    },
+                    "designate-bind-k8s": {
+                        "channel": "bind-channel",
+                        "revision": "bind-revision",
+                        "config": "bind-config",
+                    },
+                }
+            }
+        }
+
     def run_enable_plans(self) -> None:
         """Run plans to enable plugin."""
         data_location = self.snap.paths.user_data
-        tfhelper = TerraformHelper(
-            path=self.snap.paths.user_common / "etc" / f"deploy-{self.tfplan}",
-            plan=self._get_plan_name(),
-            backend="http",
-            data_location=data_location,
-        )
         jhelper = JujuHelper(self.client, data_location)
-        plan = [
-            TerraformInitStep(tfhelper),
-            EnableOpenStackApplicationStep(self.client, tfhelper, jhelper, self),
-            PatchBindLoadBalancerStep(self.client),
-        ]
+
+        plan = []
+        if self.user_manifest:
+            plan.append(AddManifestStep(self.client, self.user_manifest))
+        plan.extend(
+            [
+                TerraformInitStep(self.manifest.get_tfhelper(self.tfplan)),
+                EnableOpenStackApplicationStep(jhelper, self),
+                PatchBindLoadBalancerStep(self.client),
+            ]
+        )
 
         run_plan(plan, console)
         click.echo(f"OpenStack {self.name!r} application enabled.")

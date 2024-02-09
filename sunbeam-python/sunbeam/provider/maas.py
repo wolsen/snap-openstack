@@ -15,7 +15,6 @@
 
 
 import logging
-import shutil
 import sys
 from collections import Counter
 from datetime import datetime
@@ -94,7 +93,7 @@ from sunbeam.commands.sunbeam_machine import (
     AddSunbeamMachineUnitsStep,
     DeploySunbeamMachineApplicationStep,
 )
-from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
+from sunbeam.commands.terraform import TerraformInitStep
 from sunbeam.jobs.checks import (
     DiagnosticsCheck,
     DiagnosticsResult,
@@ -112,6 +111,7 @@ from sunbeam.jobs.common import (
     run_preflight_checks,
 )
 from sunbeam.jobs.juju import JujuAccount, JujuHelper
+from sunbeam.jobs.manifest import AddManifestStep, Manifest
 from sunbeam.provider.base import ProviderBase
 from sunbeam.utils import CatchGroup
 
@@ -190,19 +190,38 @@ class MaasProvider(ProviderBase):
 @click.command()
 @click.option("-a", "--accept-defaults", help="Accept all defaults.", is_flag=True)
 @click.option(
-    "-p",
-    "--preseed",
-    help="Preseed file.",
+    "-m",
+    "--manifest",
+    help="Manifest file.",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
+@click.pass_context
 def bootstrap(
-    preseed: Path | None = None,
+    ctx: click.Context,
+    manifest: Path | None = None,
     accept_defaults: bool = False,
 ) -> None:
     """Bootstrap the MAAS-backed deployment.
 
     Initialize the sunbeam cluster.
     """
+
+    client: Client = ctx.obj
+
+    # Validate manifest file
+    manifest_obj = None
+    if manifest:
+        manifest_obj = Manifest.load(
+            client, manifest_file=manifest, include_defaults=True
+        )
+    else:
+        manifest_obj = Manifest.get_default_manifest(client)
+
+    LOG.debug(f"Manifest used for deployment - preseed: {manifest_obj.deployment}")
+    LOG.debug(f"Manifest used for deployment - software: {manifest_obj.software}")
+    preseed = manifest_obj.deployment
+
+    del client
 
     snap = Snap()
 
@@ -253,14 +272,16 @@ def bootstrap(
             cloud_definition["clouds"][deployment.name]["type"],
             deployment.controller,
             deployment.juju_account.password,
+            manifest_obj.software.juju.bootstrap_args,
+            deployment_preseed=preseed,
             accept_defaults=accept_defaults,
-            preseed_file=preseed,
         )
     )
     plan.append(
         MaasScaleJujuStep(
             maas_client,
             deployment.controller,
+            manifest_obj.software.juju.scale_args,
         )
     )
     plan.append(
@@ -277,14 +298,19 @@ def bootstrap(
     jhelper = JujuHelper(None, Path())  # type: ignore
     jhelper.controller = deployment.get_connected_controller()
     plan2 = []
-    plan2.append(DeploySunbeamClusterdApplicationStep(jhelper))
+    plan2.append(DeploySunbeamClusterdApplicationStep(jhelper, manifest_obj))
     plan2.append(MaasSaveClusterdAddressStep(jhelper, deployment.name, deployments))
-    run_plan(plan2, console)
 
+    run_plan(plan2, console)
     client_url = deployment.clusterd_address
     if not client_url:
         console.print("Clusterd address should have been saved in previous step.")
         sys.exit(1)
+
+    if manifest:
+        plan3 = []
+        plan3.append(AddManifestStep(Client.from_http(client_url), manifest))
+        run_plan(plan3, console)
 
     console.print("Bootstrap controller components complete.")
 
@@ -292,13 +318,13 @@ def bootstrap(
 @click.command()
 @click.option("-a", "--accept-defaults", help="Accept all defaults.", is_flag=True)
 @click.option(
-    "-p",
-    "--preseed",
-    help="Preseed file.",
+    "-m",
+    "--manifest",
+    help="Manifest file.",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
 def deploy(
-    preseed: Path | None = None,
+    manifest: Path | None = None,
     accept_defaults: bool = False,
 ) -> None:
     """Deploy the MAAS-backed deployment.
@@ -350,61 +376,57 @@ def deploy(
     preflight_checks = []
     preflight_checks.append(NetworkMappingCompleteCheck(deployment))
     run_preflight_checks(preflight_checks, console)
-    tfplan_dirs = [
-        "deploy-sunbeam-machine",
-        "deploy-microk8s",
-        "deploy-microceph",
-        "deploy-openstack",
-        "deploy-openstack-hypervisor",
-    ]
 
-    deployment_base_dir = snap.paths.user_common / "etc" / deployment.name
-    for tfplan_dir in tfplan_dirs:
-        src = snap.paths.snap / "etc" / tfplan_dir
-        dst = deployment_base_dir / tfplan_dir
-        LOG.debug(f"Updating {dst} from {src}...")
-        shutil.copytree(src, dst, dirs_exist_ok=True)
+    manifest_obj = None
+    if manifest:
+        manifest_obj = Manifest.load(
+            client, manifest_file=manifest, include_defaults=True
+        )
+        run_plan([AddManifestStep(client, manifest)], console)
+    else:
+        manifest_obj = Manifest.load_latest_from_clusterdb(
+            client, include_defaults=True
+        )
+
+    manifest: Manifest = manifest_obj  # type: ignore
+    LOG.debug(f"Manifest used for deployment - preseed: {manifest.deployment}")
+    LOG.debug(f"Manifest used for deployment - software: {manifest.software}")
+    preseed = manifest.deployment
+
     controller_env = dict(
         JUJU_USERNAME=deployment.juju_account.user,
         JUJU_PASSWORD=deployment.juju_account.password,
         JUJU_CONTROLLER_ADDRESSES=",".join(deployment.juju_controller.api_endpoints),
         JUJU_CA_CERT=deployment.juju_controller.ca_cert,
     )
-    tfhelper_sunbeam_machine = TerraformHelper(
-        path=deployment_base_dir / "deploy-sunbeam-machine",
-        plan="sunbeam-machine-plan",
-        backend="http",
-        clusterd_address=deployment.clusterd_address,
-        env=controller_env,
+    tfhelper_sunbeam_machine = manifest.get_tfhelper(
+        "sunbeam-machine-plan", deployment.name
     )
-    tfhelper_microk8s = TerraformHelper(
-        path=deployment_base_dir / "deploy-microk8s",
-        plan="microk8s-plan",
-        backend="http",
-        clusterd_address=deployment.clusterd_address,
-        env=controller_env,
+    tfhelper_sunbeam_machine.clusterd_address = deployment.clusterd_address
+    tfhelper_sunbeam_machine.data_location = None
+    tfhelper_sunbeam_machine.env = controller_env
+
+    tfhelper_microk8s = manifest.get_tfhelper("microk8s-plan", deployment.name)
+    tfhelper_microk8s.clusterd_address = deployment.clusterd_address
+    tfhelper_microk8s.data_location = None
+    tfhelper_microk8s.env = controller_env
+
+    tfhelper_microceph = manifest.get_tfhelper("microceph-plan", deployment.name)
+    tfhelper_microceph.clusterd_address = deployment.clusterd_address
+    tfhelper_microceph.data_location = None
+    tfhelper_microceph.env = controller_env
+
+    tfhelper_openstack_deploy = manifest.get_tfhelper("openstack-plan", deployment.name)
+    tfhelper_openstack_deploy.clusterd_address = deployment.clusterd_address
+    tfhelper_openstack_deploy.data_location = None
+    tfhelper_openstack_deploy.env = controller_env
+
+    tfhelper_hypervisor_deploy = manifest.get_tfhelper(
+        "hypervisor-plan", deployment.name
     )
-    tfhelper_microceph = TerraformHelper(
-        path=deployment_base_dir / "deploy-microceph",
-        plan="microceph-plan",
-        backend="http",
-        clusterd_address=deployment.clusterd_address,
-        env=controller_env,
-    )
-    tfhelper_openstack_deploy = TerraformHelper(
-        path=deployment_base_dir / "deploy-openstack",
-        plan="openstack-plan",
-        backend="http",
-        clusterd_address=deployment.clusterd_address,
-        env=controller_env,
-    )
-    tfhelper_hypervisor_deploy = TerraformHelper(
-        path=deployment_base_dir / "deploy-openstack-hypervisor",
-        plan="hypervisor-plan",
-        backend="http",
-        clusterd_address=deployment.clusterd_address,
-        env=controller_env,
-    )
+    tfhelper_hypervisor_deploy.data_location = None
+    tfhelper_hypervisor_deploy.clusterd_address = deployment.clusterd_address
+    tfhelper_hypervisor_deploy.env = controller_env
 
     plan = []
     plan.append(AddInfrastructureModelStep(jhelper))
@@ -443,7 +465,7 @@ def deploy(
     plan2.append(
         DeploySunbeamMachineApplicationStep(
             client,
-            tfhelper_sunbeam_machine,
+            manifest,
             jhelper,
             INFRASTRUCTURE_MODEL,
         )
@@ -456,7 +478,7 @@ def deploy(
         MaasDeployMicrok8sApplicationStep(
             client,
             maas_client,
-            tfhelper_microk8s,
+            manifest,
             jhelper,
             str(deployment.network_mapping[Networks.PUBLIC.value]),
             str(deployment.network_mapping[Networks.INTERNAL.value]),
@@ -470,9 +492,7 @@ def deploy(
     plan2.append(AddMicrok8sCloudStep(client, jhelper))
     plan2.append(TerraformInitStep(tfhelper_microceph))
     plan2.append(
-        DeployMicrocephApplicationStep(
-            client, tfhelper_microceph, jhelper, INFRASTRUCTURE_MODEL
-        )
+        DeployMicrocephApplicationStep(client, manifest, jhelper, INFRASTRUCTURE_MODEL)
     )
     plan2.append(AddMicrocephUnitsStep(client, storage, jhelper, INFRASTRUCTURE_MODEL))
     plan2.append(
@@ -488,7 +508,7 @@ def deploy(
     plan2.append(
         DeployControlPlaneStep(
             client,
-            tfhelper_openstack_deploy,
+            manifest,
             jhelper,
             "auto",
             "auto",  # TODO(gboutry): use the right values
@@ -501,8 +521,7 @@ def deploy(
     plan2.append(
         DeployHypervisorApplicationStep(
             client,
-            tfhelper_hypervisor_deploy,
-            tfhelper_openstack_deploy,
+            manifest,
             jhelper,
             INFRASTRUCTURE_MODEL,
         )

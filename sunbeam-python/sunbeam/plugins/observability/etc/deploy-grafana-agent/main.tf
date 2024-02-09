@@ -36,10 +36,13 @@ resource "juju_application" "grafana-agent" {
   units = 0
 
   charm {
-    name    = "grafana-agent"
-    channel = var.grafana-agent-channel
-    base    = "ubuntu@22.04"
+    name     = "grafana-agent"
+    channel  = var.grafana-agent-channel
+    revision = var.grafana-agent-revision
+    base     = "ubuntu@22.04"
   }
+
+  config = var.grafana-agent-config
 }
 
 # juju integrate <principal-application>:cos-agent grafana-agent:cos-agent

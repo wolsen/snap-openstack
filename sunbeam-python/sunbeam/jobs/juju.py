@@ -18,7 +18,7 @@ import base64
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
 from typing import Awaitable, Dict, List, Optional, Sequence, TypedDict, TypeVar, cast
@@ -854,6 +854,91 @@ class JujuHelper:
         except asyncio.TimeoutError as e:
             raise TimeoutException(
                 f"Timed out while waiting for model {model!r} to be ready"
+            ) from e
+
+    @controller
+    async def wait_until_desired_status(
+        self,
+        model: str,
+        apps: list,
+        status: list = ["active"],
+        timeout: int = 10 * 60,
+    ) -> None:
+        """Wait for all agents in model to reach desired status
+
+        :model: Name of the model to wait for readiness
+        :apps: Applications to check the status for
+        :status: Desired status list
+        :timeout: Waiting timeout in seconds
+        """
+        check_freq = 0.5
+        idle_period = 15
+        model_impl = await self.get_model(model)
+
+        timeout = timedelta(seconds=timeout)
+        idle_period = timedelta(seconds=idle_period)
+        start_time = datetime.now()
+
+        idle_times = {}
+        units_ready = set()  # The units that are in the desired state
+        last_log_time = None
+        log_interval = timedelta(seconds=30)
+
+        try:
+            while True:
+                busy = []
+                for app_name in apps:
+                    if app_name not in model_impl.applications:
+                        busy.append(app_name + " (missing)")
+                        continue
+                    app = model_impl.applications[app_name]
+                    app_status = await app.get_status()
+
+                    for unit in app.units:
+                        need_to_wait_more_for_a_particular_status = (
+                            unit.workload_status not in status
+                        )
+                        app_is_in_desired_status = app_status in status
+                        if (
+                            not need_to_wait_more_for_a_particular_status
+                            and unit.agent_status == "idle"  # noqa: W503
+                            and app_is_in_desired_status  # noqa: W503
+                        ):
+                            units_ready.add(unit.name)
+                            now = datetime.now()
+                            idle_start = idle_times.setdefault(unit.name, now)
+
+                            if now - idle_start < idle_period:
+                                busy.append(
+                                    f"{unit.name} [{unit.agent_status}] "
+                                    f"{unit.workload_status}: "
+                                    f"{unit.workload_status_message}"
+                                )
+                        else:
+                            idle_times.pop(unit.name, None)
+                            busy.append(
+                                f"{unit.name} [{unit.agent_status}] "
+                                f"{unit.workload_status}: "
+                                f"{unit.workload_status_message}"
+                            )
+
+                if not busy:
+                    break
+                busy = "\n  ".join(busy)
+                if timeout is not None and datetime.now() - start_time > timeout:
+                    raise TimeoutException(
+                        f"Timed out while waiting for model {model!r} to be ready: "
+                        f"{busy}"
+                    )
+                if (
+                    last_log_time is None
+                    or datetime.now() - last_log_time > log_interval  # noqa: W503
+                ):
+                    last_log_time = datetime.now()
+                await asyncio.sleep(check_freq)
+        except (JujuMachineError, JujuAgentError, JujuUnitError, JujuAppError) as e:
+            raise JujuWaitException(
+                f"Error while waiting for model {model!r} to be ready: {str(e)}"
             ) from e
 
     @controller
