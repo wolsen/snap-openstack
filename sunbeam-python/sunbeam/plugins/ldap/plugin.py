@@ -428,7 +428,7 @@ class LDAPPlugin(OpenStackControlPlanePlugin):
             commands.update(
                 {
                     "init": [{"name": "ldap", "command": self.ldap_groups}],
-                    "ldap": [
+                    "init.ldap": [
                         {"name": "list-domains", "command": self.list_domains},
                         {"name": "add-domain", "command": self.add_domain},
                         {"name": "update-domain", "command": self.update_domain},
