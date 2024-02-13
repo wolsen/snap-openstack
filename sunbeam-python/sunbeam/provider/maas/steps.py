@@ -31,6 +31,7 @@ import sunbeam.provider.maas.client as maas_client
 import sunbeam.provider.maas.deployment as maas_deployment
 from sunbeam.clusterd.client import Client
 from sunbeam.commands.clusterd import APPLICATION as CLUSTERD_APPLICATION
+from sunbeam.commands.configure import SetHypervisorUnitsOptionsStep
 from sunbeam.commands.juju import (
     BootstrapJujuStep,
     ControllerNotFoundException,
@@ -358,6 +359,60 @@ class MachineStorageCheck(DiagnosticsCheck):
         )
 
 
+class MachineComputeNicCheck(DiagnosticsCheck):
+    """Check machine has compute nic assigned if required."""
+
+    def __init__(self, machine: dict):
+        super().__init__(
+            "Compute Nic check",
+            "Checking compute nic",
+        )
+        self.machine = machine
+
+    def run(self) -> DiagnosticsResult:
+        """Check machine has compute nic if required."""
+        assigned_roles = self.machine["roles"]
+        LOG.debug(f"{self.machine['hostname']=!r} assigned roles: {assigned_roles!r}")
+        if not assigned_roles:
+            return DiagnosticsResult.fail(
+                self.name,
+                "machine has no role assigned.",
+                ROLES_NEEDED_ERROR,
+                machine=self.machine["hostname"],
+            )
+        compute_tag = maas_deployment.NicTags.COMPUTE.value
+        if compute_tag not in assigned_roles:
+            self.message = "not a compute node."
+            return DiagnosticsResult.success(
+                self.name,
+                self.message,
+                machine=self.machine["hostname"],
+            )
+        nics = self.machine["nics"]
+        for nic in nics:
+            if compute_tag in nic["tags"]:
+                return DiagnosticsResult.success(
+                    self.name,
+                    "compute nic found",
+                    machine=self.machine["hostname"],
+                )
+
+        return DiagnosticsResult.fail(
+            self.name,
+            "no compute nic found",
+            textwrap.dedent(
+                f"""\
+                A compute node needs to have a dedicated nic for compute to be a part
+                of an openstack deployment. Either add a compute nic to the machine or
+                remove the compute role. Add the tag `{compute_tag}`
+                to the nic in MAAS.
+                More on assigning tags: https://maas.io/docs/using-network-tags
+                """
+            ),
+            machine=self.machine["hostname"],
+        )
+
+
 class MachineRequirementsCheck(DiagnosticsCheck):
     """Check machine meets requirements."""
 
@@ -444,6 +499,7 @@ class DeploymentMachinesCheck(DiagnosticsCheck):
             checks.append(MachineRolesCheck(machine))
             checks.append(MachineNetworkCheck(self.deployment, machine))
             checks.append(MachineStorageCheck(machine))
+            checks.append(MachineComputeNicCheck(machine))
             checks.append(MachineRequirementsCheck(machine))
         results = _run_check_list(checks)
         results.append(
@@ -1491,3 +1547,70 @@ class MaasDeployMicrok8sApplicationStep(microk8s.DeployMicrok8sApplicationStep):
             return Result(ResultType.FAILED, "No internal ip range found")
 
         return super().is_skip(status)
+
+
+class MaasSetHypervisorUnitsOptionsStep(SetHypervisorUnitsOptionsStep):
+    def __init__(
+        self,
+        client: Client,
+        maas_client: maas_client.MaasClient,
+        names: list[str],
+        jhelper: JujuHelper,
+        model: str,
+        deployment_preseed: dict | None = None,
+    ):
+        super().__init__(
+            client,
+            names,
+            jhelper,
+            model,
+            deployment_preseed or {},
+            "Apply hypervisor settings",
+            "Applying hypervisor settings",
+        )
+        self.maas_client = maas_client
+
+    def _get_maas_nics(self) -> dict[str, str | None]:
+        """Retrieve fist nic from MAAS per machine with compute tag.
+
+        Return a dict of format:
+            {
+                "<machine>": "<nic1_name>" | None
+            }
+        """
+        machines = maas_client.list_machines(self.maas_client, hostname=self.names)
+        nics = {}
+        for machine in machines:
+            machine_nics = [
+                nic["name"]
+                for nic in machine["nics"]
+                if maas_deployment.NicTags.COMPUTE.value in nic["tags"]
+            ]
+
+            if len(machine_nics) > 0:
+                # take first nic with compute tag
+                nic = machine_nics[0]
+            else:
+                nic = None
+            nics[machine["hostname"]] = nic
+
+        return nics
+
+    def is_skip(self, status: Status | None = None):
+        """Determines if the step should be skipped or not."""
+        result = super().is_skip(status)
+        if result.result_type == ResultType.FAILED:
+            return result
+        nics = self._get_maas_nics()
+        LOG.debug("Nics: %r", nics)
+
+        for machine, nic in nics.items():
+            if nic is None:
+                nic_tag = maas_deployment.NicTags.COMPUTE.value
+                return Result(
+                    ResultType.FAILED,
+                    f"Machine {machine} does not have any {nic_tag} nic defined.",
+                )
+
+        self.nics = nics
+        return Result(ResultType.COMPLETED)

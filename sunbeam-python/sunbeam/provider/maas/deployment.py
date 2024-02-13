@@ -87,6 +87,15 @@ class StorageTags(enum.Enum):
         return [tag.value for tag in cls]
 
 
+class NicTags(enum.Enum):
+    COMPUTE = "compute"
+
+    @classmethod
+    def values(cls) -> list[str]:
+        """Return list of tag values."""
+        return [tag.value for tag in cls]
+
+
 class MaasDeployment(Deployment):
     type: str = MAAS_TYPE
     token: str

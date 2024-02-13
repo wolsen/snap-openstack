@@ -106,7 +106,7 @@ def main():
     deployment = provider_cmds.load_deployment(
         snap.paths.real_home / deployments_jobs.DEPLOYMENTS_CONFIG
     )
-    provider_cmds.register_cli(cli, deployment)
+    provider_cmds.register_cli(cli, configure_cmds.configure, deployment)
 
     # Manifst management
     cli.add_command(manifest)

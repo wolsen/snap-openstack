@@ -245,7 +245,7 @@ def show(name: str, format: str):
         console.print(yaml.dump(deployment), end="")
 
 
-def register_cli(cli: click.Group, deployment: Deployment):
+def register_cli(cli: click.Group, configure: click.Group, deployment: Deployment):
     """Register the CLI for the given provider."""
     cli.add_command(deployment_group)
     providers: list[ProviderBase] = [
@@ -262,4 +262,4 @@ def register_cli(cli: click.Group, deployment: Deployment):
                 type_name,
                 type_cls,
             )
-            provider_obj.register_cli(cli, deployment_group)
+            provider_obj.register_cli(cli, configure, deployment_group)

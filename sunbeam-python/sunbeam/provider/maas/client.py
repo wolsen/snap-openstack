@@ -136,9 +136,19 @@ def _convert_raw_machine(machine_raw: dict) -> dict:
                 )
 
     spaces = []
+    nics = []
     for interface in machine_raw["interface_set"]:
         if (vlan := interface.get("vlan")) and (space := vlan.get("space")):
             spaces.append(space)
+        nics.append(
+            {
+                "id": interface["id"],
+                "name": interface["name"],
+                "mac_address": interface["mac_address"],
+                "tags": interface["tags"],
+            }
+        )
+
     return {
         "system_id": machine_raw["system_id"],
         "hostname": machine_raw["hostname"],
@@ -147,6 +157,7 @@ def _convert_raw_machine(machine_raw: dict) -> dict:
         "status": machine_raw["status_name"],
         "storage": storage_devices,
         "spaces": list(set(spaces)),
+        "nics": nics,
         "cores": machine_raw["cpu_count"],
         "memory": machine_raw["memory"],
     }
