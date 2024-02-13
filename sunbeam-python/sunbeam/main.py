@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import logging
+from pathlib import Path
 
 import click
 from snaphelpers import Snap
@@ -27,6 +28,7 @@ from sunbeam.commands import generate_cloud_config as generate_cloud_config_cmds
 from sunbeam.commands import generate_preseed as generate_preseed_cmds
 from sunbeam.commands import inspect as inspect_cmds
 from sunbeam.commands import launch as launch_cmds
+from sunbeam.commands import manifest as manifest_commands
 from sunbeam.commands import openrc as openrc_cmds
 from sunbeam.commands import prepare_node as prepare_node_cmds
 from sunbeam.commands import utils as utils_cmds
@@ -57,9 +59,21 @@ def cli(ctx, quiet, verbose):
     """
 
 
-@click.group("enable", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
+@click.group("manifest", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
 @click.pass_context
-def enable(ctx):
+def manifest(ctx):
+    """Manage manifests (read-only commands)"""
+
+
+@click.group("enable", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
+@click.option(
+    "-m",
+    "--manifest",
+    help="Manifest file.",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.pass_context
+def enable(ctx, manifest: Path | None = None):
     """Enable plugins"""
 
 
@@ -93,6 +107,12 @@ def main():
         snap.paths.real_home / deployment_cmds.DEPLOYMENT_CONFIG
     )
     provider_cmds.register_cli(cli, provider_guess)
+
+    # Manifst management
+    cli.add_command(manifest)
+    manifest.add_command(manifest_commands.list)
+    manifest.add_command(manifest_commands.show)
+    manifest.add_command(manifest_commands.generate)
 
     cli.add_command(enable)
     cli.add_command(disable)

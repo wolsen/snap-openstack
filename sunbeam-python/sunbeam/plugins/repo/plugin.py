@@ -322,18 +322,18 @@ class RepoPlugin(BasePlugin):
             repo_names = PluginManager.get_all_external_repos(self.client)
             if include_core:
                 click.echo("Core plugins:")
-                plugins = PluginManager.get_plugins(["core"])
+                plugins = PluginManager.get_plugins(self.client, ["core"])
                 self._print_plugins_table(plugins.get("core"))
 
             for repo in repo_names:
                 click.echo(f"Plugins in repo {repo}:")
-                plugins = PluginManager.get_plugins([repo])
+                plugins = PluginManager.get_plugins(self.client, [repo])
                 self._print_plugins_table(plugins.get(repo))
 
         elif format == FORMAT_YAML:
             # Add plugins to the repos list
             if plugins:
-                plugins = PluginManager.get_plugins()
+                plugins = PluginManager.get_plugins(self.client)
                 if include_core:
                     repos.append({"name": "core"})
 

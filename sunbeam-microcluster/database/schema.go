@@ -14,7 +14,8 @@ var SchemaExtensions = map[int]schema.Update{
 	1: NodesSchemaUpdate,
 	2: ConfigSchemaUpdate,
 	3: JujuUserSchemaUpdate,
-	4: AddSystemIDToNodes,
+	4: ManifestsSchemaUpdate,
+	5: AddSystemIDToNodes,
 }
 
 // NodesSchemaUpdate is schema for table nodes
@@ -63,6 +64,23 @@ CREATE TABLE jujuuser (
 );
   `
 
+	_, err := tx.Exec(stmt)
+
+	return err
+}
+
+// ManifestsSchemaUpdate is schema for table manifest
+// TOCHK: TIMESTAMP(6) not storing nano seconds
+func ManifestsSchemaUpdate(_ context.Context, tx *sql.Tx) error {
+	stmt := `
+CREATE TABLE manifest (
+  id                            INTEGER  PRIMARY KEY AUTOINCREMENT NOT NULL,
+  manifest_id                   TEXT     NOT  NULL,
+  applied_date                  TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP,
+  data                          TEXT,
+  UNIQUE(manifest_id)
+);
+  `
 	_, err := tx.Exec(stmt)
 
 	return err

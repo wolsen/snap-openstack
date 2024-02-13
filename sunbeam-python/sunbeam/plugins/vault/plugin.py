@@ -29,6 +29,7 @@ from sunbeam.plugins.interface.v1.openstack import (
     OpenStackControlPlanePlugin,
     TerraformPlanLocation,
 )
+from sunbeam.versions import VAULT_CHANNEL
 
 LOG = logging.getLogger(__name__)
 
@@ -43,6 +44,24 @@ class VaultPlugin(OpenStackControlPlanePlugin):
             tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO,
         )
 
+    def manifest_defaults(self) -> dict:
+        """Manifest pluing part in dict format."""
+        return {"charms": {"vault-k8s": {"channel": VAULT_CHANNEL}}}
+
+    def manifest_attributes_tfvar_map(self) -> dict:
+        """Manifest attrbitues to terraformvars map."""
+        return {
+            self.tfplan: {
+                "charms": {
+                    "vault-k8s": {
+                        "channel": "vault-channel",
+                        "revision": "vault-revision",
+                        "config": "vault-config",
+                    }
+                }
+            }
+        }
+
     def set_application_names(self) -> list:
         """Application names handled by the terraform plan."""
         return ["vault"]
@@ -51,7 +70,6 @@ class VaultPlugin(OpenStackControlPlanePlugin):
         """Set terraform variables to enable the application."""
         return {
             "enable-vault": True,
-            "vault-channel": "latest/edge",
         }
 
     def set_tfvars_on_disable(self) -> dict:

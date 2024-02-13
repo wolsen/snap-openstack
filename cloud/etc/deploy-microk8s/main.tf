@@ -37,16 +37,17 @@ resource "juju_application" "microk8s" {
   units = length(var.machine_ids) # need to manage the number of units
 
   charm {
-    name    = "microk8s"
-    channel = var.charm_microk8s_channel
+    name     = "microk8s"
+    channel  = var.charm_microk8s_channel
+    revision = var.charm_microk8s_revision
     base    = "ubuntu@22.04"
   }
 
-  config = {
+  config = merge({
     channel                       = var.microk8s_channel
     addons                        = join(" ", [for key, value in var.addons : "${key}:${value}"])
     disable_cert_reissue          = true
     kubelet_serialize_image_pulls = false
     skip_verify                   = true
-  }
+  }, var.charm_microk8s_config)
 }

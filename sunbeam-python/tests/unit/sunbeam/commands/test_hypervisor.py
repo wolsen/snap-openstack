@@ -14,7 +14,6 @@
 
 import asyncio
 import unittest
-from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -187,17 +186,14 @@ class TestReapplyHypervisorTerraformPlanStep(unittest.TestCase):
         self.client = Mock()
         self.read_config.start()
         self.jhelper = AsyncMock()
-        self.tfhelper = Mock(path=Path())
-        self.tfhelper_openstack = Mock(output=Mock(return_value={}))
-        self.tfhelper_openstack.backend = "http"
-        self.tfhelper_openstack.backend_config.return_value = {}
+        self.manifest = Mock()
 
     def tearDown(self):
         self.read_config.stop()
 
     def test_is_skip(self):
         step = ReapplyHypervisorTerraformPlanStep(
-            self.client, self.tfhelper, self.jhelper
+            self.client, self.manifest, self.jhelper
         )
         result = step.is_skip()
 
@@ -209,23 +205,24 @@ class TestReapplyHypervisorTerraformPlanStep(unittest.TestCase):
         )
 
         step = ReapplyHypervisorTerraformPlanStep(
-            self.client, self.tfhelper, self.jhelper
+            self.client, self.manifest, self.jhelper
         )
         result = step.run()
 
-        self.tfhelper.write_tfvars.assert_called_once()
-        self.tfhelper.apply.assert_called_once()
+        self.manifest.update_tfvars_and_apply_tf.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
 
     def test_run_tf_apply_failed(self):
-        self.tfhelper.apply.side_effect = TerraformException("apply failed...")
+        self.manifest.update_tfvars_and_apply_tf.side_effect = TerraformException(
+            "apply failed..."
+        )
 
         step = ReapplyHypervisorTerraformPlanStep(
-            self.client, self.tfhelper, self.jhelper
+            self.client, self.manifest, self.jhelper
         )
         result = step.run()
 
-        self.tfhelper.apply.assert_called_once()
+        self.manifest.update_tfvars_and_apply_tf.assert_called_once()
         assert result.result_type == ResultType.FAILED
         assert result.message == "apply failed..."
 
@@ -233,7 +230,7 @@ class TestReapplyHypervisorTerraformPlanStep(unittest.TestCase):
         self.jhelper.wait_application_ready.side_effect = TimeoutException("timed out")
 
         step = ReapplyHypervisorTerraformPlanStep(
-            self.client, self.tfhelper, self.jhelper
+            self.client, self.manifest, self.jhelper
         )
         result = step.run()
 

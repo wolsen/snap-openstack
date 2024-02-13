@@ -22,6 +22,7 @@ from sunbeam.plugins.interface.v1.openstack import (
     OpenStackControlPlanePlugin,
     TerraformPlanLocation,
 )
+from sunbeam.versions import OPENSTACK_CHANNEL
 
 
 class SecretsPlugin(OpenStackControlPlanePlugin):
@@ -36,6 +37,24 @@ class SecretsPlugin(OpenStackControlPlanePlugin):
             tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO,
         )
 
+    def manifest_defaults(self) -> dict:
+        """Manifest plugin part in dict format."""
+        return {"charms": {"barbican-k8s": {"channel": OPENSTACK_CHANNEL}}}
+
+    def manifest_attributes_tfvar_map(self) -> dict:
+        """Manifest attributes terraformvars map."""
+        return {
+            self.tfplan: {
+                "charms": {
+                    "barbican-k8s": {
+                        "channel": "barbican-channel",
+                        "revision": "barbican-revision",
+                        "config": "barbican-config",
+                    }
+                }
+            }
+        }
+
     def set_application_names(self) -> list:
         """Application names handled by the terraform plan."""
         apps = ["barbican", "barbican-mysql-router"]
@@ -48,7 +67,6 @@ class SecretsPlugin(OpenStackControlPlanePlugin):
         """Set terraform variables to enable the application."""
         return {
             "enable-barbican": True,
-            "barbican-channel": "2023.2/edge",
         }
 
     def set_tfvars_on_disable(self) -> dict:

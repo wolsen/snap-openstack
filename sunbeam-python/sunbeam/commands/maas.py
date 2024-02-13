@@ -23,7 +23,6 @@ import enum
 import logging
 import ssl
 import textwrap
-from pathlib import Path
 from typing import Type, TypeGuard, overload
 
 import pydantic
@@ -44,7 +43,6 @@ from sunbeam.commands.juju import (
     JujuStepHelper,
     ScaleJujuStep,
 )
-from sunbeam.commands.terraform import TerraformHelper
 from sunbeam.jobs.checks import Check, DiagnosticsCheck, DiagnosticsResult
 from sunbeam.jobs.common import (
     RAM_4_GB_IN_MB,
@@ -62,6 +60,7 @@ from sunbeam.jobs.juju import (
     UnitNotFoundException,
     run_sync,
 )
+from sunbeam.jobs.manifest import Manifest
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -1107,7 +1106,7 @@ class MaasBootstrapJujuStep(BootstrapJujuStep):
         controller: str,
         password: str,
         bootstrap_args: list[str] | None = None,
-        preseed_file: Path | None = None,
+        deployment_preseed: dict | None = None,
         accept_defaults: bool = False,
     ):
         bootstrap_args = bootstrap_args or []
@@ -1129,7 +1128,7 @@ class MaasBootstrapJujuStep(BootstrapJujuStep):
             cloud_type,
             controller,
             bootstrap_args,
-            preseed_file,
+            deployment_preseed,
             accept_defaults,
         )
         self.maas_client = maas_client
@@ -1697,20 +1696,20 @@ class MaasDeployMicrok8sApplicationStep(microk8s.DeployMicrok8sApplicationStep):
         self,
         client: Client,
         maas_client: MaasClient,
-        tfhelper: TerraformHelper,
+        manifest: Manifest,
         jhelper: JujuHelper,
         public_space: str,
         internal_space: str,
         model: str = INFRASTRUCTURE_MODEL,
-        preseed_file: Path | None = None,
+        deployment_preseed: dict | None = None,
         accept_defaults: bool = False,
     ):
         super().__init__(
             client,
-            tfhelper,
+            manifest,
             jhelper,
             model,
-            preseed_file,
+            deployment_preseed,
             accept_defaults,
         )
         self.maas_client = maas_client

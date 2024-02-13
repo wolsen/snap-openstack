@@ -12,114 +12,104 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock
 
+from sunbeam.commands.terraform import TerraformException
 from sunbeam.commands.upgrades.inter_channel import BaseUpgrade
-from sunbeam.versions import (
-    MYSQL_SERVICES_K8S,
-    OPENSTACK_SERVICES_K8S,
-    OVN_SERVICES_K8S,
-)
+from sunbeam.jobs.common import ResultType
+from sunbeam.jobs.juju import TimeoutException
 
 
 class TestBaseUpgrade:
     def setup_method(self):
         self.client = Mock()
         self.jhelper = AsyncMock()
-        self.tfhelper = Mock()
-        self.upgrade_service = (
-            list(MYSQL_SERVICES_K8S.keys())  # noqa
-            + list(OVN_SERVICES_K8S.keys())  # noqa
-            + list(OPENSTACK_SERVICES_K8S.keys())  # noqa
-        )
+        self.manifest = Mock()
 
     def test_upgrade_applications(self):
-        def _get_new_channel_mock(app_name, model):
-            channels = {"nova": "2023.2/edge", "neutron": None}
-            return channels[app_name]
+        model = "openstack"
+        apps = ["nova"]
+        charms = ["nova-k8s"]
+        tfplan = "openstack-plan"
+        config = "openstackterraformvar"
+        timeout = 60
 
         upgrader = BaseUpgrade(
             "test name",
             "test description",
             self.client,
             self.jhelper,
-            self.tfhelper,
-            "openstack",
-        )
-        get_new_channel_mock = Mock()
-        get_new_channel_mock.side_effect = _get_new_channel_mock
-        with patch.object(BaseUpgrade, "get_new_channel", get_new_channel_mock):
-            upgrader.upgrade_applications(["nova"], "openstack")
-        self.jhelper.update_applications_channel.assert_called_once_with(
-            "openstack",
-            {
-                "nova": {
-                    "channel": "2023.2/edge",
-                    "expected_status": {"workload": ["blocked", "active"]},
-                }
-            },
+            self.manifest,
+            model,
         )
 
-    def test_get_new_channel_os_service(self, mocker):
-        self.jhelper.get_charm_channel.return_value = "2023.1/edge"
+        result = upgrader.upgrade_applications(
+            apps, charms, model, tfplan, config, timeout
+        )
+        self.manifest.update_partial_tfvars_and_apply_tf.assert_called_once_with(
+            charms, tfplan, config
+        )
+        self.jhelper.wait_until_desired_status.assert_called_once()
+        assert result.result_type == ResultType.COMPLETED
+
+    def test_upgrade_applications_tf_failed(self):
+        self.manifest.update_partial_tfvars_and_apply_tf.side_effect = (
+            TerraformException("apply failed...")
+        )
+
+        model = "openstack"
+        apps = ["nova"]
+        charms = ["nova-k8s"]
+        tfplan = "openstack-plan"
+        config = "openstackterraformvar"
+        timeout = 60
+
         upgrader = BaseUpgrade(
             "test name",
             "test description",
             self.client,
             self.jhelper,
-            self.tfhelper,
-            "openstack",
+            self.manifest,
+            model,
         )
-        new_channel = upgrader.get_new_channel("cinder", "openstack")
-        assert new_channel == "2023.2/edge"
 
-    def test_get_new_channel_os_service_same(self, mocker):
-        self.jhelper.get_charm_channel.return_value = "2023.2/edge"
+        result = upgrader.upgrade_applications(
+            apps, charms, model, tfplan, config, timeout
+        )
+        self.manifest.update_partial_tfvars_and_apply_tf.assert_called_once_with(
+            charms, tfplan, config
+        )
+        self.jhelper.wait_until_desired_status.assert_not_called()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == "apply failed..."
+
+    def test_upgrade_applications_waiting_timed_out(self):
+        self.jhelper.wait_until_desired_status.side_effect = TimeoutException(
+            "timed out"
+        )
+
+        model = "openstack"
+        apps = ["nova"]
+        charms = ["nova-k8s"]
+        tfplan = "openstack-plan"
+        config = "openstackterraformvar"
+        timeout = 60
+
         upgrader = BaseUpgrade(
             "test name",
             "test description",
             self.client,
             self.jhelper,
-            self.tfhelper,
-            "openstack",
+            self.manifest,
+            model,
         )
-        new_channel = upgrader.get_new_channel("cinder", "openstack")
-        assert new_channel is None
 
-    def test_get_new_channel_os_downgrade(self, mocker):
-        self.jhelper.get_charm_channel.return_value = "2023.2/edge"
-        upgrader = BaseUpgrade(
-            "test name",
-            "test description",
-            self.client,
-            self.jhelper,
-            self.tfhelper,
-            "openstack",
+        result = upgrader.upgrade_applications(
+            apps, charms, model, tfplan, config, timeout
         )
-        new_channel = upgrader.get_new_channel("cinder", "openstack")
-        assert new_channel is None
-
-    def test_get_new_channel_nonos_service(self, mocker):
-        self.jhelper.get_charm_channel.return_value = "3.8/stable"
-        upgrader = BaseUpgrade(
-            "test name",
-            "test description",
-            self.client,
-            self.jhelper,
-            self.tfhelper,
-            "openstack",
+        self.manifest.update_partial_tfvars_and_apply_tf.assert_called_once_with(
+            charms, tfplan, config
         )
-        new_channel = upgrader.get_new_channel("rabbitmq", "openstack")
-        assert new_channel == "3.12/edge"
-
-    def test_get_new_channel_unknown(self, mocker):
-        upgrader = BaseUpgrade(
-            "test name",
-            "test description",
-            self.client,
-            self.jhelper,
-            self.tfhelper,
-            "openstack",
-        )
-        new_channel = upgrader.get_new_channel("foo", "openstack")
-        assert new_channel is None
+        self.jhelper.wait_until_desired_status.assert_called_once()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == "timed out"

@@ -14,9 +14,7 @@
 # limitations under the License.
 
 import logging
-import shutil
 from pathlib import Path
-from typing import List, Optional
 
 import click
 import yaml
@@ -81,7 +79,7 @@ from sunbeam.commands.sunbeam_machine import (
     DeploySunbeamMachineApplicationStep,
     RemoveSunbeamMachineStep,
 )
-from sunbeam.commands.terraform import TerraformHelper, TerraformInitStep
+from sunbeam.commands.terraform import TerraformInitStep
 from sunbeam.jobs.checks import (
     DaemonGroupCheck,
     JujuSnapCheck,
@@ -107,6 +105,7 @@ from sunbeam.jobs.common import (
     validate_roles,
 )
 from sunbeam.jobs.juju import CONTROLLER, JujuHelper
+from sunbeam.jobs.manifest import AddManifestStep, Manifest
 from sunbeam.provider.base import ProviderBase
 from sunbeam.utils import CatchGroup
 
@@ -151,9 +150,9 @@ class LocalProvider(ProviderBase):
 @click.command()
 @click.option("-a", "--accept-defaults", help="Accept all defaults.", is_flag=True)
 @click.option(
-    "-p",
-    "--preseed",
-    help="Preseed file.",
+    "-m",
+    "--manifest",
+    help="Manifest file.",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
 )
 @click.option(
@@ -188,16 +187,31 @@ class LocalProvider(ProviderBase):
 @click.pass_context
 def bootstrap(
     ctx: click.Context,
-    roles: List[Role],
+    roles: list[Role],
     topology: str,
     database: str,
-    preseed: Optional[Path] = None,
+    manifest: Path | None = None,
     accept_defaults: bool = False,
 ) -> None:
     """Bootstrap the local node.
 
     Initialize the sunbeam cluster.
     """
+    client: Client = ctx.obj
+
+    # Validate manifest file
+    manifest_obj = None
+    if manifest:
+        manifest_obj = Manifest.load(
+            client, manifest_file=manifest, include_defaults=True
+        )
+    else:
+        manifest_obj = Manifest.get_default_manifest(client)
+
+    LOG.debug(f"Manifest used for deployment - preseed: {manifest_obj.deployment}")
+    LOG.debug(f"Manifest used for deployment - software: {manifest_obj.software}")
+    preseed = manifest_obj.deployment
+
     # Bootstrap node must always have the control role
     if Role.CONTROL not in roles:
         LOG.debug("Enabling control role for bootstrap")
@@ -212,28 +226,11 @@ def bootstrap(
     pretty_roles = ", ".join(role.name.lower() for role in roles)
     LOG.debug(f"Bootstrap node: roles {roles_str}")
 
-    cloud_name = snap.config.get("juju.cloud.name")
     cloud_type = snap.config.get("juju.cloud.type")
+    cloud_name = snap.config.get("juju.cloud.name")
     cloud_definition = JujuHelper.manual_cloud(cloud_name)
-
+    juju_bootstrap_args = manifest_obj.software.juju.bootstrap_args
     data_location = snap.paths.user_data
-
-    # NOTE: install to user writable location
-    tfplan_dirs = ["deploy-sunbeam-machine"]
-    if is_control_node:
-        tfplan_dirs.extend(
-            [
-                "deploy-microk8s",
-                "deploy-microceph",
-                "deploy-openstack",
-                "deploy-openstack-hypervisor",
-            ]
-        )
-    for tfplan_dir in tfplan_dirs:
-        src = snap.paths.snap / "etc" / tfplan_dir
-        dst = snap.paths.user_common / "etc" / tfplan_dir
-        LOG.debug(f"Updating {dst} from {src}...")
-        shutil.copytree(src, dst, dirs_exist_ok=True)
 
     preflight_checks = []
     preflight_checks.append(SystemRequirementsCheck())
@@ -248,12 +245,13 @@ def bootstrap(
         )
 
     run_preflight_checks(preflight_checks, console)
-    client: Client = ctx.obj
+
     plan = []
     plan.append(JujuLoginStep(data_location))
     # bootstrapped node is always machine 0 in controller model
     plan.append(ClusterInitStep(client, roles_to_str_list(roles), 0))
-    plan.append(ClusterUpdateNodeStep(client, fqdn, machine_id=0))
+    if manifest:
+        plan.append(AddManifestStep(client, manifest))
     plan.append(AddCloudJujuStep(cloud_name, cloud_definition))
     plan.append(
         BootstrapJujuStep(
@@ -261,8 +259,9 @@ def bootstrap(
             cloud_name,
             cloud_type,
             CONTROLLER,
+            bootstrap_args=juju_bootstrap_args,
             accept_defaults=accept_defaults,
-            preseed_file=preseed,
+            deployment_preseed=preseed,
         )
     )
     run_plan(plan, console)
@@ -280,36 +279,6 @@ def bootstrap(
     plan3.append(SaveJujuUserLocallyStep(fqdn, data_location))
     run_plan(plan3, console)
 
-    tfhelper = TerraformHelper(
-        path=snap.paths.user_common / "etc" / "deploy-microk8s",
-        plan="microk8s-plan",
-        backend="http",
-        data_location=data_location,
-    )
-    tfhelper_openstack_deploy = TerraformHelper(
-        path=snap.paths.user_common / "etc" / "deploy-openstack",
-        plan="openstack-plan",
-        backend="http",
-        data_location=data_location,
-    )
-    tfhelper_hypervisor_deploy = TerraformHelper(
-        path=snap.paths.user_common / "etc" / "deploy-openstack-hypervisor",
-        plan="hypervisor-plan",
-        backend="http",
-        data_location=data_location,
-    )
-    tfhelper_microceph_deploy = TerraformHelper(
-        path=snap.paths.user_common / "etc" / "deploy-microceph",
-        plan="microceph-plan",
-        backend="http",
-        data_location=data_location,
-    )
-    tfhelper_sunbeam_machine = TerraformHelper(
-        path=snap.paths.user_common / "etc" / "deploy-sunbeam-machine",
-        plan="sunbeam-machine-plan",
-        backend="http",
-        data_location=data_location,
-    )
     jhelper = JujuHelper(client, data_location)
 
     plan4 = []
@@ -317,30 +286,26 @@ def bootstrap(
         RegisterJujuUserStep(client, fqdn, CONTROLLER, data_location, replace=True)
     )
     # Deploy sunbeam machine charm
-    plan4.append(TerraformInitStep(tfhelper_sunbeam_machine))
-    plan4.append(
-        DeploySunbeamMachineApplicationStep(client, tfhelper_sunbeam_machine, jhelper)
-    )
+    plan4.append(TerraformInitStep(manifest_obj.get_tfhelper("sunbeam-machine-plan")))
+    plan4.append(DeploySunbeamMachineApplicationStep(client, manifest_obj, jhelper))
     plan4.append(AddSunbeamMachineUnitsStep(client, fqdn, jhelper))
     # Deploy Microk8s application during bootstrap irrespective of node role.
-    plan4.append(TerraformInitStep(tfhelper))
+    plan4.append(TerraformInitStep(manifest_obj.get_tfhelper("microk8s-plan")))
     plan4.append(
         DeployMicrok8sApplicationStep(
             client,
-            tfhelper,
+            manifest_obj,
             jhelper,
             accept_defaults=accept_defaults,
-            preseed_file=preseed,
+            deployment_preseed=preseed,
         )
     )
     plan4.append(AddMicrok8sUnitsStep(client, fqdn, jhelper))
     plan4.append(StoreMicrok8sConfigStep(client, jhelper))
     plan4.append(AddMicrok8sCloudStep(client, jhelper))
     # Deploy Microceph application during bootstrap irrespective of node role.
-    plan4.append(TerraformInitStep(tfhelper_microceph_deploy))
-    plan4.append(
-        DeployMicrocephApplicationStep(client, tfhelper_microceph_deploy, jhelper)
-    )
+    plan4.append(TerraformInitStep(manifest_obj.get_tfhelper("microceph-plan")))
+    plan4.append(DeployMicrocephApplicationStep(client, manifest_obj, jhelper))
 
     if is_storage_node:
         plan4.append(AddMicrocephUnitsStep(client, fqdn, jhelper))
@@ -350,16 +315,14 @@ def bootstrap(
                 fqdn,
                 jhelper,
                 accept_defaults=accept_defaults,
-                preseed_file=preseed,
+                deployment_preseed=preseed,
             )
         )
 
     if is_control_node:
-        plan4.append(TerraformInitStep(tfhelper_openstack_deploy))
+        plan4.append(TerraformInitStep(manifest_obj.get_tfhelper("openstack-plan")))
         plan4.append(
-            DeployControlPlaneStep(
-                client, tfhelper_openstack_deploy, jhelper, topology, database
-            )
+            DeployControlPlaneStep(client, manifest_obj, jhelper, topology, database)
         )
 
     run_plan(plan4, console)
@@ -373,12 +336,8 @@ def bootstrap(
     # NOTE(jamespage):
     # As with MicroCeph, always deploy the openstack-hypervisor charm
     # and add a unit to the bootstrap node if required.
-    plan5.append(TerraformInitStep(tfhelper_hypervisor_deploy))
-    plan5.append(
-        DeployHypervisorApplicationStep(
-            client, tfhelper_hypervisor_deploy, tfhelper_openstack_deploy, jhelper
-        )
-    )
+    plan5.append(TerraformInitStep(manifest_obj.get_tfhelper("hypervisor-plan")))
+    plan5.append(DeployHypervisorApplicationStep(client, manifest_obj, jhelper))
     if is_compute_node:
         plan5.append(AddHypervisorUnitStep(client, fqdn, jhelper))
 
@@ -448,12 +407,6 @@ def add(ctx: click.Context, name: str, format: str) -> None:
 
 @click.command()
 @click.option("-a", "--accept-defaults", help="Accept all defaults.", is_flag=True)
-@click.option(
-    "-p",
-    "--preseed",
-    help="Preseed file.",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
-)
 @click.option("--token", type=str, help="Join token")
 @click.option(
     "--role",
@@ -468,8 +421,7 @@ def add(ctx: click.Context, name: str, format: str) -> None:
 def join(
     ctx: click.Context,
     token: str,
-    roles: List[Role],
-    preseed: Optional[Path] = None,
+    roles: list[Role],
     accept_defaults: bool = False,
 ) -> None:
     """Join node to the cluster.
@@ -505,31 +457,6 @@ def join(
     controller = CONTROLLER
     data_location = snap.paths.user_data
     client: Client = ctx.obj
-
-    # NOTE: install to user writable location
-    tfplan_dirs = ["deploy-sunbeam-machine"]
-    if is_control_node:
-        tfplan_dirs.extend(["deploy-microk8s", "deploy-microceph", "deploy-openstack"])
-    if is_compute_node:
-        tfplan_dirs.extend(["deploy-openstack-hypervisor"])
-    for tfplan_dir in tfplan_dirs:
-        src = snap.paths.snap / "etc" / tfplan_dir
-        dst = snap.paths.user_common / "etc" / tfplan_dir
-        LOG.debug(f"Updating {dst} from {src}...")
-        shutil.copytree(src, dst, dirs_exist_ok=True)
-
-    tfhelper_openstack_deploy = TerraformHelper(
-        path=snap.paths.user_common / "etc" / "deploy-openstack",
-        plan="openstack-plan",
-        backend="http",
-        data_location=data_location,
-    )
-    tfhelper_hypervisor_deploy = TerraformHelper(
-        path=snap.paths.user_common / "etc" / "deploy-openstack-hypervisor",
-        plan="hypervisor-plan",
-        backend="http",
-        data_location=data_location,
-    )
     jhelper = JujuHelper(client, data_location)
 
     plan1 = [
@@ -540,6 +467,10 @@ def join(
         AddJujuMachineStep(ip),
     ]
     plan1_results = run_plan(plan1, console)
+
+    # Get manifest object once the cluster is joined
+    manifest_obj = Manifest.load_latest_from_clusterdb(client, include_defaults=True)
+    preseed = manifest_obj.deployment
 
     machine_id = -1
     machine_id_result = get_step_message(plan1_results, AddJujuMachineStep)
@@ -564,23 +495,18 @@ def join(
                 name,
                 jhelper,
                 accept_defaults=accept_defaults,
-                preseed_file=preseed,
+                deployment_preseed=preseed,
             )
         )
 
     if is_compute_node:
         plan2.extend(
             [
-                TerraformInitStep(tfhelper_hypervisor_deploy),
-                DeployHypervisorApplicationStep(
-                    client,
-                    tfhelper_hypervisor_deploy,
-                    tfhelper_openstack_deploy,
-                    jhelper,
-                ),
+                TerraformInitStep(manifest_obj.get_tfhelper("hypervisor-plan")),
+                DeployHypervisorApplicationStep(client, manifest_obj, jhelper),
                 AddHypervisorUnitStep(client, name, jhelper),
                 SetLocalHypervisorOptions(
-                    client, name, jhelper, join_mode=True, preseed_file=preseed
+                    client, name, jhelper, join_mode=True, deployment_preseed=preseed
                 ),
             ]
         )
