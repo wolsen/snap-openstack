@@ -25,9 +25,9 @@ from packaging.requirements import Requirement
 from packaging.version import Version
 from snaphelpers import Snap
 
-from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import ConfigItemNotFoundException
 from sunbeam.jobs.common import read_config, update_config
+from sunbeam.jobs.deployment import Deployment
 from sunbeam.jobs.plugin import PluginManager
 from sunbeam.plugins.interface import utils
 
@@ -83,13 +83,13 @@ class BasePlugin(ABC):
     # Version of plugin
     version = Version("0.0.0")
 
-    def __init__(self, name: str, client: Client) -> None:
+    def __init__(self, name: str, deployment: Deployment) -> None:
         """Constructor for Base plugin.
 
         :param name: Name of the plugin
         """
         self.name = name
-        self.client = client
+        self.deployment = deployment
 
     @property
     def plugin_key(self) -> str:
@@ -157,7 +157,7 @@ class BasePlugin(ABC):
                   uploded by plugin.
         """
         try:
-            return read_config(self.client, self.plugin_key)
+            return read_config(self.deployment.get_client(), self.plugin_key)
         except ConfigItemNotFoundException as e:
             LOG.debug(str(e))
             return {}
@@ -172,7 +172,7 @@ class BasePlugin(ABC):
         info_from_db = self.get_plugin_info()
         info_from_db.update(info)
         info_from_db.update({"version": str(self.version)})
-        update_config(self.client, self.plugin_key, info_from_db)
+        update_config(self.deployment.get_client(), self.plugin_key, info_from_db)
 
     def fetch_plugin_version(self, plugin: str) -> Version:
         """Fetch plugin version stored in database.
@@ -181,7 +181,9 @@ class BasePlugin(ABC):
         :returns: Version of the plugin
         """
         try:
-            config = read_config(self.client, self._get_plugin_key(plugin))
+            config = read_config(
+                self.deployment.get_client(), self._get_plugin_key(plugin)
+            )
         except ConfigItemNotFoundException as e:
             raise MissingPluginError(f"Plugin {plugin} not found") from e
         version = config.get("version")
@@ -305,7 +307,10 @@ class BasePlugin(ABC):
 
         :returns: True if sunbeam cluster is bootstrapped, else False.
         """
-        return self.client.cluster.check_sunbeam_bootstrapped()
+        try:
+            return self.deployment.get_client().cluster.check_sunbeam_bootstrapped()
+        except ValueError:
+            return False
 
     @abstractmethod
     def commands(self) -> dict:
@@ -420,7 +425,9 @@ class BasePlugin(ABC):
                         )
                     continue
 
-                cmd.callback = ClickInstantiator(cmd.callback, type(self), self.client)
+                cmd.callback = ClickInstantiator(
+                    cmd.callback, type(self), self.deployment
+                )
                 group_obj.add_command(cmd, cmd_name)
                 LOG.debug(
                     f"Plugin {self.name}: Command {cmd_name} registered in "
@@ -473,12 +480,12 @@ class EnableDisablePlugin(BasePlugin):
 
     requires: set[PluginRequirement] = set()
 
-    def __init__(self, name: str, client: Client) -> None:
+    def __init__(self, name: str, deployment: Deployment) -> None:
         """Constructor for plugin interface.
 
         :param name: Name of the plugin
         """
-        super().__init__(name, client)
+        super().__init__(name, deployment)
         self.user_manifest = None
 
     @property
@@ -579,7 +586,7 @@ class EnableDisablePlugin(BasePlugin):
         for klass in plugins:
             if not issubclass(klass, EnableDisablePlugin):
                 continue
-            plugin = klass(self.client)
+            plugin = klass(self.deployment)
             if not plugin.enabled:
                 continue
             for requirement in plugin.requires:
@@ -602,7 +609,7 @@ class EnableDisablePlugin(BasePlugin):
     def enable_requirements(self):
         """Iterate through requirements, enable plugins if possible."""
         for requirement in self.requires:
-            plugin = requirement.klass(self.client)
+            plugin = requirement.klass(self.deployment)
 
             if plugin.enabled:
                 self.check_enabled_requirement_is_compatible(requirement)

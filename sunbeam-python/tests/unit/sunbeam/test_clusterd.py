@@ -40,6 +40,11 @@ def cclient():
     yield Mock()
 
 
+@pytest.fixture()
+def model():
+    return "test-model"
+
+
 class TestClusterdSteps:
     """Unit tests for sunbeam clusterd steps."""
 
@@ -598,38 +603,40 @@ class TestClusterUpdateJujuControllerStep:
 @pytest.fixture()
 def manifest():
     mock = Mock()
-    mock.software.charms = {"sunbeam-clusterd": Mock(channel="my-channel", config={})}
+    mock.software_config.charms = {
+        "sunbeam-clusterd": Mock(channel="my-channel", config={})
+    }
     return mock
 
 
 class TestDeploySunbeamClusterdApplicationStep:
-    def test_is_skip_when_application_not_found(self, manifest):
+    def test_is_skip_when_application_not_found(self, manifest, model):
         jhelper = AsyncMock()
         jhelper.get_application.side_effect = ApplicationNotFoundException
-        step = DeploySunbeamClusterdApplicationStep(jhelper, manifest)
+        step = DeploySunbeamClusterdApplicationStep(jhelper, manifest, model)
         result = step.is_skip()
         assert result.result_type == ResultType.COMPLETED
 
-    def test_is_skip_when_application_found(self, manifest):
+    def test_is_skip_when_application_found(self, manifest, model):
         jhelper = AsyncMock()
         jhelper.get_application.return_value = AsyncMock()
-        step = DeploySunbeamClusterdApplicationStep(jhelper, manifest)
+        step = DeploySunbeamClusterdApplicationStep(jhelper, manifest, model)
         result = step.is_skip()
         assert result.result_type == ResultType.SKIPPED
 
-    def test_run_when_no_controller_machines_found(self, manifest):
+    def test_run_when_no_controller_machines_found(self, manifest, model):
         jhelper = AsyncMock()
         jhelper.get_application.return_value = AsyncMock()
-        step = DeploySunbeamClusterdApplicationStep(jhelper, manifest)
+        step = DeploySunbeamClusterdApplicationStep(jhelper, manifest, model)
         step._get_controller_machines = MagicMock(return_value=[])
         result = step.run()
         assert result.result_type == ResultType.FAILED
         assert result.message == "No controller machines found"
 
-    def test_run_when_controller_machines_found(self, manifest):
+    def test_run_when_controller_machines_found(self, manifest, model):
         jhelper = AsyncMock()
         jhelper.get_application.return_value = AsyncMock()
-        step = DeploySunbeamClusterdApplicationStep(jhelper, manifest)
+        step = DeploySunbeamClusterdApplicationStep(jhelper, manifest, model)
         step._get_controller_machines = MagicMock(return_value=["1", "2", "3"])
         result = step.run()
         assert result.result_type == ResultType.COMPLETED

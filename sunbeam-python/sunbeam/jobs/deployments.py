@@ -1,4 +1,4 @@
-# Copyright (c) 2023 Canonical Ltd.
+# Copyright (c) 2024 Canonical Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,68 +17,16 @@ import logging
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Type
 
 import pydantic
 import yaml
-from juju.controller import Controller
-from rich.console import Console
 from snaphelpers import Snap
 
-from sunbeam.jobs.common import SHARE_PATH, BaseStep
-from sunbeam.jobs.juju import JujuAccount, JujuController
+from sunbeam.jobs.common import SHARE_PATH
+from sunbeam.jobs.deployment import Deployment
 
 LOG = logging.getLogger(__name__)
-console = Console()
-
-DEPLOYMENT_CONFIG = SHARE_PATH / "deployment.yaml"
-
-_cls_registry: dict[str, Type["Deployment"]] = {}
-
-
-def register_deployment_type(type_: str, cls: Type["Deployment"]):
-    global _cls_registry
-    _cls_registry[type_] = cls
-
-
-def get_deployment_class(type_: str) -> Type["Deployment"]:
-    global _cls_registry
-    return _cls_registry[type_]
-
-
-class Deployment(pydantic.BaseModel):
-    name: str
-    url: str
-    type: str
-    juju_account: JujuAccount | None = None
-    juju_controller: JujuController | None = None
-
-    @classmethod
-    def load(cls, deployment: dict) -> "Deployment":
-        """Load deployment from dict."""
-        if type_ := deployment.get("type"):
-            return _cls_registry.get(type_, Deployment)(**deployment)
-        raise ValueError("Deployment type not set.")
-
-    @classmethod
-    def import_step(cls) -> Type[BaseStep]:
-        """Return a step for importing a deployment.
-
-        This step will be used to make sure the deployment is valid.
-        The step must take as constructor arguments: DeploymentsConfig, Deployment.
-        The Deployment must be of the type that the step is registered for.
-        """
-        return NotImplemented  # type: ignore
-
-    def get_connected_controller(self) -> Controller:
-        """Return connected controller."""
-        if self.juju_account is None:
-            raise ValueError(f"No juju account configured for deployment {self.name}.")
-        if self.juju_controller is None:
-            raise ValueError(
-                f"No juju controller configured for deployment {self.name}."
-            )
-        return self.juju_controller.to_controller(self.juju_account)
+DEPLOYMENTS_CONFIG = SHARE_PATH / "deployments.yaml"
 
 
 class DeploymentsConfig(pydantic.BaseModel):
@@ -197,7 +145,7 @@ def deployment_path(snap: Snap) -> Path:
     """Path to deployments configuration."""
     openstack = snap.paths.real_home / SHARE_PATH
     openstack.mkdir(parents=True, exist_ok=True)
-    path = snap.paths.real_home / DEPLOYMENT_CONFIG
+    path = snap.paths.real_home / DEPLOYMENTS_CONFIG
     if not path.exists():
         path.touch(0o600)
         path.write_text("{}")

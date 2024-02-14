@@ -26,6 +26,11 @@ def cclient():
 
 
 @pytest.fixture()
+def deployment():
+    yield Mock()
+
+
+@pytest.fixture()
 def externalrepo():
     with patch("sunbeam.plugins.repo.plugin.ExternalRepo") as p:
         yield p
@@ -50,7 +55,7 @@ def pluginmanager():
 
 
 class TestAddPluginRepoStep:
-    def test_run(self, cclient, externalrepo, repoplugin):
+    def test_run(self, externalrepo, repoplugin):
         step = repo_plugin.AddPluginRepoStep(externalrepo, repoplugin)
         result = step.run()
 
@@ -60,9 +65,7 @@ class TestAddPluginRepoStep:
         repoplugin.update_plugin_info.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
 
-    def test_run_when_plugin_yaml_validation_failed(
-        self, cclient, externalrepo, repoplugin
-    ):
+    def test_run_when_plugin_yaml_validation_failed(self, externalrepo, repoplugin):
         externalrepo.validate_repo.side_effect = repo_plugin.PluginYamlFormatException()
         step = repo_plugin.AddPluginRepoStep(externalrepo, repoplugin)
         result = step.run()
@@ -75,7 +78,7 @@ class TestAddPluginRepoStep:
 
 
 class TestRemovePluginRepoStep:
-    def test_run(self, cclient, pluginmanager, repoplugin, tmp_path):
+    def test_run(self, deployment, pluginmanager, repoplugin, tmp_path):
         repo_name = "TEST_REPO"
         pluginmanager.enabled_plugins.return_value = []
         repoplugin.get_plugin_info.return_value = {
@@ -89,7 +92,7 @@ class TestRemovePluginRepoStep:
             ],
         }
         step = repo_plugin.RemovePluginRepoStep(
-            cclient, repo_name, tmp_path, repoplugin
+            deployment, repo_name, tmp_path, repoplugin
         )
         result = step.run()
 
@@ -100,7 +103,7 @@ class TestRemovePluginRepoStep:
         assert result.result_type == ResultType.COMPLETED
 
     def test_run_when_plugins_enabled(
-        self, cclient, pluginmanager, repoplugin, tmp_path
+        self, deployment, pluginmanager, repoplugin, tmp_path
     ):
         repo_name = "TEST_REPO"
         pluginmanager.enabled_plugins.return_value = ["TEST_PLUGIN"]
@@ -115,7 +118,7 @@ class TestRemovePluginRepoStep:
             ],
         }
         step = repo_plugin.RemovePluginRepoStep(
-            cclient, repo_name, tmp_path, repoplugin
+            deployment, repo_name, tmp_path, repoplugin
         )
         result = step.run()
 
@@ -124,7 +127,7 @@ class TestRemovePluginRepoStep:
         assert result.result_type == ResultType.FAILED
 
     def test_run_when_repo_not_in_clusterdb(
-        self, cclient, pluginmanager, repoplugin, tmp_path
+        self, deployment, pluginmanager, repoplugin, tmp_path
     ):
         repo_name = "UNKNOWN_REPO"
         pluginmanager.enabled_plugins.return_value = []
@@ -139,7 +142,7 @@ class TestRemovePluginRepoStep:
             ],
         }
         step = repo_plugin.RemovePluginRepoStep(
-            cclient, repo_name, tmp_path, repoplugin
+            deployment, repo_name, tmp_path, repoplugin
         )
         result = step.run()
 
@@ -149,26 +152,30 @@ class TestRemovePluginRepoStep:
 
 
 class TestUpdatePluginRepoStep:
-    def test_run(self, cclient, externalrepo, repoplugin, pluginmanager):
+    def test_run(self, deployment, cclient, externalrepo, repoplugin, pluginmanager):
         repo_name = "TEST_REPO"
         pluginmanager.get_all_external_repos.return_value = [repo_name]
         externalrepo.name = repo_name
-        step = repo_plugin.UpdatePluginRepoStep(cclient, externalrepo, repoplugin)
+        step = repo_plugin.UpdatePluginRepoStep(
+            deployment, cclient, externalrepo, repoplugin
+        )
         result = step.run()
 
         externalrepo.repo.git.rev_parse.assert_called_once()
         externalrepo.repo.git.pull.assert_called_once()
         externalrepo.validate_repo.assert_called_once()
-        pluginmanager.update_plugins.assert_called_once_with(cclient, [repo_name])
+        pluginmanager.update_plugins.assert_called_once_with(deployment, [repo_name])
         repoplugin.update_plugin_info.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
 
     def test_run_when_repo_not_in_clusterdb(
-        self, cclient, externalrepo, repoplugin, pluginmanager
+        self, deployment, cclient, externalrepo, repoplugin, pluginmanager
     ):
         pluginmanager.get_all_external_repos.return_value = ["TEST_REPO"]
         externalrepo.name = "UNKNOWN_REPO"
-        step = repo_plugin.UpdatePluginRepoStep(cclient, externalrepo, repoplugin)
+        step = repo_plugin.UpdatePluginRepoStep(
+            deployment, cclient, externalrepo, repoplugin
+        )
         result = step.run()
 
         externalrepo.repo.git.rev_parse.assert_not_called()
@@ -179,7 +186,7 @@ class TestUpdatePluginRepoStep:
         assert result.result_type == ResultType.FAILED
 
     def test_run_when_plugin_yaml_validation_failed(
-        self, cclient, externalrepo, repoplugin, pluginmanager
+        self, deployment, cclient, externalrepo, repoplugin, pluginmanager
     ):
         repo_name = "TEST_REPO"
         commit_id = "CURRENT_COMMIT_ID"
@@ -187,7 +194,9 @@ class TestUpdatePluginRepoStep:
         pluginmanager.get_all_external_repos.return_value = [repo_name]
         externalrepo.name = repo_name
         externalrepo.repo.git.rev_parse.return_value = commit_id
-        step = repo_plugin.UpdatePluginRepoStep(cclient, externalrepo, repoplugin)
+        step = repo_plugin.UpdatePluginRepoStep(
+            deployment, cclient, externalrepo, repoplugin
+        )
         result = step.run()
 
         externalrepo.repo.git.rev_parse.assert_called_once()

@@ -19,7 +19,6 @@ import json
 import logging
 import os
 from datetime import datetime, timedelta
-from functools import wraps
 from pathlib import Path
 from typing import Awaitable, Dict, List, Optional, Sequence, TypedDict, TypeVar, cast
 
@@ -42,13 +41,10 @@ from juju.machine import Machine
 from juju.model import Model
 from juju.unit import Unit
 
-from sunbeam import utils
 from sunbeam.clusterd.client import Client
 
 LOG = logging.getLogger(__name__)
 CONTROLLER_MODEL = "admin/controller"
-# Note(gboutry): pylibjuju get_model does not support user/model
-MODEL = CONTROLLER_MODEL.split("/")[1]
 CONTROLLER = "sunbeam-controller"
 JUJU_CONTROLLER_KEY = "JujuController"
 ACCOUNT_FILE = "account.yaml"
@@ -213,42 +209,16 @@ class JujuController(pydantic.BaseModel):
         return controller
 
 
-def controller(func):
-    """Automatically set up controller."""
-
-    @wraps(func)
-    async def wrapper(self, *args, **kwargs):
-        if self.controller is None:
-            juju_controller = JujuController.load(self.client)
-
-            account = JujuAccount.load(self.data_location)
-
-            self.controller = Controller()
-            await self.controller.connect(
-                endpoint=juju_controller.api_endpoints,
-                cacert=juju_controller.ca_cert,
-                username=account.user,
-                password=account.password,
-            )
-        return await func(self, *args, **kwargs)
-
-    return wrapper
-
-
 class JujuHelper:
     """Helper function to manage Juju apis through pylibjuju."""
 
-    def __init__(self, client: Client, data_location: Path):
-        self.client = client
-        self.data_location = data_location
-        self.controller: Controller = None  # type: ignore
+    def __init__(self, controller: Controller):
+        self.controller = controller
 
-    @controller
     async def get_clouds(self) -> dict:
         clouds = await self.controller.clouds()
         return clouds.clouds
 
-    @controller
     async def get_model(self, model: str) -> Model:
         """Fetch model.
 
@@ -261,7 +231,6 @@ class JujuHelper:
                 raise ModelNotFoundException(f"Model {model!r} not found")
             raise e
 
-    @controller
     async def add_model(self, model: str) -> Model:
         """Add a model.
 
@@ -275,21 +244,18 @@ class JujuHelper:
         finally:
             os.environ["HOME"] = old_home
 
-    @controller
     async def get_model_name_with_owner(self, model: str) -> str:
         """Get juju model full name along with owner"""
         model_impl = await self.get_model(model)
         owner = model_impl.info.owner_tag.removeprefix(OWNER_TAG_PREFIX)
         return f"{owner}/{model_impl.info.name}"
 
-    @controller
     async def get_model_status_full(self, model: str) -> Dict:
         """Get juju status for the model"""
         model_impl = await self.get_model(model)
         status = await model_impl.get_status()
         return status
 
-    @controller
     async def get_application_names(self, model: str) -> List[str]:
         """Get Application names in the model.
 
@@ -298,7 +264,6 @@ class JujuHelper:
         model_impl = await self.get_model(model)
         return list(model_impl.applications.keys())
 
-    @controller
     async def get_application(self, name: str, model: str) -> Application:
         """Fetch application in model.
 
@@ -313,7 +278,6 @@ class JujuHelper:
             )
         return application
 
-    @controller
     async def get_machines(self, model: str) -> dict[str, Machine]:
         """Fetch machines in model.
 
@@ -322,7 +286,6 @@ class JujuHelper:
         model_impl = await self.get_model(model)
         return model_impl.machines
 
-    @controller
     async def deploy(
         self,
         name: str,
@@ -351,7 +314,6 @@ class JujuHelper:
             **options,
         )
 
-    @controller
     async def add_machine(self, name: str, model: str) -> Machine:
         """Add machines to model"""
         model_impl = await self.get_model(model)
@@ -360,7 +322,6 @@ class JujuHelper:
         )  # type: ignore
         return machine
 
-    @controller
     async def get_unit(self, name: str, model: str) -> Unit:
         """Fetch an application's unit in model.
 
@@ -377,7 +338,6 @@ class JujuHelper:
             )
         return unit
 
-    @controller
     async def get_unit_from_machine(
         self, application: str, machine_id: str, model: str
     ) -> Unit:
@@ -403,7 +363,6 @@ class JujuHelper:
                 "should be a valid unit of format application/id"
             )
 
-    @controller
     async def add_unit(
         self,
         name: str,
@@ -428,7 +387,6 @@ class JujuHelper:
         # but does not check status
         return await application.add_unit(count, machine)
 
-    @controller
     async def remove_unit(self, name: str, unit: str, model: str):
         """Remove unit from application.
 
@@ -448,7 +406,6 @@ class JujuHelper:
 
         await application.destroy_unit(unit)
 
-    @controller
     async def get_leader_unit(self, name: str, model: str) -> str:
         """Get leader unit.
 
@@ -467,7 +424,6 @@ class JujuHelper:
             f"Leader for application {name!r} is missing from model {model!r}"
         )
 
-    @controller
     async def run_cmd_on_unit_payload(
         self,
         name: str,
@@ -500,7 +456,6 @@ class JujuHelper:
             raise CmdFailedException(action.results["stderr"])
         return action.results
 
-    @controller
     async def run_action(
         self, name: str, model: str, action_name: str, action_params={}
     ) -> Dict:
@@ -525,7 +480,6 @@ class JujuHelper:
 
         return action_obj.results
 
-    @controller
     async def scp_from(self, name: str, model: str, source: str, destination: str):
         """scp files from unit to local
 
@@ -538,7 +492,6 @@ class JujuHelper:
         # NOTE: User, proxy, scp_options left to defaults
         await unit.scp_from(source, destination)
 
-    @controller
     async def add_k8s_cloud(
         self, cloud_name: str, credential_name: str, kubeconfig: dict
     ):
@@ -594,7 +547,6 @@ class JujuHelper:
             credential_name, credential=cred, cloud=cloud_name
         )
 
-    @controller
     async def wait_application_ready(
         self,
         name: str,
@@ -639,7 +591,6 @@ class JujuHelper:
                 f"Timed out while waiting for application {name!r} to be ready"
             ) from e
 
-    @controller
     async def wait_application_gone(
         self,
         names: List[str],
@@ -667,7 +618,6 @@ class JujuHelper:
                 f"{', '.join(name_set)} to be gone"
             ) from e
 
-    @controller
     async def wait_model_gone(
         self,
         model: str,
@@ -690,7 +640,6 @@ class JujuHelper:
                 f"Timed out while waiting for model {model} to be gone"
             ) from e
 
-    @controller
     async def wait_units_ready(
         self,
         units: Sequence[Unit | str],
@@ -755,7 +704,6 @@ class JujuHelper:
                 f"{','.join(unit.name for unit in unit_list)} to be ready"
             ) from e
 
-    @controller
     async def wait_unit_ready(
         self,
         unit: Unit | str,
@@ -774,7 +722,6 @@ class JujuHelper:
         """
         await self.wait_units_ready([unit], model, accepted_status, timeout)
 
-    @controller
     async def wait_all_units_ready(
         self,
         app: str,
@@ -798,7 +745,6 @@ class JujuHelper:
                 timeout=timeout,
             )
 
-    @controller
     async def wait_all_machines_deployed(
         self, model: str, timeout: Optional[int] = None
     ):
@@ -828,7 +774,6 @@ class JujuHelper:
                 "Timed out while waiting for machines to be deployed"
             ) from e
 
-    @controller
     async def wait_until_active(
         self,
         model: str,
@@ -856,7 +801,6 @@ class JujuHelper:
                 f"Timed out while waiting for model {model!r} to be ready"
             ) from e
 
-    @controller
     async def wait_until_desired_status(
         self,
         model: str,
@@ -941,7 +885,6 @@ class JujuHelper:
                 f"Error while waiting for model {model!r} to be ready: {str(e)}"
             ) from e
 
-    @controller
     async def set_application_config(self, model: str, app: str, config: dict):
         """Update application configuration
 
@@ -952,7 +895,6 @@ class JujuHelper:
         model_impl = await self.get_model(model)
         await model_impl.applications[app].set_config(config)
 
-    @controller
     async def update_applications_channel(
         self,
         model: str,
@@ -1007,7 +949,6 @@ class JujuHelper:
                 f"Timed out while waiting for model {model!r} to be ready"
             ) from e
 
-    @controller
     async def get_charm_channel(self, application_name: str, model: str) -> str:
         """Get the charm-channel from a deployed application.
 
@@ -1018,7 +959,6 @@ class JujuHelper:
         status = json.loads(_status.to_json())
         return status["applications"].get(application_name, {}).get("charm-channel")
 
-    @controller
     async def charm_refresh(self, application_name: str, model: str):
         """Update application to latest charm revision in current channel.
 
@@ -1028,7 +968,6 @@ class JujuHelper:
         app = await self.get_application(application_name, model)
         await app.refresh()
 
-    @controller
     async def get_available_charm_revision(
         self, model: str, charm_name: str, channel: str
     ) -> int:
@@ -1044,12 +983,12 @@ class JujuHelper:
         return int(version)
 
     @staticmethod
-    def manual_cloud(cloud_name: str) -> dict[str, dict]:
+    def manual_cloud(cloud_name: str, ip_address: str) -> dict[str, dict]:
         """Create manual cloud definition."""
         cloud_yaml = {"clouds": {}}
         cloud_yaml["clouds"][cloud_name] = {
             "type": "manual",
-            "endpoint": utils.get_local_ip_by_default_route(),
+            "endpoint": ip_address,
         }
         return cloud_yaml
 

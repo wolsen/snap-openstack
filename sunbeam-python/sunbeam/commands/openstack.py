@@ -44,7 +44,6 @@ from sunbeam.jobs.common import (
     update_status_background,
 )
 from sunbeam.jobs.juju import (
-    CONTROLLER_MODEL,
     JujuHelper,
     JujuWaitException,
     ModelNotFoundException,
@@ -140,7 +139,7 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         jhelper: JujuHelper,
         topology: str,
         database: str,
-        machine_model: str = CONTROLLER_MODEL,
+        machine_model: str,
     ):
         super().__init__(
             "Deploying OpenStack Control Plane",
@@ -150,11 +149,11 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         self.jhelper = jhelper
         self.topology = topology
         self.database = database
+        self.machine_model = machine_model
         self.model = OPENSTACK_MODEL
         self.cloud = MICROK8S_CLOUD
         self.client = client
         self.tfplan = "openstack-plan"
-        self.machine_model = machine_model
 
     def get_storage_tfvars(self) -> dict:
         """Create terraform variables related to storage."""
@@ -165,7 +164,9 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
                 run_sync(_get_number_of_osds(self.jhelper, self.machine_model))
             )
             tfvars["enable-ceph"] = True
-            tfvars["ceph-offer-url"] = f"{self.machine_model}.{microceph.APPLICATION}"
+            tfvars["ceph-offer-url"] = (
+                f"admin/{self.machine_model}.{microceph.APPLICATION}"
+            )
         else:
             tfvars["enable-ceph"] = False
 
@@ -228,6 +229,7 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         try:
             self.update_status(status, "deploying services")
             self.manifest.update_tfvars_and_apply_tf(
+                self.client,
                 tfplan=self.tfplan,
                 tfvar_config=self._CONFIG,
                 override_tfvars=extra_tfvars,
@@ -271,7 +273,7 @@ class ResizeControlPlaneStep(BaseStep, JujuStepHelper):
         manifest: Manifest,
         jhelper: JujuHelper,
         topology: str,
-        machine_model: str = CONTROLLER_MODEL,
+        machine_model: str,
         force: bool = False,
     ):
         super().__init__(
@@ -338,7 +340,7 @@ class ResizeControlPlaneStep(BaseStep, JujuStepHelper):
             "os-api-scale": compute_os_api_scale(topology, len(control_nodes)),
             "ingress-scale": compute_ingress_scale(topology, len(control_nodes)),
             "enable-ceph": len(storage_nodes) > 0,
-            "ceph-offer-url": f"{self.machine_model}.{microceph.APPLICATION}",
+            "ceph-offer-url": f"admin/{self.machine_model}.{microceph.APPLICATION}",
             "ceph-osd-replication-count": compute_ceph_replica_scale(
                 run_sync(_get_number_of_osds(self.jhelper, self.machine_model))
             ),
@@ -347,6 +349,7 @@ class ResizeControlPlaneStep(BaseStep, JujuStepHelper):
         self.update_status(status, "scaling services")
         try:
             self.manifest.update_tfvars_and_apply_tf(
+                self.client,
                 tfplan=self.tfplan,
                 tfvar_config=self._CONFIG,
                 override_tfvars=extra_tfvars,
@@ -459,6 +462,7 @@ class ReapplyOpenStackTerraformPlanStep(BaseStep, JujuStepHelper):
         try:
             self.update_status(status, "deploying services")
             self.manifest.update_tfvars_and_apply_tf(
+                self.client,
                 tfplan=self.tfplan,
                 tfvar_config=self._CONFIG,
             )

@@ -19,10 +19,10 @@ import click
 from packaging.version import Version
 from rich.console import Console
 
-from sunbeam.clusterd.client import Client
 from sunbeam.commands.hypervisor import ReapplyHypervisorTerraformPlanStep
 from sunbeam.commands.terraform import TerraformInitStep
 from sunbeam.jobs.common import run_plan
+from sunbeam.jobs.deployment import Deployment
 from sunbeam.jobs.juju import JujuHelper, ModelNotFoundException, run_sync
 from sunbeam.jobs.manifest import AddManifestStep
 from sunbeam.plugins.interface.v1.openstack import (
@@ -40,10 +40,10 @@ console = Console()
 class TelemetryPlugin(OpenStackControlPlanePlugin):
     version = Version("0.0.1")
 
-    def __init__(self, client: Client) -> None:
+    def __init__(self, deployment: Deployment) -> None:
         super().__init__(
             "telemetry",
-            client,
+            deployment,
             tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO,
         )
 
@@ -89,18 +89,21 @@ class TelemetryPlugin(OpenStackControlPlanePlugin):
 
     def run_enable_plans(self) -> None:
         """Run plans to enable plugin."""
-        data_location = self.snap.paths.user_data
-        jhelper = JujuHelper(self.client, data_location)
+        jhelper = JujuHelper(self.deployment.get_connected_controller())
 
         plan = []
         if self.user_manifest:
-            plan.append(AddManifestStep(self.client, self.user_manifest))
+            plan.append(
+                AddManifestStep(self.deployment.get_client(), self.user_manifest)
+            )
         plan.extend(
             [
                 TerraformInitStep(self.manifest.get_tfhelper(self.tfplan)),
                 EnableOpenStackApplicationStep(jhelper, self),
                 # No need to pass any extra terraform vars for this plugin
-                ReapplyHypervisorTerraformPlanStep(self.client, self.manifest, jhelper),
+                ReapplyHypervisorTerraformPlanStep(
+                    self.deployment.get_client(), self.manifest, jhelper
+                ),
             ]
         )
 
@@ -109,12 +112,13 @@ class TelemetryPlugin(OpenStackControlPlanePlugin):
 
     def run_disable_plans(self) -> None:
         """Run plans to disable the plugin."""
-        data_location = self.snap.paths.user_data
-        jhelper = JujuHelper(self.client, data_location)
+        jhelper = JujuHelper(self.deployment.get_connected_controller())
         plan = [
             TerraformInitStep(self.manifest.get_tfhelper(self.tfplan)),
             DisableOpenStackApplicationStep(jhelper, self),
-            ReapplyHypervisorTerraformPlanStep(self.client, self.manifest, jhelper),
+            ReapplyHypervisorTerraformPlanStep(
+                self.deployment.get_client(), self.manifest, jhelper
+            ),
         ]
 
         run_plan(plan, console)
@@ -122,8 +126,7 @@ class TelemetryPlugin(OpenStackControlPlanePlugin):
 
     def _get_observability_offer_endpoints(self) -> dict:
         """Fetch observability offers."""
-        data_location = self.snap.paths.user_data
-        jhelper = JujuHelper(self.client, data_location)
+        jhelper = JujuHelper(self.deployment.get_connected_controller())
         try:
             model = run_sync(jhelper.get_model("observability"))
         except ModelNotFoundException:
@@ -145,7 +148,7 @@ class TelemetryPlugin(OpenStackControlPlanePlugin):
         if database_topology == "multi":
             apps.append("aodh-mysql")
 
-        if self.client.cluster.list_nodes_by_role("storage"):
+        if self.deployment.get_client().cluster.list_nodes_by_role("storage"):
             apps.extend(["ceilometer", "gnocchi", "gnocchi-mysql-router"])
             if database_topology == "multi":
                 apps.append("gnocchi-mysql")

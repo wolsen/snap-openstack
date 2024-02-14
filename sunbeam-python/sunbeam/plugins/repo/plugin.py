@@ -43,6 +43,7 @@ from sunbeam.jobs.common import (
     run_plan,
     run_preflight_checks,
 )
+from sunbeam.jobs.deployment import Deployment
 from sunbeam.jobs.plugin import PLUGIN_YAML, PluginManager
 from sunbeam.plugins.interface.v1.base import BasePlugin
 from sunbeam.utils import CatchGroup
@@ -219,9 +220,9 @@ class RepoPlugin(BasePlugin):
 
     version = Version("0.0.1")
 
-    def __init__(self, client: Client) -> None:
+    def __init__(self, deployment: Deployment) -> None:
         self.name = "repo"
-        super().__init__(self.name, client)
+        super().__init__(self.name, deployment)
 
     def commands(self) -> dict:
         return {
@@ -229,7 +230,7 @@ class RepoPlugin(BasePlugin):
             "repo": [
                 {"name": "add", "command": self.add},
                 {"name": "remove", "command": self.remove},
-                {"name": "list", "command": self.list},
+                {"name": "list", "command": self.list_repos},
                 {"name": "update", "command": self.update},
             ],
         }
@@ -250,7 +251,7 @@ class RepoPlugin(BasePlugin):
         """Add external plugin repo."""
         preflight_checks = []
         preflight_checks.append(DaemonGroupCheck())
-        preflight_checks.append(VerifyBootstrappedCheck(self.client))
+        preflight_checks.append(VerifyBootstrappedCheck(self.deployment.get_client()))
         run_preflight_checks(preflight_checks, console)
 
         if name.lower() == "core":
@@ -275,17 +276,19 @@ class RepoPlugin(BasePlugin):
         """Remove external plugin repo."""
         preflight_checks = []
         preflight_checks.append(DaemonGroupCheck())
-        preflight_checks.append(VerifyBootstrappedCheck(self.client))
+        preflight_checks.append(VerifyBootstrappedCheck(self.deployment.get_client()))
         run_preflight_checks(preflight_checks, console)
 
         external_plugins_dir = PluginManager.get_external_plugins_base_path()
 
         plan = []
-        plan.append(RemovePluginRepoStep(self.client, name, external_plugins_dir, self))
+        plan.append(
+            RemovePluginRepoStep(self.deployment, name, external_plugins_dir, self)
+        )
         run_plan(plan, console)
         click.echo(f"External plugin repo {name} removed.")
 
-    @click.command()
+    @click.command("list")
     @click.option(
         "-f",
         "--format",
@@ -295,13 +298,15 @@ class RepoPlugin(BasePlugin):
     )
     @click.option("-p", "--plugins", help="Include plugins in the output", is_flag=True)
     @click.option("-c", "--include-core", help="Include core plugins", is_flag=True)
-    def list(self, format: str, plugins: bool, include_core: bool) -> None:
+    def list_repos(self, format: str, plugins: bool, include_core: bool) -> None:
         """List external plugin repo."""
         preflight_checks = []
         preflight_checks.append(DaemonGroupCheck())
-        preflight_checks.append(VerifyBootstrappedCheck(self.client))
+        preflight_checks.append(VerifyBootstrappedCheck(self.deployment.get_client()))
         run_preflight_checks(preflight_checks, console)
-        repos = PluginManager.get_all_external_repos(self.client, detail=True)
+        repos = PluginManager.get_all_external_repos(
+            self.deployment.get_client(), detail=True
+        )
         if format == FORMAT_TABLE:
             table = Table()
             table.add_column("Name", justify="center")
@@ -319,21 +324,23 @@ class RepoPlugin(BasePlugin):
 
             # Handle --plugins and --include-core
             click.echo("")
-            repo_names = PluginManager.get_all_external_repos(self.client)
+            repo_names = PluginManager.get_all_external_repos(
+                self.deployment.get_client()
+            )
             if include_core:
                 click.echo("Core plugins:")
-                plugins = PluginManager.get_plugins(self.client, ["core"])
+                plugins = PluginManager.get_plugins(self.deployment, ["core"])
                 self._print_plugins_table(plugins.get("core"))
 
             for repo in repo_names:
                 click.echo(f"Plugins in repo {repo}:")
-                plugins = PluginManager.get_plugins(self.client, [repo])
+                plugins = PluginManager.get_plugins(self.deployment, [repo])
                 self._print_plugins_table(plugins.get(repo))
 
         elif format == FORMAT_YAML:
             # Add plugins to the repos list
             if plugins:
-                plugins = PluginManager.get_plugins(self.client)
+                plugins = PluginManager.get_plugins(self.deployment)
                 if include_core:
                     repos.append({"name": "core"})
 
@@ -352,7 +359,7 @@ class RepoPlugin(BasePlugin):
         """Update external plugin repo."""
         preflight_checks = []
         preflight_checks.append(DaemonGroupCheck())
-        preflight_checks.append(VerifyBootstrappedCheck(self.client))
+        preflight_checks.append(VerifyBootstrappedCheck(self.deployment.get_client()))
         run_preflight_checks(preflight_checks, console)
 
         external_plugins_dir = PluginManager.get_external_plugins_base_path()
@@ -360,7 +367,11 @@ class RepoPlugin(BasePlugin):
         external_repo.initialize_local_repo()
 
         plan = []
-        plan.append(UpdatePluginRepoStep(self.client, external_repo, self))
+        plan.append(
+            UpdatePluginRepoStep(
+                self.deployment, self.deployment.get_client(), external_repo, self
+            )
+        )
         run_plan(plan, console)
         click.echo(f"External plugin repo {name} updated.")
 
@@ -408,10 +419,10 @@ class RemovePluginRepoStep(BaseStep):
     """Remove plugin repo."""
 
     def __init__(
-        self, client: Client, repo_name: str, repo_dir: Path, plugin: RepoPlugin
+        self, deployment: Deployment, repo_name: str, repo_dir: Path, plugin: RepoPlugin
     ) -> None:
         super().__init__("Remove external plugin repo", "Removing External plugin repo")
-        self.client = client
+        self.deployment = deployment
         self.repo_name = repo_name
         self.repo_dir = repo_dir
         self.plugin = plugin
@@ -419,7 +430,9 @@ class RemovePluginRepoStep(BaseStep):
     def run(self, status: Optional[Status] = None) -> Result:
         """Remove the repo if no plugins are enabled"""
 
-        enabled_plugins = PluginManager.enabled_plugins(self.client, [self.repo_name])
+        enabled_plugins = PluginManager.enabled_plugins(
+            self.deployment, [self.repo_name]
+        )
         if enabled_plugins:
             message = (
                 f"ERROR: Cannot remove {self.repo_name} as following "
@@ -450,8 +463,15 @@ class RemovePluginRepoStep(BaseStep):
 class UpdatePluginRepoStep(BaseStep):
     """Update plugin repo."""
 
-    def __init__(self, client: Client, repo: ExternalRepo, plugin: RepoPlugin) -> None:
+    def __init__(
+        self,
+        deployment: Deployment,
+        client: Client,
+        repo: ExternalRepo,
+        plugin: RepoPlugin,
+    ) -> None:
         super().__init__("Update external plugin repo", "Updating External plugin repo")
+        self.deployment = deployment
         self.client = client
         self.repo = repo
         self.plugin = plugin
@@ -482,7 +502,7 @@ class UpdatePluginRepoStep(BaseStep):
                 self.repo.repo.git.reset(current_commit, hard=True)
             return Result(ResultType.FAILED, str(e))
 
-        PluginManager.update_plugins(self.client, [self.repo.name])
+        PluginManager.update_plugins(self.deployment, [self.repo.name])
         LOG.debug("Update Plugin info to change version")
         self.plugin.update_plugin_info({})
 

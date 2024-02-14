@@ -28,14 +28,15 @@ from sunbeam.commands.sunbeam_machine import DeploySunbeamMachineApplicationStep
 from sunbeam.commands.terraform import TerraformInitStep
 from sunbeam.commands.upgrades.base import UpgradeCoordinator, UpgradePlugins
 from sunbeam.jobs.common import BaseStep, Result, ResultType
-from sunbeam.jobs.juju import run_sync
+from sunbeam.jobs.juju import JujuHelper, run_sync
+from sunbeam.jobs.manifest import Manifest
 
 LOG = logging.getLogger(__name__)
 console = Console()
 
 
 class LatestInChannel(BaseStep, JujuStepHelper):
-    def __init__(self, jhelper, manifest):
+    def __init__(self, jhelper: JujuHelper, manifest: Manifest):
         """Upgrade all charms to latest in current channel.
 
         :jhelper: Helper for interacting with pylibjuju
@@ -53,12 +54,12 @@ class LatestInChannel(BaseStep, JujuStepHelper):
     def is_track_changed_for_any_charm(self, deployed_apps: dict):
         """Check if chanel track is same in manifest and deployed app."""
         for app_name, (charm, channel, revision) in deployed_apps.items():
-            if not self.manifest.software.charms.get(charm):
+            if not self.manifest.software_config.charms.get(charm):
                 LOG.debug(f"Charm not present in manifest: {charm}")
                 continue
 
             channel_from_manifest = (
-                self.manifest.software.charms.get(charm).channel or ""
+                self.manifest.software_config.charms.get(charm).channel or ""
             )
             track_from_manifest = channel_from_manifest.split("/")[0]
             track_from_deployed_app = channel.split("/")[0]
@@ -80,7 +81,7 @@ class LatestInChannel(BaseStep, JujuStepHelper):
         Otherwise ignore so that terraform plan apply will take care of charm upgrade.
         """
         for app_name, (charm, channel, revision) in apps.items():
-            manifest_charm = self.manifest.software.charms.get(charm)
+            manifest_charm = self.manifest.software_config.charms.get(charm)
             if not manifest_charm:
                 continue
 
@@ -126,19 +127,34 @@ class LatestInChannelCoordinator(UpgradeCoordinator):
             ReapplyOpenStackTerraformPlanStep(self.client, self.manifest, self.jhelper),
             TerraformInitStep(self.manifest.get_tfhelper("sunbeam-machine-plan")),
             DeploySunbeamMachineApplicationStep(
-                self.client, self.manifest, self.jhelper, refresh=True
+                self.client,
+                self.manifest,
+                self.jhelper,
+                self.deployment.infrastructure_model,
+                refresh=True,
             ),
             TerraformInitStep(self.manifest.get_tfhelper("microk8s-plan")),
             DeployMicrok8sApplicationStep(
-                self.client, self.manifest, self.jhelper, refresh=True
+                self.client,
+                self.manifest,
+                self.jhelper,
+                self.deployment.infrastructure_model,
+                refresh=True,
             ),
             TerraformInitStep(self.manifest.get_tfhelper("microceph-plan")),
             DeployMicrocephApplicationStep(
-                self.client, self.manifest, self.jhelper, refresh=True
+                self.client,
+                self.manifest,
+                self.jhelper,
+                self.deployment.infrastructure_model,
+                refresh=True,
             ),
             TerraformInitStep(self.manifest.get_tfhelper("hypervisor-plan")),
             ReapplyHypervisorTerraformPlanStep(
-                self.client, self.manifest, self.jhelper
+                self.client,
+                self.manifest,
+                self.jhelper,
+                self.deployment.infrastructure_model,
             ),
-            UpgradePlugins(self.client, upgrade_release=False),
+            UpgradePlugins(self.deployment, upgrade_release=False),
         ]

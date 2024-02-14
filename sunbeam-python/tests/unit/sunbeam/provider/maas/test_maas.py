@@ -19,10 +19,17 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 import pytest
 from maas.client.bones import CallError
 
-from sunbeam.commands.deployment import DeploymentsConfig
-from sunbeam.commands.maas import (
+from sunbeam.jobs.deployments import DeploymentsConfig
+from sunbeam.jobs.juju import ControllerNotFoundException
+from sunbeam.provider.maas.deployment import (
     MAAS_INTERNAL_IP_RANGE,
     MAAS_PUBLIC_IP_RANGE,
+    MaasDeployment,
+    Networks,
+    RoleTags,
+    StorageTags,
+)
+from sunbeam.provider.maas.steps import (
     ActionFailedException,
     AddMaasDeployment,
     DeploymentRolesCheck,
@@ -31,23 +38,18 @@ from sunbeam.commands.maas import (
     MaasBootstrapJujuStep,
     MaasConfigureMicrocephOSDStep,
     MaasDeployMachinesStep,
-    MaasDeployment,
     MaasDeployMicrok8sApplicationStep,
     MaasScaleJujuStep,
     MachineNetworkCheck,
     MachineRequirementsCheck,
     MachineRolesCheck,
     MachineStorageCheck,
-    Networks,
     Result,
     ResultType,
-    RoleTags,
-    StorageTags,
     UnitNotFoundException,
     ZoneBalanceCheck,
     ZonesCheck,
 )
-from sunbeam.jobs.juju import ControllerNotFoundException
 
 
 class TestAddMaasDeployment:
@@ -102,13 +104,13 @@ class TestAddMaasDeployment:
         assert result.result_type == ResultType.COMPLETED
 
     def test_run_with_successful_connection(self, add_maas_deployment, mocker):
-        mocker.patch("sunbeam.commands.maas.MaasClient", autospec=True)
+        mocker.patch("sunbeam.provider.maas.client.MaasClient", autospec=True)
         result = add_maas_deployment.run()
         assert result.result_type == ResultType.COMPLETED
 
     def test_run_with_connection_refused_error(self, add_maas_deployment, mocker):
         mocker.patch(
-            "sunbeam.commands.maas.MaasClient",
+            "sunbeam.provider.maas.client.MaasClient",
             side_effect=ConnectionRefusedError("Connection refused"),
         )
         result = add_maas_deployment.run()
@@ -116,14 +118,14 @@ class TestAddMaasDeployment:
 
     def test_run_with_ssl_error(self, add_maas_deployment, mocker):
         mocker.patch(
-            "sunbeam.commands.maas.MaasClient", side_effect=SSLError("SSL error")
+            "sunbeam.provider.maas.client.MaasClient", side_effect=SSLError("SSL error")
         )
         result = add_maas_deployment.run()
         assert result.result_type == ResultType.FAILED
 
     def test_run_with_call_error(self, add_maas_deployment, mocker):
         mocker.patch(
-            "sunbeam.commands.maas.MaasClient",
+            "sunbeam.provider.maas.client.MaasClient",
             side_effect=CallError(
                 request=dict(method="GET", uri="http://localhost:5240/MAAS"),
                 response=Mock(status=401, reason="unauthorized"),
@@ -136,7 +138,7 @@ class TestAddMaasDeployment:
 
     def test_run_with_unknown_error(self, add_maas_deployment, mocker):
         mocker.patch(
-            "sunbeam.commands.maas.MaasClient",
+            "sunbeam.provider.maas.client.MaasClient",
             side_effect=Exception("Unknown error"),
         )
         result = add_maas_deployment.run()
@@ -162,7 +164,9 @@ class TestMachineRolesCheck:
 class TestMachineNetworkCheck:
     def test_run_with_incomplete_network_mapping(self, mocker):
         snap = Mock()
-        mocker.patch("sunbeam.commands.maas.get_network_mapping", return_value={})
+        mocker.patch(
+            "sunbeam.provider.maas.client.get_network_mapping", return_value={}
+        )
         machine = {
             "hostname": "test_machine",
             "roles": ["role1", "role2"],
@@ -177,7 +181,7 @@ class TestMachineNetworkCheck:
     def test_run_with_no_assigned_roles(self, mocker):
         snap = Mock()
         mocker.patch(
-            "sunbeam.commands.maas.get_network_mapping",
+            "sunbeam.provider.maas.client.get_network_mapping",
             return_value={network: "alpha" for network in Networks.values()},
         )
         machine = {"hostname": "test_machine", "roles": [], "spaces": []}
@@ -190,7 +194,7 @@ class TestMachineNetworkCheck:
     def test_run_with_missing_spaces(self, mocker):
         snap = Mock()
         mocker.patch(
-            "sunbeam.commands.maas.get_network_mapping",
+            "sunbeam.provider.maas.client.get_network_mapping",
             return_value={
                 **{network.value: "alpha" for network in Networks},
                 **{Networks.PUBLIC.value: "beta"},
@@ -210,7 +214,7 @@ class TestMachineNetworkCheck:
     def test_run_with_successful_check(self, mocker):
         snap = Mock()
         mocker.patch(
-            "sunbeam.commands.maas.get_network_mapping",
+            "sunbeam.provider.maas.client.get_network_mapping",
             return_value={network.value: "alpha" for network in Networks},
         )
         machine = {
@@ -415,7 +419,7 @@ class TestIpRangesCheck:
             **{Networks.PUBLIC.value: "public_space"},
         }
         get_ip_ranges_from_space_mock = mocker.patch(
-            "sunbeam.commands.maas.get_ip_ranges_from_space", return_value={}
+            "sunbeam.provider.maas.client.get_ip_ranges_from_space", return_value={}
         )
         check = IpRangesCheck(client, deployment)
         result = check.run()
@@ -446,7 +450,7 @@ class TestIpRangesCheck:
         }
 
         get_ip_ranges_from_space_mock = mocker.patch(
-            "sunbeam.commands.maas.get_ip_ranges_from_space",
+            "sunbeam.provider.maas.client.get_ip_ranges_from_space",
             side_effect=[public_ip_ranges, {}],
         )
         check = IpRangesCheck(client, deployment)
@@ -488,7 +492,7 @@ class TestIpRangesCheck:
         }
 
         get_ip_ranges_from_space_mock = mocker.patch(
-            "sunbeam.commands.maas.get_ip_ranges_from_space",
+            "sunbeam.provider.maas.client.get_ip_ranges_from_space",
             side_effect=[public_ip_ranges, internal_ip_ranges],
         )
         check = IpRangesCheck(client, deployment)
@@ -502,7 +506,7 @@ class TestMaasBootstrapJujuStep:
     def test_is_skip_with_no_machines(self, mocker):
         maas_client = Mock()
         mocker.patch(
-            "sunbeam.commands.maas.list_machines",
+            "sunbeam.provider.maas.client.list_machines",
             return_value=[],
         )
         step = MaasBootstrapJujuStep(
@@ -519,7 +523,7 @@ class TestMaasBootstrapJujuStep:
     def test_is_skip_with_multiple_machines(self, mocker):
         maas_client = Mock()
         mocker.patch(
-            "sunbeam.commands.maas.list_machines",
+            "sunbeam.provider.maas.client.list_machines",
             return_value=[
                 {"hostname": "machine1", "system_id": "1st"},
                 {"hostname": "machine2", "system_id": "2nd"},
@@ -544,7 +548,7 @@ class TestMaasBootstrapJujuStep:
     def test_is_skip_with_single_machine(self, mocker):
         maas_client = Mock()
         mocker.patch(
-            "sunbeam.commands.maas.list_machines",
+            "sunbeam.provider.maas.client.list_machines",
             return_value=[
                 {"hostname": "machine1", "system_id": "1st"},
             ],
@@ -650,7 +654,7 @@ class TestMaasScaleJujuStep:
         mocker.patch.object(
             step, "get_controller", return_value={"controller-machines": [1, 2]}
         )
-        mocker.patch("sunbeam.commands.maas.list_machines", return_value=[1, 2])
+        mocker.patch("sunbeam.provider.maas.client.list_machines", return_value=[1, 2])
         result = step.is_skip()
         assert result.result_type == ResultType.SKIPPED
 
@@ -665,7 +669,7 @@ class TestMaasScaleJujuStep:
             return_value={"controller-machines": {"1": {"instance-id": "1st"}}},
         )
         mocker.patch(
-            "sunbeam.commands.maas.list_machines",
+            "sunbeam.provider.maas.client.list_machines",
             return_value=[
                 {"hostname": "machine1", "system_id": "1st"},
                 {"hostname": "machine2", "system_id": "2nd"},
@@ -686,7 +690,7 @@ class TestMaasAddMachinesToClusterdStep:
     def test_is_skip_with_no_filtered_machines(
         self, mocker, maas_add_machines_to_clusterd_step
     ):
-        mocker.patch("sunbeam.commands.maas.list_machines", return_value=[])
+        mocker.patch("sunbeam.provider.maas.client.list_machines", return_value=[])
         result = maas_add_machines_to_clusterd_step.is_skip()
         assert result.result_type == ResultType.FAILED
         assert result.message == "Maas deployment has no machines."
@@ -695,7 +699,7 @@ class TestMaasAddMachinesToClusterdStep:
         self, mocker, maas_add_machines_to_clusterd_step
     ):
         mocker.patch(
-            "sunbeam.commands.maas.list_machines",
+            "sunbeam.provider.maas.client.list_machines",
             return_value=[
                 {"hostname": "machine1", "roles": [RoleTags.CONTROL.value]},
                 {"hostname": "machine2", "roles": [RoleTags.COMPUTE.value]},
@@ -806,7 +810,9 @@ class TestMaasConfigureMicrocephOSDStep:
         client = Mock()
         maas_client = Mock()
         names = ["machine1", "machine2"]
-        step = MaasConfigureMicrocephOSDStep(client, maas_client, jhelper, names)
+        step = MaasConfigureMicrocephOSDStep(
+            client, maas_client, jhelper, names, "test-model"
+        )
         return step
 
     @pytest.fixture
@@ -1003,6 +1009,7 @@ class TestMaasDeployMicrok8sApplicationStep:
             MagicMock(),
             "public_space",
             "internal_space",
+            "test-model",
         )
         with pytest.raises(ValueError):
             step.extra_tfvars()
@@ -1015,6 +1022,7 @@ class TestMaasDeployMicrok8sApplicationStep:
             MagicMock(),
             "public_space",
             "internal_space",
+            "test-model",
         )
         step.ranges = "10.0.0.1-10.0.0.10,10.0.0.20-10.0.0.30"
         expected_tfvars = {
@@ -1028,7 +1036,7 @@ class TestMaasDeployMicrok8sApplicationStep:
 
     def test_is_skip_with_public_ranges_error(self, mocker):
         mocker.patch(
-            "sunbeam.commands.maas.get_ip_ranges_from_space",
+            "sunbeam.provider.maas.client.get_ip_ranges_from_space",
             side_effect=ValueError("Failed to get ip ranges"),
         )
         step = MaasDeployMicrok8sApplicationStep(
@@ -1038,6 +1046,7 @@ class TestMaasDeployMicrok8sApplicationStep:
             MagicMock(),
             "public_space",
             "internal_space",
+            "test-model",
         )
         result = step.is_skip()
         assert result.result_type == ResultType.FAILED
@@ -1045,7 +1054,7 @@ class TestMaasDeployMicrok8sApplicationStep:
 
     def test_is_skip_with_no_public_ranges(self, mocker):
         mocker.patch(
-            "sunbeam.commands.maas.get_ip_ranges_from_space",
+            "sunbeam.provider.maas.client.get_ip_ranges_from_space",
             return_value={},
         )
         step = MaasDeployMicrok8sApplicationStep(
@@ -1055,6 +1064,7 @@ class TestMaasDeployMicrok8sApplicationStep:
             MagicMock(),
             "public_space",
             "internal_space",
+            "test-model",
         )
         result = step.is_skip()
         assert result.result_type == ResultType.FAILED
@@ -1062,7 +1072,7 @@ class TestMaasDeployMicrok8sApplicationStep:
 
     def test_is_skip_with_internal_ranges_error(self, mocker):
         mocker.patch(
-            "sunbeam.commands.maas.get_ip_ranges_from_space",
+            "sunbeam.provider.maas.client.get_ip_ranges_from_space",
             side_effect=[
                 {
                     "10.0.0.0/24": [
@@ -1083,6 +1093,7 @@ class TestMaasDeployMicrok8sApplicationStep:
             MagicMock(),
             "public_space",
             "internal_space",
+            "test-model",
         )
         result = step.is_skip()
         assert result.result_type == ResultType.FAILED
@@ -1090,7 +1101,7 @@ class TestMaasDeployMicrok8sApplicationStep:
 
     def test_is_skip_with_no_internal_ranges(self, mocker):
         mocker.patch(
-            "sunbeam.commands.maas.get_ip_ranges_from_space",
+            "sunbeam.provider.maas.client.get_ip_ranges_from_space",
             side_effect=[
                 {
                     "10.0.0.0/24": [
@@ -1111,6 +1122,7 @@ class TestMaasDeployMicrok8sApplicationStep:
             MagicMock(),
             "public_space",
             "internal_space",
+            "test-model",
         )
         result = step.is_skip()
         assert result.result_type == ResultType.FAILED

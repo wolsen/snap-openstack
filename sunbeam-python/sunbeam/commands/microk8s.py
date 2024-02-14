@@ -27,7 +27,6 @@ from sunbeam.commands.juju import JujuStepHelper
 from sunbeam.jobs import questions
 from sunbeam.jobs.common import BaseStep, Result, ResultType, read_config, update_config
 from sunbeam.jobs.juju import (
-    MODEL,
     ActionFailedException,
     ApplicationNotFoundException,
     JujuHelper,
@@ -93,7 +92,7 @@ class DeployMicrok8sApplicationStep(DeployMachineApplicationStep):
         client: Client,
         manifest: Manifest,
         jhelper: JujuHelper,
-        model: str = MODEL,
+        model: str,
         deployment_preseed: dict | None = None,
         accept_defaults: bool = False,
         refresh: bool = False,
@@ -169,7 +168,7 @@ class AddMicrok8sUnitsStep(AddMachineUnitsStep):
         client: Client,
         names: list[str] | str,
         jhelper: JujuHelper,
-        model: str = MODEL,
+        model: str,
     ):
         super().__init__(
             client,
@@ -189,14 +188,14 @@ class AddMicrok8sUnitsStep(AddMachineUnitsStep):
 class RemoveMicrok8sUnitStep(RemoveMachineUnitStep):
     """Remove Microk8s Unit."""
 
-    def __init__(self, client: Client, name: str, jhelper: JujuHelper):
+    def __init__(self, client: Client, name: str, jhelper: JujuHelper, model: str):
         super().__init__(
             client,
             name,
             jhelper,
             MICROK8S_CONFIG_KEY,
             APPLICATION,
-            MODEL,
+            model,
             "Remove MicroK8S unit",
             "Removing MicroK8S unit from machine",
         )
@@ -248,7 +247,7 @@ class AddMicrok8sCloudStep(BaseStep, JujuStepHelper):
 class StoreMicrok8sConfigStep(BaseStep, JujuStepHelper):
     _CONFIG = MICROK8S_KUBECONFIG_KEY
 
-    def __init__(self, client: Client, jhelper: JujuHelper, model: str = MODEL):
+    def __init__(self, client: Client, jhelper: JujuHelper, model: str):
         super().__init__(
             "Store MicroK8S config",
             "Storing MicroK8S configuration in sunbeam database",

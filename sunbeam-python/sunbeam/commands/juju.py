@@ -50,7 +50,6 @@ from sunbeam.jobs.juju import (
 LOG = logging.getLogger(__name__)
 PEXPECT_TIMEOUT = 60
 BOOTSTRAP_CONFIG_KEY = "BootstrapAnswers"
-INFRASTRUCTURE_MODEL = "openstack-machines"
 
 
 class JujuStepHelper:
@@ -1277,11 +1276,11 @@ class WriteCharmLogStep(BaseStep, JujuStepHelper):
 class JujuLoginStep(BaseStep, JujuStepHelper):
     """Login to Juju Controller"""
 
-    def __init__(self, data_location: Path):
+    def __init__(self, juju_account: JujuAccount | None):
         super().__init__(
             "Login to Juju controller", "Authenticating with Juju controller"
         )
-        self.data_location = data_location
+        self.juju_account = juju_account
 
     def is_skip(self, status: Optional["Status"] = None) -> Result:
         """Determines if the step should be skipped or not.
@@ -1289,10 +1288,7 @@ class JujuLoginStep(BaseStep, JujuStepHelper):
         :return: ResultType.SKIPPED if the Step should be skipped,
                  ResultType.COMPLETED or ResultType.FAILED otherwise
         """
-        try:
-            self.juju_account = JujuAccount.load(self.data_location)
-            LOG.debug(f"Local account found: {self.juju_account.user}")
-        except JujuAccountNotFound:
+        if self.juju_account is None:
             LOG.debug("Local account not found, most likely not bootstrapped / joined")
             return Result(ResultType.SKIPPED)
 
@@ -1325,7 +1321,11 @@ class JujuLoginStep(BaseStep, JujuStepHelper):
 
         :return:
         """
-
+        if self.juju_account is None:
+            return Result(
+                ResultType.FAILED,
+                "Juju account was supposed to be checked for in is_skip method.",
+            )
         cmd = " ".join(
             [
                 self._get_juju_binary(),
@@ -1353,23 +1353,24 @@ class JujuLoginStep(BaseStep, JujuStepHelper):
 class AddInfrastructureModelStep(BaseStep):
     """Add infrastructure model."""
 
-    def __init__(self, jhelper: JujuHelper):
+    def __init__(self, jhelper: JujuHelper, model: str):
         super().__init__("Add infrastructure model", "Adding infrastructure model")
         self.jhelper = jhelper
+        self.model = model
 
     def is_skip(self, status: Optional["Status"] = None) -> Result:
         """Determines if the step should be skipped or not."""
         try:
-            run_sync(self.jhelper.get_model(INFRASTRUCTURE_MODEL))
+            run_sync(self.jhelper.get_model(self.model))
             return Result(ResultType.SKIPPED)
         except ModelNotFoundException:
-            LOG.debug(f"Model {INFRASTRUCTURE_MODEL} not found")
+            LOG.debug(f"Model {self.model} not found")
         return Result(ResultType.COMPLETED)
 
     def run(self, status: Optional["Status"] = None) -> Result:
         """Add infrastructure model."""
         try:
-            run_sync(self.jhelper.add_model(INFRASTRUCTURE_MODEL))
+            run_sync(self.jhelper.add_model(self.model))
             return Result(ResultType.COMPLETED)
         except Exception as e:
             return Result(ResultType.FAILED, str(e))

@@ -19,30 +19,27 @@ import string
 
 import click
 from rich.console import Console
-from snaphelpers import Snap
 
-from sunbeam.clusterd.client import Client
 from sunbeam.commands.juju import JujuLoginStep
 from sunbeam.jobs.checks import VerifyBootstrappedCheck
 from sunbeam.jobs.common import run_plan, run_preflight_checks
+from sunbeam.jobs.deployment import Deployment
 
 LOG = logging.getLogger(__name__)
 console = Console()
-snap = Snap()
 
 
 @click.command()
 @click.pass_context
 def juju_login(ctx: click.Context) -> None:
     """Login to the controller with current host user."""
-    client: Client = ctx.obj
+    deployment: Deployment = ctx.obj
+    client = deployment.get_client()
     preflight_checks = [VerifyBootstrappedCheck(client)]
     run_preflight_checks(preflight_checks, console)
 
-    data_location = snap.paths.user_data
-
     plan = []
-    plan.append(JujuLoginStep(data_location))
+    plan.append(JujuLoginStep(deployment.juju_account))
 
     run_plan(plan, console)
 

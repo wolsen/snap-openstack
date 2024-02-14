@@ -131,6 +131,7 @@ class TestDeployMachineApplicationStep:
 
         jhelper.get_application.assert_called_once()
         manifest.update_tfvars_and_apply_tf.assert_called_with(
+            cclient,
             tfplan=tfplan,
             tfvar_config=tfconfig,
             override_tfvars={"machine_ids": machines, "machine_model": model},

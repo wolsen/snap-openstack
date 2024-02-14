@@ -17,29 +17,26 @@ import logging
 
 import click
 from rich.console import Console
-from snaphelpers import Snap
 
-from sunbeam.clusterd.client import Client
 from sunbeam.commands.openstack import OPENSTACK_MODEL
 from sunbeam.jobs import juju
 from sunbeam.jobs.checks import VerifyBootstrappedCheck
 from sunbeam.jobs.common import run_preflight_checks
+from sunbeam.jobs.deployment import Deployment
 
 LOG = logging.getLogger(__name__)
 console = Console()
-snap = Snap()
 
 
 @click.command()
 @click.pass_context
 def dashboard_url(ctx: click.Context) -> None:
     """Retrieve OpenStack Dashboard URL."""
-    client: Client = ctx.obj
+    deployment: Deployment = ctx.obj
     preflight_checks = []
-    preflight_checks.append(VerifyBootstrappedCheck(client))
+    preflight_checks.append(VerifyBootstrappedCheck(deployment.get_client()))
     run_preflight_checks(preflight_checks, console)
-    data_location = snap.paths.user_data
-    jhelper = juju.JujuHelper(client, data_location)
+    jhelper = juju.JujuHelper(deployment.get_connected_controller())
 
     with console.status("Retrieving dashboard URL from Horizon service ... "):
         # Retrieve config from juju actions

@@ -20,10 +20,8 @@ import click
 from snaphelpers import Snap
 
 from sunbeam import log
-from sunbeam.clusterd.client import Client
 from sunbeam.commands import configure as configure_cmds
 from sunbeam.commands import dashboard_url as dasboard_url_cmds
-from sunbeam.commands import deployment as deployment_cmds
 from sunbeam.commands import generate_cloud_config as generate_cloud_config_cmds
 from sunbeam.commands import generate_preseed as generate_preseed_cmds
 from sunbeam.commands import inspect as inspect_cmds
@@ -32,8 +30,9 @@ from sunbeam.commands import manifest as manifest_commands
 from sunbeam.commands import openrc as openrc_cmds
 from sunbeam.commands import prepare_node as prepare_node_cmds
 from sunbeam.commands import utils as utils_cmds
+from sunbeam.jobs import deployments as deployments_jobs
 from sunbeam.jobs.plugin import PluginManager
-from sunbeam.provider import command as provider_cmds
+from sunbeam.provider import commands as provider_cmds
 from sunbeam.utils import CatchGroup
 
 LOG = logging.getLogger()
@@ -103,10 +102,11 @@ def main():
     cli.add_command(dasboard_url_cmds.dashboard_url)
 
     # Cluster management
-    provider_guess = provider_cmds.guess_provider(
-        snap.paths.real_home / deployment_cmds.DEPLOYMENT_CONFIG
+    provider_cmds.register_providers()
+    deployment = provider_cmds.load_deployment(
+        snap.paths.real_home / deployments_jobs.DEPLOYMENTS_CONFIG
     )
-    provider_cmds.register_cli(cli, provider_guess)
+    provider_cmds.register_cli(cli, deployment)
 
     # Manifst management
     cli.add_command(manifest)
@@ -120,11 +120,10 @@ def main():
     cli.add_command(utils)
     utils.add_command(utils_cmds.juju_login)
 
-    client = Client.from_socket()
     # Register the plugins after all groups,commands are registered
-    PluginManager.register(client, cli)
+    PluginManager.register(deployment, cli)
 
-    cli(obj=client)
+    cli(obj=deployment)
 
 
 if __name__ == "__main__":

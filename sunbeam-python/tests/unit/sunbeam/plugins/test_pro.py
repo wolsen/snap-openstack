@@ -44,31 +44,51 @@ def mock_run_sync(mocker):
 
 class TestEnableUbuntuProApplicationStep(unittest.TestCase):
     def setUp(self):
+        self.client = Mock()
         self.jhelper = AsyncMock()
         self.manifest = Mock()
         self.tfplan = "fake-plan"
+        self.model = "test-model"
         self.token = "TOKENFORTESTING"
 
     def test_is_skip(self):
         step = EnableUbuntuProApplicationStep(
-            self.manifest, self.jhelper, self.token, self.tfplan
+            self.client,
+            self.manifest,
+            self.jhelper,
+            self.token,
+            self.tfplan,
+            self.model,
         )
         result = step.is_skip()
         assert result.result_type == ResultType.COMPLETED
 
     def test_has_prompts(self):
         step = EnableUbuntuProApplicationStep(
-            self.manifest, self.jhelper, self.token, self.tfplan
+            self.client,
+            self.manifest,
+            self.jhelper,
+            self.token,
+            self.tfplan,
+            self.model,
         )
         assert not step.has_prompts()
 
     def test_enable(self):
         step = EnableUbuntuProApplicationStep(
-            self.manifest, self.jhelper, self.token, self.tfplan
+            self.client,
+            self.manifest,
+            self.jhelper,
+            self.token,
+            self.tfplan,
+            self.model,
         )
         result = step.run()
         self.manifest.update_tfvars_and_apply_tf.assert_called_with(
-            tfplan=self.tfplan, tfvar_config=None, override_tfvars={"token": self.token}
+            self.client,
+            tfplan=self.tfplan,
+            tfvar_config=None,
+            override_tfvars={"token": self.token},
         )
         self.jhelper.wait_application_ready.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
@@ -79,7 +99,12 @@ class TestEnableUbuntuProApplicationStep(unittest.TestCase):
         )
 
         step = EnableUbuntuProApplicationStep(
-            self.manifest, self.jhelper, self.token, self.tfplan
+            self.client,
+            self.manifest,
+            self.jhelper,
+            self.token,
+            self.tfplan,
+            self.model,
         )
         result = step.run()
 
@@ -91,7 +116,12 @@ class TestEnableUbuntuProApplicationStep(unittest.TestCase):
         self.jhelper.wait_application_ready.side_effect = TimeoutException("timed out")
 
         step = EnableUbuntuProApplicationStep(
-            self.manifest, self.jhelper, self.token, self.tfplan
+            self.client,
+            self.manifest,
+            self.jhelper,
+            self.token,
+            self.tfplan,
+            self.model,
         )
         result = step.run()
 
@@ -102,24 +132,28 @@ class TestEnableUbuntuProApplicationStep(unittest.TestCase):
 
 class TestDisableUbuntuProApplicationStep(unittest.TestCase):
     def setUp(self):
+        self.client = Mock()
         self.jhelper = AsyncMock()
         self.manifest = Mock()
         self.tfplan = "fake-plan"
 
     def test_is_skip(self):
-        step = DisableUbuntuProApplicationStep(self.manifest, self.tfplan)
+        step = DisableUbuntuProApplicationStep(self.client, self.manifest, self.tfplan)
         result = step.is_skip()
         assert result.result_type == ResultType.COMPLETED
 
     def test_has_prompts(self):
-        step = DisableUbuntuProApplicationStep(self.manifest, self.tfplan)
+        step = DisableUbuntuProApplicationStep(self.client, self.manifest, self.tfplan)
         assert not step.has_prompts()
 
     def test_disable(self):
-        step = DisableUbuntuProApplicationStep(self.manifest, self.tfplan)
+        step = DisableUbuntuProApplicationStep(self.client, self.manifest, self.tfplan)
         result = step.run()
         self.manifest.update_tfvars_and_apply_tf.assert_called_with(
-            tfplan=self.tfplan, tfvar_config=None, override_tfvars={"token": ""}
+            self.client,
+            tfplan=self.tfplan,
+            tfvar_config=None,
+            override_tfvars={"token": ""},
         )
         assert result.result_type == ResultType.COMPLETED
 
@@ -128,7 +162,7 @@ class TestDisableUbuntuProApplicationStep(unittest.TestCase):
             "apply failed..."
         )
 
-        step = DisableUbuntuProApplicationStep(self.manifest, self.tfplan)
+        step = DisableUbuntuProApplicationStep(self.client, self.manifest, self.tfplan)
         result = step.run()
 
         self.manifest.update_tfvars_and_apply_tf.assert_called_once()

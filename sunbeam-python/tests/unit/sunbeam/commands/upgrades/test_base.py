@@ -47,7 +47,7 @@ class TestBaseUpgrade:
             apps, charms, model, tfplan, config, timeout
         )
         self.manifest.update_partial_tfvars_and_apply_tf.assert_called_once_with(
-            charms, tfplan, config
+            self.client, charms, tfplan, config
         )
         self.jhelper.wait_until_desired_status.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
@@ -77,7 +77,7 @@ class TestBaseUpgrade:
             apps, charms, model, tfplan, config, timeout
         )
         self.manifest.update_partial_tfvars_and_apply_tf.assert_called_once_with(
-            charms, tfplan, config
+            self.client, charms, tfplan, config
         )
         self.jhelper.wait_until_desired_status.assert_not_called()
         assert result.result_type == ResultType.FAILED
@@ -108,7 +108,7 @@ class TestBaseUpgrade:
             apps, charms, model, tfplan, config, timeout
         )
         self.manifest.update_partial_tfvars_and_apply_tf.assert_called_once_with(
-            charms, tfplan, config
+            self.client, charms, tfplan, config
         )
         self.jhelper.wait_until_desired_status.assert_called_once()
         assert result.result_type == ResultType.FAILED

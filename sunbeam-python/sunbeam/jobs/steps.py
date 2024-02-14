@@ -103,6 +103,7 @@ class DeployMachineApplicationStep(BaseStep):
                 }
             )
             self.manifest.update_tfvars_and_apply_tf(
+                self.client,
                 tfplan=self.tfplan,
                 tfvar_config=self.config,
                 override_tfvars=extra_tfvars,
