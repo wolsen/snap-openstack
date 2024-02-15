@@ -25,7 +25,6 @@ from sunbeam.commands.openstack import (
     PatchLoadBalancerServicesStep,
     ReapplyOpenStackTerraformPlanStep,
     ResizeControlPlaneStep,
-    compute_ceph_replica_scale,
     compute_ha_scale,
     compute_ingress_scale,
     compute_os_api_scale,
@@ -411,19 +410,6 @@ def test_compute_os_api_scale(topology, control_nodes, scale):
 )
 def test_compute_ingress_scale(topology, control_nodes, scale):
     assert compute_ingress_scale(topology, control_nodes) == scale
-
-
-@pytest.mark.parametrize(
-    "osds,scale",
-    [
-        (1, 1),
-        (1, 1),
-        (9, 3),
-        (2, 2),
-    ],
-)
-def test_compute_ceph_replica_scale(osds, scale):
-    assert compute_ceph_replica_scale(osds) == scale
 
 
 class TestReapplyOpenStackTerraformPlanStep(unittest.TestCase):
