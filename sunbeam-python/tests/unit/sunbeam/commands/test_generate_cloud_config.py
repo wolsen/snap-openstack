@@ -158,10 +158,7 @@ class TestConfigureCloudsYamlStep:
 """
         assert contents == expect
 
-    def test_run_with_update_false(
-        self, mocker, cclient, tfhelper, snap, environ, cprint
-    ):
-        mocker.patch.object(generate, "Snap", return_value=snap)
+    def test_run_with_update_false(self, cclient, tfhelper, environ, cprint):
         environ.copy.return_value = {}
 
         creds = {

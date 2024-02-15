@@ -15,7 +15,6 @@
 
 import logging
 import os
-import shutil
 from typing import Optional
 
 import click
@@ -26,11 +25,10 @@ from snaphelpers import Snap
 
 from sunbeam.commands.configure import retrieve_admin_credentials
 from sunbeam.commands.openstack import OPENSTACK_MODEL
-from sunbeam.commands.terraform import TerraformException, TerraformHelper
+from sunbeam.commands.terraform import TerraformException
 from sunbeam.jobs.deployment import Deployment
 from sunbeam.jobs.juju import JujuHelper, ModelNotFoundException, run_sync
 from sunbeam.jobs.manifest import Manifest
-from sunbeam.versions import TERRAFORM_DIR_NAMES
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -75,23 +73,7 @@ def launch(
         admin_auth_info = retrieve_admin_credentials(jhelper, OPENSTACK_MODEL)
 
         tfplan = "demo-setup"
-        tfplan_dir: str = TERRAFORM_DIR_NAMES.get(tfplan)
-        manifest_tfplans = manifest.software_config.terraform
-        src = manifest_tfplans.get(tfplan).source
-        dst = snap.paths.user_common / "etc" / deployment.name / tfplan_dir
-        try:
-            os.mkdir(dst)
-        except FileExistsError:
-            pass
-        # NOTE: install to user writable location
-        LOG.debug(f"Updating {dst} from {src}...")
-        shutil.copytree(src, dst, dirs_exist_ok=True)
-        tfhelper = TerraformHelper(
-            path=snap.paths.user_common / "etc" / deployment.name / tfplan_dir,
-            plan=tfplan,
-            backend="http",
-            clusterd_address=deployment.get_clusterd_http_address(),
-        )
+        tfhelper = manifest.get_tfhelper(tfplan)
         try:
             tf_output = tfhelper.output(hide_output=True)
         except TerraformException:

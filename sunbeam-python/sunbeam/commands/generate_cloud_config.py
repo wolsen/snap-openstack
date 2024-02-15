@@ -26,7 +26,6 @@ import click
 import click.core
 import yaml
 from rich.console import Console
-from snaphelpers import Snap
 
 import sunbeam.jobs.questions
 from sunbeam.clusterd.client import Client
@@ -45,7 +44,6 @@ from sunbeam.jobs.common import (
 from sunbeam.jobs.deployment import Deployment
 from sunbeam.jobs.juju import JujuHelper, ModelNotFoundException, run_sync
 from sunbeam.jobs.manifest import Manifest
-from sunbeam.versions import TERRAFORM_DIR_NAMES
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -262,20 +260,6 @@ def cloud_config(
     manifest_obj = Manifest.load_latest_from_clusterdb(
         deployment, include_defaults=True
     )
-    tfplan = "demo-setup"
-    tfplan_dir: str = TERRAFORM_DIR_NAMES.get(tfplan)
-    snap = Snap()
-    manifest_tfplans = manifest_obj.software_config.terraform
-    src = manifest_tfplans.get(tfplan).source
-    dst = snap.paths.user_common / "etc" / deployment.name / tfplan_dir
-    try:
-        os.mkdir(dst)
-    except FileExistsError:
-        pass
-    # NOTE: install to user writable location
-    LOG.debug(f"Updating {dst} from {src}...")
-    shutil.copytree(src, dst, dirs_exist_ok=True)
-
     jhelper = JujuHelper(deployment.get_connected_controller())
     try:
         run_sync(jhelper.get_model(OPENSTACK_MODEL))
@@ -283,13 +267,9 @@ def cloud_config(
         LOG.error(f"Expected model {OPENSTACK_MODEL} missing")
         raise click.ClickException("Please run `sunbeam cluster bootstrap` first")
     admin_credentials = retrieve_admin_credentials(jhelper, OPENSTACK_MODEL)
-    tfhelper = TerraformHelper(
-        path=snap.paths.user_common / "etc" / deployment.name / tfplan_dir,
-        env=admin_credentials,
-        plan=tfplan,
-        backend="http",
-        clusterd_address=deployment.get_clusterd_http_address(),
-    )
+    tfplan = "demo-setup"
+    tfhelper = manifest_obj.get_tfhelper(tfplan)
+    tfhelper.env = (tfhelper.env or {}) | admin_credentials
     plan = [
         GenerateCloudConfigStep(
             client=client,
