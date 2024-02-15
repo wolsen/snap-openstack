@@ -45,6 +45,7 @@ from sunbeam.provider.maas.steps import (
     MachineNetworkCheck,
     MachineRequirementsCheck,
     MachineRolesCheck,
+    MachineRootDiskCheck,
     MachineStorageCheck,
     Result,
     ResultType,
@@ -324,6 +325,46 @@ class TestMachineComputeNicCheck:
         assert result.passed is True
         assert result.details["machine"] == "test_machine"
         assert result.message and NicTags.COMPUTE.value in result.message
+
+
+class TestMachineRootDiskCheck:
+    def test_run_with_no_root_disk(self):
+        machine = {"hostname": "test_machine"}
+        check = MachineRootDiskCheck(machine)
+        result = check.run()
+        assert result.passed is False
+        assert result.details["machine"] == "test_machine"
+        assert result.message and "could not determine" in result.message
+
+    def test_run_with_no_ssd_tag(self):
+        machine = {"hostname": "test_machine", "root_disk": {"tags": []}}
+        check = MachineRootDiskCheck(machine)
+        result = check.run()
+        assert result.passed is False
+        assert result.details["machine"] == "test_machine"
+        assert result.message and "is not a SSD" in result.message
+
+    def test_run_with_not_enough_space(self):
+        machine = {
+            "hostname": "test_machine",
+            "root_disk": {"tags": ["ssd"], "root_partition": {"size": 1}},
+        }
+        check = MachineRootDiskCheck(machine)
+        result = check.run()
+        assert result.passed is False
+        assert result.details["machine"] == "test_machine"
+        assert result.message and "is too small" in result.message
+
+    def test_run_with_valid_root_disk(self):
+        machine = {
+            "hostname": "test_machine",
+            "root_disk": {"tags": ["ssd"], "root_partition": {"size": 500 * 1024**3}},
+        }
+        check = MachineRootDiskCheck(machine)
+        result = check.run()
+        assert result.passed is True
+        assert result.details["machine"] == "test_machine"
+        assert result.message and "is a SSD and is large enough" in result.message
 
 
 class TestMachineRequirementsCheck:
