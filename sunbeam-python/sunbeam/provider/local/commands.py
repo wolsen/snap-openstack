@@ -37,7 +37,14 @@ from sunbeam.commands.clusterd import (
     ClusterUpdateJujuControllerStep,
     ClusterUpdateNodeStep,
 )
-from sunbeam.commands.configure import SetLocalHypervisorOptions
+from sunbeam.commands.configure import (
+    DemoSetup,
+    SetHypervisorCharmConfigStep,
+    TerraformDemoInitStep,
+    UserOpenRCStep,
+    UserQuestions,
+    retrieve_admin_credentials,
+)
 from sunbeam.commands.hypervisor import (
     AddHypervisorUnitsStep,
     DeployHypervisorApplicationStep,
@@ -86,6 +93,7 @@ from sunbeam.jobs.checks import (
     LocalShareCheck,
     SshKeysConnectedCheck,
     SystemRequirementsCheck,
+    VerifyBootstrappedCheck,
     VerifyFQDNCheck,
     VerifyHypervisorHostnameCheck,
 )
@@ -105,10 +113,11 @@ from sunbeam.jobs.common import (
     validate_roles,
 )
 from sunbeam.jobs.deployment import Deployment
-from sunbeam.jobs.juju import CONTROLLER, JujuHelper
+from sunbeam.jobs.juju import CONTROLLER, JujuHelper, ModelNotFoundException, run_sync
 from sunbeam.jobs.manifest import AddManifestStep, Manifest
 from sunbeam.provider.base import ProviderBase
 from sunbeam.provider.local.deployment import LOCAL_TYPE, LocalDeployment
+from sunbeam.provider.local.steps import LocalSetHypervisorUnitsOptionsStep
 from sunbeam.utils import CatchGroup
 
 LOG = logging.getLogger(__name__)
@@ -131,12 +140,18 @@ class LocalProvider(ProviderBase):
         """A local provider cannot add deployments."""
         pass
 
-    def register_cli(self, init: click.Group, deployment: click.Group):
+    def register_cli(
+        self,
+        init: click.Group,
+        configure: click.Group,
+        deployment: click.Group,
+    ):
         """Register local provider commands to CLI.
 
         Local provider does not add commands to the deployment group.
         """
         init.add_command(cluster)
+        configure.add_command(configure_cmd)
         cluster.add_command(bootstrap)
         cluster.add_command(add)
         cluster.add_command(join)
@@ -572,7 +587,7 @@ def join(
                 AddHypervisorUnitsStep(
                     client, name, jhelper, deployment.infrastructure_model
                 ),
-                SetLocalHypervisorOptions(
+                LocalSetHypervisorUnitsOptionsStep(
                     client,
                     name,
                     jhelper,
@@ -677,3 +692,109 @@ def remove(ctx: click.Context, name: str, force: bool) -> None:
         f"Run command 'sudo /sbin/remove-juju-services' on node {name} "
         "to reuse the machine."
     )
+
+
+@click.command("deployment")
+@click.option("-a", "--accept-defaults", help="Accept all defaults.", is_flag=True)
+@click.option(
+    "-m",
+    "--manifest",
+    help="Manifest file.",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option(
+    "-o",
+    "--openrc",
+    help="Output file for cloud access details.",
+    type=click.Path(dir_okay=False, path_type=Path),
+)
+@click.pass_context
+def configure_cmd(
+    ctx: click.Context,
+    openrc: Path | None = None,
+    manifest: Path | None = None,
+    accept_defaults: bool = False,
+) -> None:
+    deployment: Deployment = ctx.obj
+    client = deployment.get_client()
+    preflight_checks = []
+    preflight_checks.append(DaemonGroupCheck())
+    preflight_checks.append(VerifyBootstrappedCheck(client))
+    run_preflight_checks(preflight_checks, console)
+
+    # Validate manifest file
+    manifest_obj = None
+    if manifest:
+        manifest_obj = Manifest.load(
+            deployment, manifest_file=manifest, include_defaults=True
+        )
+    else:
+        manifest_obj = Manifest.load_latest_from_clusterdb(
+            deployment, include_defaults=True
+        )
+
+    LOG.debug(
+        f"Manifest used for deployment - preseed: {manifest_obj.deployment_config}"
+    )
+    LOG.debug(
+        f"Manifest used for deployment - software: {manifest_obj.software_config}"
+    )
+    preseed = manifest_obj.deployment_config or {}
+
+    name = utils.get_fqdn()
+    jhelper = JujuHelper(deployment.get_connected_controller())
+    try:
+        run_sync(jhelper.get_model(OPENSTACK_MODEL))
+    except ModelNotFoundException:
+        LOG.error(f"Expected model {OPENSTACK_MODEL} missing")
+        raise click.ClickException("Please run `sunbeam cluster bootstrap` first")
+    admin_credentials = retrieve_admin_credentials(jhelper, OPENSTACK_MODEL)
+
+    tfplan = "demo-setup"
+    tfhelper = manifest_obj.get_tfhelper(tfplan)
+    tfhelper.env = (tfhelper.env or {}) | admin_credentials
+    answer_file = tfhelper.path / "config.auto.tfvars.json"
+    plan = [
+        JujuLoginStep(deployment.juju_account),
+        UserQuestions(
+            client,
+            answer_file=answer_file,
+            deployment_preseed=preseed,
+            accept_defaults=accept_defaults,
+        ),
+        TerraformDemoInitStep(client, tfhelper),
+        DemoSetup(
+            client=client,
+            tfhelper=tfhelper,
+            answer_file=answer_file,
+        ),
+        UserOpenRCStep(
+            client=client,
+            tfhelper=tfhelper,
+            auth_url=admin_credentials["OS_AUTH_URL"],
+            auth_version=admin_credentials["OS_AUTH_VERSION"],
+            openrc=openrc,
+        ),
+        SetHypervisorCharmConfigStep(
+            client,
+            jhelper,
+            ext_network=answer_file,
+            model=deployment.infrastructure_model,
+        ),
+    ]
+    node = client.cluster.get_node_info(name)
+
+    if "compute" in node["role"]:
+        plan.append(
+            LocalSetHypervisorUnitsOptionsStep(
+                client,
+                name,
+                jhelper,
+                deployment.infrastructure_model,
+                # Accept preseed file but do not allow 'accept_defaults' as nic
+                # selection may vary from machine to machine and is potentially
+                # destructive if it takes over an unintended nic.
+                deployment_preseed=preseed,
+            )
+        )
+    run_plan(plan, console)

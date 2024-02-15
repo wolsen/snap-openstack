@@ -31,6 +31,14 @@ from sunbeam.commands import resize as resize_cmds
 from sunbeam.commands import utils
 from sunbeam.commands.bootstrap_state import SetBootstrapped
 from sunbeam.commands.clusterd import DeploySunbeamClusterdApplicationStep
+from sunbeam.commands.configure import (
+    DemoSetup,
+    SetHypervisorCharmConfigStep,
+    TerraformDemoInitStep,
+    UserOpenRCStep,
+    UserQuestions,
+    retrieve_admin_credentials,
+)
 from sunbeam.commands.hypervisor import (
     AddHypervisorUnitsStep,
     DeployHypervisorApplicationStep,
@@ -39,6 +47,7 @@ from sunbeam.commands.juju import (
     AddCloudJujuStep,
     AddCredentialsJujuStep,
     AddInfrastructureModelStep,
+    JujuLoginStep,
 )
 from sunbeam.commands.microceph import (
     AddMicrocephUnitsStep,
@@ -51,6 +60,7 @@ from sunbeam.commands.microk8s import (
 )
 from sunbeam.commands.mysql import ConfigureMySQLStep
 from sunbeam.commands.openstack import (
+    OPENSTACK_MODEL,
     DeployControlPlaneStep,
     PatchLoadBalancerServicesStep,
 )
@@ -60,10 +70,12 @@ from sunbeam.commands.sunbeam_machine import (
 )
 from sunbeam.commands.terraform import TerraformInitStep
 from sunbeam.jobs.checks import (
+    DaemonGroupCheck,
     DiagnosticsCheck,
     DiagnosticsResult,
     JujuSnapCheck,
     LocalShareCheck,
+    VerifyBootstrappedCheck,
     VerifyClusterdNotBootstrappedCheck,
 )
 from sunbeam.jobs.common import (
@@ -77,7 +89,13 @@ from sunbeam.jobs.common import (
 )
 from sunbeam.jobs.deployment import Deployment
 from sunbeam.jobs.deployments import DeploymentsConfig, deployment_path
-from sunbeam.jobs.juju import CONTROLLER_MODEL, JujuAccount, JujuHelper
+from sunbeam.jobs.juju import (
+    CONTROLLER_MODEL,
+    JujuAccount,
+    JujuHelper,
+    ModelNotFoundException,
+    run_sync,
+)
 from sunbeam.jobs.manifest import AddManifestStep, Manifest
 from sunbeam.provider.base import ProviderBase
 from sunbeam.provider.maas.client import (
@@ -108,6 +126,8 @@ from sunbeam.provider.maas.steps import (
     MaasSaveClusterdAddressStep,
     MaasSaveControllerStep,
     MaasScaleJujuStep,
+    MaasSetHypervisorUnitsOptionsStep,
+    MachineComputeNicCheck,
     MachineNetworkCheck,
     MachineRequirementsCheck,
     MachineRolesCheck,
@@ -162,6 +182,7 @@ class MaasProvider(ProviderBase):
     def register_cli(
         self,
         init: click.Group,
+        configure: click.Group,
         deployment: click.Group,
     ):
         init.add_command(cluster)
@@ -169,6 +190,7 @@ class MaasProvider(ProviderBase):
         cluster.add_command(deploy)
         cluster.add_command(list_nodes)
         cluster.add_command(resize_cmds.resize)
+        configure.add_command(configure_cmd)
         deployment.add_command(machine)
         machine.add_command(list_machines_cmd)
         machine.add_command(show_machine_cmd)
@@ -321,6 +343,10 @@ def bootstrap(
     console.print("Bootstrap controller components complete.")
 
 
+def _name_mapper(node: dict) -> str:
+    return node["name"]
+
+
 @click.command()
 @click.option("-a", "--accept-defaults", help="Accept all defaults.", is_flag=True)
 @click.option(
@@ -410,9 +436,6 @@ def deploy(
     )
     run_plan(plan, console)
 
-    def _name_mapper(node: dict) -> str:
-        return node["name"]
-
     control = list(
         map(_name_mapper, client.cluster.list_nodes_by_role(RoleTags.CONTROL.value))
     )
@@ -427,7 +450,7 @@ def deploy(
     nb_storage = len(storage)
     workers = list(set(compute + control + storage))
 
-    if nb_control + nb_compute + nb_storage < 3:
+    if nb_control < 1 or nb_compute < 1 or nb_storage < 1:
         console.print(
             "Deployments needs at least one of each role to work correctly:"
             f"\n\tcontrol: {len(control)}"
@@ -525,6 +548,110 @@ def deploy(
         f" {nb_compute} compute and {nb_storage} storage nodes."
         f" Total nodes in cluster: {len(workers)}"
     )
+
+
+@click.command("deployment")
+@click.pass_context
+@click.option("-a", "--accept-defaults", help="Accept all defaults.", is_flag=True)
+@click.option(
+    "-m",
+    "--manifest",
+    help="Manifest file.",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option(
+    "-o",
+    "--openrc",
+    help="Output file for cloud access details.",
+    type=click.Path(dir_okay=False, path_type=Path),
+)
+def configure_cmd(
+    ctx: click.Context,
+    openrc: Path | None = None,
+    manifest: Path | None = None,
+    accept_defaults: bool = False,
+) -> None:
+
+    deployment: Deployment = ctx.obj
+    client = deployment.get_client()
+    maas_client = MaasClient.from_deployment(deployment)
+    preflight_checks = []
+    preflight_checks.append(DaemonGroupCheck())
+    preflight_checks.append(VerifyBootstrappedCheck(client))
+    run_preflight_checks(preflight_checks, console)
+
+    # Validate manifest file
+    manifest_obj = None
+    if manifest:
+        manifest_obj = Manifest.load(
+            deployment, manifest_file=manifest, include_defaults=True
+        )
+    else:
+        manifest_obj = Manifest.load_latest_from_clusterdb(
+            deployment, include_defaults=True
+        )
+
+    LOG.debug(
+        f"Manifest used for deployment - preseed: {manifest_obj.deployment_config}"
+    )
+    LOG.debug(
+        f"Manifest used for deployment - software: {manifest_obj.software_config}"
+    )
+    preseed = manifest_obj.deployment_config or {}
+
+    jhelper = JujuHelper(deployment.get_connected_controller())
+    try:
+        run_sync(jhelper.get_model(OPENSTACK_MODEL))
+    except ModelNotFoundException:
+        LOG.error(f"Expected model {OPENSTACK_MODEL} missing")
+        raise click.ClickException("Please run `sunbeam cluster bootstrap` first")
+    admin_credentials = retrieve_admin_credentials(jhelper, OPENSTACK_MODEL)
+
+    tfplan = "demo-setup"
+    tfhelper = manifest_obj.get_tfhelper(tfplan)
+    tfhelper.env = (tfhelper.env or {}) | admin_credentials
+    answer_file = tfhelper.path / "config.auto.tfvars.json"
+    compute = list(
+        map(_name_mapper, client.cluster.list_nodes_by_role(RoleTags.COMPUTE.value))
+    )
+    plan = [
+        JujuLoginStep(deployment.juju_account),
+        UserQuestions(
+            client,
+            answer_file=answer_file,
+            deployment_preseed=preseed,
+            accept_defaults=accept_defaults,
+        ),
+        TerraformDemoInitStep(client, tfhelper),
+        DemoSetup(
+            client=client,
+            tfhelper=tfhelper,
+            answer_file=answer_file,
+        ),
+        UserOpenRCStep(
+            client=client,
+            tfhelper=tfhelper,
+            auth_url=admin_credentials["OS_AUTH_URL"],
+            auth_version=admin_credentials["OS_AUTH_VERSION"],
+            openrc=openrc,
+        ),
+        SetHypervisorCharmConfigStep(
+            client,
+            jhelper,
+            ext_network=answer_file,
+            model=deployment.infrastructure_model,
+        ),
+        MaasSetHypervisorUnitsOptionsStep(
+            client,
+            maas_client,
+            compute,
+            jhelper,
+            deployment.infrastructure_model,
+            preseed,
+        ),
+    ]
+
+    run_plan(plan, console)
 
 
 @click.command("list")
@@ -911,6 +1038,7 @@ def validate_machine_cmd(ctx: click.Context, machine: str):
         MachineRolesCheck(machine_obj),
         MachineNetworkCheck(deployment, machine_obj),
         MachineStorageCheck(machine_obj),
+        MachineComputeNicCheck(machine_obj),
         MachineRequirementsCheck(machine_obj),
     ]
     report = _run_maas_checks(validation_checks, console)

@@ -26,6 +26,7 @@ from sunbeam.provider.maas.deployment import (
     MAAS_PUBLIC_IP_RANGE,
     MaasDeployment,
     Networks,
+    NicTags,
     RoleTags,
     StorageTags,
 )
@@ -40,6 +41,7 @@ from sunbeam.provider.maas.steps import (
     MaasDeployMachinesStep,
     MaasDeployMicrok8sApplicationStep,
     MaasScaleJujuStep,
+    MachineComputeNicCheck,
     MachineNetworkCheck,
     MachineRequirementsCheck,
     MachineRolesCheck,
@@ -274,6 +276,54 @@ class TestMachineStorageCheck:
         assert result.passed is True
         assert result.details["machine"] == "test_machine"
         assert result.message and StorageTags.CEPH.value in result.message
+
+
+class TestMachineComputeNicCheck:
+    def test_run_with_no_assigned_roles(self):
+        machine = {"hostname": "test_machine", "roles": [], "nics": []}
+        check = MachineComputeNicCheck(machine)
+        result = check.run()
+        assert result.passed is False
+        assert result.details["machine"] == "test_machine"
+        assert result.message and "machine has no role assigned" in result.message
+
+    def test_run_with_not_compute_node(self):
+        machine = {
+            "hostname": "test_machine",
+            "roles": ["role1", "role2"],
+            "nics": [],
+        }
+        check = MachineComputeNicCheck(machine)
+        result = check.run()
+        assert result.passed is True
+        assert result.details["machine"] == "test_machine"
+        assert result.message == "not a compute node."
+
+    def test_run_with_no_compute_nic(self):
+        machine = {
+            "hostname": "test_machine",
+            "roles": [RoleTags.COMPUTE.value],
+            "nics": [],
+        }
+        check = MachineComputeNicCheck(machine)
+        result = check.run()
+        assert result.passed is False
+        assert result.details["machine"] == "test_machine"
+        assert result.message and "no compute nic found" in result.message
+        assert result.diagnostics
+        assert "https://maas.io/docs/using-network-tags" in result.diagnostics
+
+    def test_run_with_compute_nic(self):
+        machine = {
+            "hostname": "test_machine",
+            "roles": [RoleTags.COMPUTE.value],
+            "nics": [{"name": "eth0", "tags": [NicTags.COMPUTE.value]}],
+        }
+        check = MachineComputeNicCheck(machine)
+        result = check.run()
+        assert result.passed is True
+        assert result.details["machine"] == "test_machine"
+        assert result.message and NicTags.COMPUTE.value in result.message
 
 
 class TestMachineRequirementsCheck:

@@ -40,6 +40,7 @@ class ProviderBase(abc.ABC):
     def register_cli(
         self,
         init: click.Group,
+        configure: click.Group,
         deployment: click.Group,
     ) -> None:
         """Register provider specific commands to CLI.

@@ -22,7 +22,8 @@ pexpect
 pyyaml>=6.0
 
 # Set upper bound to match Juju 3.3.x series target
-juju>=3.3,<3.4
+# regression in 3.3.1.0
+juju>=3.3,!=3.3.1.0
 
 # Used in the launch command to launch an instance
 petname
