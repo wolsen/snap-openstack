@@ -125,6 +125,7 @@ class MaasClient:
 def _convert_raw_machine(machine_raw: dict) -> dict:
     storage_tags = StorageTags.values()
     storage_devices = {tag: [] for tag in storage_tags}
+    root_disk = None
     for blockdevice in machine_raw["blockdevice_set"]:
         for tag in blockdevice["tags"]:
             if tag in storage_tags:
@@ -134,6 +135,19 @@ def _convert_raw_machine(machine_raw: dict) -> dict:
                         "id_path": blockdevice["id_path"],
                     }
                 )
+        if root_disk is not None:
+            # root device already found, skipping
+            continue
+        for partition in blockdevice.get("partitions", []):
+            fs = partition.get("filesystem")
+            if fs.get("label") == "root":
+                root_disk = {
+                    "name": blockdevice["name"],
+                    "tags": blockdevice["tags"],
+                    "root_partition": {
+                        "size": partition["size"],
+                    },
+                }
 
     spaces = []
     nics = []
@@ -155,6 +169,7 @@ def _convert_raw_machine(machine_raw: dict) -> dict:
         "roles": list(set(machine_raw["tag_names"]).intersection(RoleTags.values())),
         "zone": machine_raw["zone"]["name"],
         "status": machine_raw["status_name"],
+        "root_disk": root_disk,
         "storage": storage_devices,
         "spaces": list(set(spaces)),
         "nics": nics,

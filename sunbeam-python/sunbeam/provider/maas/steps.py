@@ -413,6 +413,55 @@ class MachineComputeNicCheck(DiagnosticsCheck):
         )
 
 
+class MachineRootDiskCheck(DiagnosticsCheck):
+    """Check machine's root disk is a SSD and is large enough."""
+
+    def __init__(self, machine: dict):
+        super().__init__(
+            "Root disk check",
+            "Checking root disk",
+        )
+        self.machine = machine
+
+    def run(self) -> DiagnosticsResult:
+        """Check machine's root disk is a SSD and is large enough."""
+        root_disk = self.machine.get("root_disk")
+
+        if root_disk is None:
+            return DiagnosticsResult.fail(
+                self.name,
+                "could not determine root disk",
+                "A machine needs to have a root disk to be a"
+                " part of an openstack deployment.",
+                machine=self.machine["hostname"],
+            )
+
+        if "ssd" not in root_disk["tags"]:
+            return DiagnosticsResult.fail(
+                self.name,
+                "root disk is not a SSD",
+                "A machine root disk needs to be an SSD to be"
+                " a part of an openstack deployment. Deploying "
+                "without SSD root disk can lead to performance issues.",
+                machine=self.machine["hostname"],
+            )
+
+        if root_disk["root_partition"]["size"] < 500 * 1024**3:
+            return DiagnosticsResult.fail(
+                self.name,
+                "root disk is too small",
+                "A machine root disk needs to be at least 500GB"
+                " to be a part of an openstack deployment.",
+                machine=self.machine["hostname"],
+            )
+
+        return DiagnosticsResult.success(
+            self.name,
+            "root disk is a SSD and is large enough",
+            machine=self.machine["hostname"],
+        )
+
+
 class MachineRequirementsCheck(DiagnosticsCheck):
     """Check machine meets requirements."""
 
@@ -500,6 +549,7 @@ class DeploymentMachinesCheck(DiagnosticsCheck):
             checks.append(MachineNetworkCheck(self.deployment, machine))
             checks.append(MachineStorageCheck(machine))
             checks.append(MachineComputeNicCheck(machine))
+            checks.append(MachineRootDiskCheck(machine))
             checks.append(MachineRequirementsCheck(machine))
         results = _run_check_list(checks)
         results.append(

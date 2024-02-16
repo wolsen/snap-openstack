@@ -131,6 +131,7 @@ from sunbeam.provider.maas.steps import (
     MachineNetworkCheck,
     MachineRequirementsCheck,
     MachineRolesCheck,
+    MachineRootDiskCheck,
     MachineStorageCheck,
     NetworkMappingCompleteCheck,
     str_presenter,
@@ -1039,6 +1040,7 @@ def validate_machine_cmd(ctx: click.Context, machine: str):
         MachineNetworkCheck(deployment, machine_obj),
         MachineStorageCheck(machine_obj),
         MachineComputeNicCheck(machine_obj),
+        MachineRootDiskCheck(machine_obj),
         MachineRequirementsCheck(machine_obj),
     ]
     report = _run_maas_checks(validation_checks, console)
