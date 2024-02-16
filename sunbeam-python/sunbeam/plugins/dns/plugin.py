@@ -200,7 +200,7 @@ class DnsPlugin(OpenStackControlPlanePlugin):
             commands.update(
                 {
                     "init": [{"name": "dns", "command": self.dns_groups}],
-                    "dns": [{"name": "address", "command": self.dns_address}],
+                    "init.dns": [{"name": "address", "command": self.dns_address}],
                 }
             )
         return commands

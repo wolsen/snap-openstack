@@ -720,7 +720,7 @@ class ObservabilityPlugin(EnableDisablePlugin):
                     "init": [
                         {"name": "observability", "command": self.observability_group}
                     ],
-                    "observability": [
+                    "init.observability": [
                         {"name": "dashboard-url", "command": self.dashboard_url}
                     ],
                 }

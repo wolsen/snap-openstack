@@ -226,7 +226,7 @@ class RepoPlugin(BasePlugin):
     def commands(self) -> dict:
         return {
             "init": [{"name": self.name, "command": self.repo}],
-            "repo": [
+            "init.repo": [
                 {"name": "add", "command": self.add},
                 {"name": "remove", "command": self.remove},
                 {"name": "list", "command": self.list},
