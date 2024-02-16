@@ -76,6 +76,19 @@ resource "juju_integration" "hypervisor-identity" {
   }
 }
 
+resource "juju_integration" "hypervisor-cert-distributor" {
+  model = var.hypervisor_model
+
+  application {
+    name     = juju_application.openstack-hypervisor.name
+    endpoint = "receive-ca-cert"
+  }
+
+  application {
+    offer_url = data.terraform_remote_state.openstack.outputs.cert-distributor-offer-url
+  }
+}
+
 resource "juju_integration" "hypervisor-certs" {
   model = var.hypervisor_model
 
