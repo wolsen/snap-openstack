@@ -102,7 +102,10 @@ class TelemetryPlugin(OpenStackControlPlanePlugin):
                 EnableOpenStackApplicationStep(jhelper, self),
                 # No need to pass any extra terraform vars for this plugin
                 ReapplyHypervisorTerraformPlanStep(
-                    self.deployment.get_client(), self.manifest, jhelper
+                    self.deployment.get_client(),
+                    self.manifest,
+                    jhelper,
+                    self.deployment.infrastructure_model,
                 ),
             ]
         )
@@ -117,7 +120,10 @@ class TelemetryPlugin(OpenStackControlPlanePlugin):
             TerraformInitStep(self.manifest.get_tfhelper(self.tfplan)),
             DisableOpenStackApplicationStep(jhelper, self),
             ReapplyHypervisorTerraformPlanStep(
-                self.deployment.get_client(), self.manifest, jhelper
+                self.deployment.get_client(),
+                self.manifest,
+                jhelper,
+                self.deployment.infrastructure_model,
             ),
         ]
 
