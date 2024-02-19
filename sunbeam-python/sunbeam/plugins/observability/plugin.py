@@ -475,7 +475,7 @@ class PatchCosLoadBalancerStep(PatchLoadBalancerServicesStep):
 
 class ObservabilityPlugin(EnableDisablePlugin):
     version = Version("0.0.1")
-    requires = {PluginRequirement("telemetry", optional=True)}
+    requires = {PluginRequirement("telemetry")}
 
     def __init__(self, client: Client) -> None:
         super().__init__("observability", client)
