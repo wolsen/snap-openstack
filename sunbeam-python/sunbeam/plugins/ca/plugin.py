@@ -238,6 +238,22 @@ class CaTlsPlugin(TlsPluginGroup):
             }
         }
 
+    def preseed_questions_content(self) -> list:
+        """Generate preseed manifest content."""
+        certificate_question_bank = questions.QuestionBank(
+            questions=certificate_questions("unit", "subject"),
+            console=console,
+            previous_answers={},
+        )
+        content = questions.show_questions(
+            certificate_question_bank,
+            section="certificates",
+            subsection="<CSR x500UniqueIdentifier>",
+            section_description="TLS Certificates",
+            comment_out=True,
+        )
+        return content
+
     @click.command()
     @click.option(
         "--endpoint",

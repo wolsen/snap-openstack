@@ -251,6 +251,13 @@ class BasePlugin(ABC):
         """
         return {}
 
+    def preseed_questions_content(self) -> list:
+        """Generate preseed manifest content.
+
+        The returned content will be used in generation of manifest.
+        """
+        return []
+
     def get_terraform_plans_base_path(self) -> Path:
         """Return Terraform plan base location."""
         return Snap().paths.user_common

@@ -286,6 +286,16 @@ class PluginManager:
             plugin.add_manifest_section(software_config)
 
     @classmethod
+    def get_preseed_questions_content(cls, client: Client) -> None:
+        content = []
+        plugins = cls.get_all_plugin_classes()
+        for klass in plugins:
+            plugin = klass(client)
+            content.extend(plugin.preseed_questions_content())
+
+        return content
+
+    @classmethod
     def get_all_charms_in_openstack_plan(cls, client: Client) -> list:
         charms = []
         plugins = cls.get_all_plugin_classes()

@@ -286,3 +286,40 @@ def load_answers(client: Client, key: str) -> dict:
 def write_answers(client: Client, key: str, answers):
     """Write answers to database."""
     client.cluster.update_config(key, json.dumps(answers))
+
+
+def show_questions(
+    question_bank,
+    section=None,
+    subsection=None,
+    section_description=None,
+    comment_out=False,
+) -> list:
+    """Return preseed questions as list."""
+    lines = []
+    space = " "
+    indent = ""
+    outer_indent = space * 2
+    if comment_out:
+        comment = "# "
+    else:
+        comment = ""
+    if section:
+        if section_description:
+            lines.append(f"{outer_indent}{comment}{indent}# {section_description}")
+        lines.append(f"{outer_indent}{comment}{indent}{section}:")
+        indent = space * 2
+    # TODO(hemanth): To handle multi level subsections, currently only one level is
+    # considered
+    if subsection:
+        lines.append(f"{outer_indent}{comment}{indent}{subsection}:")
+        indent = space * 4
+    # TODO(hemanth): Repeat Questions bank for multiple subsections of same type
+    # Example: To generate preseed with microceph_config for multiple nodes if values
+    # are available in cluster db.
+    for key, question in question_bank.questions.items():
+        default = question.calculate_default() or ""
+        lines.append(f"{outer_indent}{comment}{indent}# {question.question}")
+        lines.append(f"{outer_indent}{comment}{indent}{key}: {default}")
+
+    return lines
