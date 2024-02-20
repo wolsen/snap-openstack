@@ -24,7 +24,6 @@ from sunbeam.commands.openstack import (
     DeployControlPlaneStep,
     PatchLoadBalancerServicesStep,
     ReapplyOpenStackTerraformPlanStep,
-    ResizeControlPlaneStep,
     compute_ceph_replica_scale,
     compute_ha_scale,
     compute_ingress_scale,
@@ -67,6 +66,10 @@ class TestDeployControlPlaneStep(unittest.TestCase):
         self.jhelper.run_action.return_value = {}
         self.manifest = Mock()
         self.client = Mock()
+        self.client.cluster.list_nodes_by_role.side_effect = [
+            [{"name": f"control-{i}"} for i in range(4)],
+            [{"name": f"storage-{i}"} for i in range(4)],
+        ]
 
     def test_run_pristine_installation(self):
         self.jhelper.get_application.side_effect = ApplicationNotFoundException(
@@ -173,96 +176,42 @@ class TestDeployControlPlaneStep(unittest.TestCase):
 
         assert result.result_type == ResultType.FAILED
 
-
-class TestResizeControlPlaneStep(unittest.TestCase):
-    def __init__(self, methodName: str = "runTest") -> None:
-        super().__init__(methodName)
-        self.read_config = patch(
+    def test_is_skip_incompatible_topology(self):
+        step = DeployControlPlaneStep(
+            self.client,
+            self.manifest,
+            self.jhelper,
+            "large",
+            "auto",
+            MODEL,
+            force=False,
+        )
+        with patch(
             "sunbeam.commands.openstack.read_config",
             Mock(return_value={"topology": "single", "database": "single"}),
-        )
-
-    def setUp(self):
-        self.client = Mock(
-            cluster=Mock(list_nodes_by_role=Mock(return_value=[1, 2, 3, 4]))
-        )
-        self.read_config.start()
-        self.jhelper = AsyncMock()
-        self.jhelper.run_action.return_value = {}
-        self.manifest = Mock()
-
-    def tearDown(self):
-        self.read_config.stop()
-
-    def test_run_pristine_installation(self):
-        self.jhelper.get_application.side_effect = ApplicationNotFoundException(
-            "not found"
-        )
-
-        step = ResizeControlPlaneStep(
-            self.client, self.manifest, self.jhelper, "single", MODEL, False
-        )
-        result = step.run()
-
-        self.manifest.update_tfvars_and_apply_tf.assert_called_once()
-        assert result.result_type == ResultType.COMPLETED
-
-    def test_run_tf_apply_failed(self):
-        self.manifest.update_tfvars_and_apply_tf.side_effect = TerraformException(
-            "apply failed..."
-        )
-
-        step = ResizeControlPlaneStep(
-            self.client, self.manifest, self.jhelper, TOPOLOGY, MODEL, False
-        )
-        result = step.run()
-
-        self.manifest.update_tfvars_and_apply_tf.assert_called_once()
-        assert result.result_type == ResultType.FAILED
-        assert result.message == "apply failed..."
-
-    def test_run_waiting_timed_out(self):
-        self.jhelper.wait_until_active.side_effect = TimeoutException("timed out")
-
-        step = ResizeControlPlaneStep(
-            self.client, self.manifest, self.jhelper, TOPOLOGY, MODEL, False
-        )
-        result = step.run()
-
-        self.jhelper.wait_until_active.assert_called_once()
-        assert result.result_type == ResultType.FAILED
-        assert result.message == "timed out"
-
-    def test_run_unit_in_error_state(self):
-        self.jhelper.wait_until_active.side_effect = JujuWaitException(
-            "Unit in error: placement/0"
-        )
-
-        step = ResizeControlPlaneStep(
-            self.client, self.manifest, self.jhelper, TOPOLOGY, MODEL, False
-        )
-        result = step.run()
-
-        self.jhelper.wait_until_active.assert_called_once()
-        assert result.result_type == ResultType.FAILED
-        assert result.message == "Unit in error: placement/0"
-
-    def test_run_incompatible_topology(self):
-        step = ResizeControlPlaneStep(
-            self.client, self.manifest, self.jhelper, "large", MODEL, force=False
-        )
-        result = step.run()
+        ):
+            result = step.is_skip()
 
         assert result.result_type == ResultType.FAILED
-        assert "Cannot resize control plane to large" in result.message
+        assert result.message
+        assert "use -f/--force to override" in result.message
 
-    def test_run_force_incompatible_topology(self):
-        step = ResizeControlPlaneStep(
-            self.client, self.manifest, self.jhelper, "large", MODEL, force=True
+    def test_is_skip_force_incompatible_topology(self):
+        step = DeployControlPlaneStep(
+            self.client,
+            self.manifest,
+            self.jhelper,
+            "large",
+            "auto",
+            MODEL,
+            force=True,
         )
-        result = step.run()
+        with patch(
+            "sunbeam.commands.openstack.read_config",
+            Mock(return_value={"topology": "single", "database": "single"}),
+        ):
+            result = step.is_skip()
 
-        self.jhelper.wait_until_active.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
 
 
@@ -405,9 +354,9 @@ def test_compute_os_api_scale(topology, control_nodes, scale):
         ("single", 1, 1),
         ("multi", 2, 2),
         ("multi", 3, 3),
-        ("multi", 9, 9),
-        ("large", 4, 4),
-        ("large", 9, 9),
+        ("multi", 9, 3),
+        ("large", 4, 3),
+        ("large", 9, 3),
     ],
 )
 def test_compute_ingress_scale(topology, control_nodes, scale):

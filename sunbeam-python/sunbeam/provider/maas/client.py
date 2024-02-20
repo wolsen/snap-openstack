@@ -122,16 +122,17 @@ class MaasClient:
         )
 
 
-def _to_root_disk(device: dict, size: int = 0) -> dict:
-    """Convert device to root disk.
-
-    Device can be a blockdevice or a partition.
-    """
+def _to_root_disk(device: dict, partition: dict | None = None) -> dict:
+    """Convert device to root disk."""
+    if partition:
+        size = partition["size"]
+    else:
+        size = device["size"]
     root_disk = {
         "name": device["name"],
         "tags": device["tags"],
         "root_partition": {
-            "size": size or device["size"],
+            "size": size,
         },
     }
     return root_disk
@@ -160,7 +161,7 @@ def _convert_raw_machine(machine_raw: dict) -> dict:
         for partition in blockdevice.get("partitions", []):
             fs = partition.get("filesystem")
             if fs.get("label") == "root":
-                root_disk = _to_root_disk(partition, size=partition["size"])
+                root_disk = _to_root_disk(blockdevice, partition)
 
     spaces = []
     nics = []

@@ -18,7 +18,7 @@ import click
 from rich.console import Console
 
 from sunbeam.clusterd.client import Client
-from sunbeam.commands.openstack import ResizeControlPlaneStep
+from sunbeam.commands.openstack import DeployControlPlaneStep
 from sunbeam.commands.terraform import TerraformInitStep
 from sunbeam.jobs.common import click_option_topology, run_plan
 from sunbeam.jobs.deployment import Deployment
@@ -47,11 +47,12 @@ def resize(ctx: click.Context, topology: str, force: bool = False) -> None:
     jhelper = JujuHelper(deployment.get_connected_controller())
     plan = [
         TerraformInitStep(manifest_obj.get_tfhelper(tfplan)),
-        ResizeControlPlaneStep(
+        DeployControlPlaneStep(
             client,
             manifest_obj,
             jhelper,
             topology,
+            "auto",
             deployment.infrastructure_model,
             force=force,
         ),
