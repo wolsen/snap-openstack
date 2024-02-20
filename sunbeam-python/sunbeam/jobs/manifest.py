@@ -321,12 +321,6 @@ class Manifest:
                 pass
 
         updated_tfvars.update(self._get_tfvars(tfplan, charms))
-
-        # No need to apply plan if there is no change in terraform vars.
-        if current_tfvars == updated_tfvars:
-            LOG.debug(f"Not running plan {tfplan} as there is no change in tfvars")
-            return
-
         if tfvar_config:
             update_config(self.client, tfvar_config, updated_tfvars)
 
@@ -374,14 +368,7 @@ class Manifest:
         # So override tfvars from configdb to defaults if not specified in
         # manifest file
         updated_tfvars.update(self._get_tfvars(tfplan))
-
         updated_tfvars.update(override_tfvars)
-
-        # No need to apply plan if there is no change in terraform vars.
-        if current_tfvars == updated_tfvars:
-            LOG.debug(f"Not running plan {tfplan} as there is no change in tfvars")
-            return
-
         if tfvar_config:
             update_config(self.client, tfvar_config, updated_tfvars)
 
