@@ -254,14 +254,18 @@ class TestUserOpenRCStep:
     def test_is_skip_with_demo(self, tmpdir, cclient, load_answers):
         outfile = tmpdir + "/" + "openrc"
         load_answers.return_value = {"user": {"run_demo_setup": True}}
-        step = configure.UserOpenRCStep(cclient, "http://keystone:5000", "3", outfile)
+        step = configure.UserOpenRCStep(
+            cclient, "http://keystone:5000", "3", None, outfile
+        )
         result = step.is_skip()
         assert result.result_type == ResultType.COMPLETED
 
     def test_is_skip(self, tmpdir, cclient, load_answers):
         outfile = tmpdir + "/" + "openrc"
         load_answers.return_value = {"user": {"run_demo_setup": False}}
-        step = configure.UserOpenRCStep(cclient, "http://keystone:5000", "3", outfile)
+        step = configure.UserOpenRCStep(
+            cclient, "http://keystone:5000", "3", None, outfile
+        )
         result = step.is_skip()
         assert result.result_type == ResultType.SKIPPED
 
@@ -282,7 +286,7 @@ class TestUserOpenRCStep:
         run.return_value = runout_mock
         auth_url = "http://keystone:5000"
         auth_version = 3
-        step = configure.UserOpenRCStep(cclient, auth_url, "3", outfile)
+        step = configure.UserOpenRCStep(cclient, auth_url, "3", None, outfile)
         step.run()
         with open(outfile, "r") as f:
             contents = f.read()

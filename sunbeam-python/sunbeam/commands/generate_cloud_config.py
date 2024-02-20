@@ -155,6 +155,9 @@ class GenerateCloudConfigStep(BaseStep):
                 },
             }
 
+        if self.admin_credentials.get("OS_CACERT"):
+            cloud_data[self.cloud]["cacert"] = self.admin_credentials["OS_CACERT"]
+
         return cloud_data
 
     def _get_cloud_config_from_file(self, clouds_yaml: Path) -> dict:
