@@ -30,7 +30,7 @@ from sunbeam.clusterd.service import ConfigItemNotFoundException
 from sunbeam.commands.juju import JujuStepHelper
 from sunbeam.commands.openstack import (
     OPENSTACK_MODEL,
-    determine_target_topology_at_bootstrap,
+    TOPOLOGY_KEY,
 )
 from sunbeam.commands.terraform import TerraformException, TerraformInitStep
 from sunbeam.jobs.checks import VerifyBootstrappedCheck
@@ -210,7 +210,9 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
     def get_database_topology(self) -> str:
         """Returns the database topology of the cluster."""
         # Database topology can be set only during bootstrap and cannot be changed.
-        return determine_target_topology_at_bootstrap()
+        client = self.deployment.get_client()
+        topology = read_config(client, TOPOLOGY_KEY)
+        return topology["database"]
 
     def set_application_timeout_on_enable(self) -> int:
         """Set Application Timeout on enabling the plugin.

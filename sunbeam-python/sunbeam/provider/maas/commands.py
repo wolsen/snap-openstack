@@ -361,6 +361,7 @@ def deploy(
     ctx: click.Context,
     manifest: Path | None = None,
     accept_defaults: bool = False,
+    topology: str = "auto",
 ) -> None:
     """Deploy the MAAS-backed deployment.
 
@@ -520,8 +521,9 @@ def deploy(
             client,
             manifest,
             jhelper,
-            "auto",
-            "auto",  # TODO(gboutry): use the right values
+            topology,
+            # maas deployment always deploys multiple databases
+            "large",
             deployment.infrastructure_model,
         )
     )
