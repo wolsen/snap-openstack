@@ -48,3 +48,83 @@ class TestValidatorFunction:
         with pytest.raises(click.ClickException) as e:
             validation_plugin.validated_schedule(test_input)
         assert expected_msg in str(e)
+
+    @pytest.mark.parametrize(
+        "test_args",
+        [
+            ["option_a 1"],
+            ["option_b=1", "option_c 2"],
+        ],
+    )
+    def test_parse_config_args_syntax_error(self, test_args):
+        """Test if parse_config_args handles syntax error."""
+        with pytest.raises(click.ClickException):
+            validation_plugin.parse_config_args(test_args)
+
+    @pytest.mark.parametrize(
+        "test_args",
+        [
+            (["option_a=1", "option_a=2", "option_b=3"]),
+        ],
+    )
+    def test_parse_config_args_duplicated_params(self, test_args):
+        """Test if parse_config_args handles duplicated parameters."""
+        with pytest.raises(click.ClickException):
+            validation_plugin.parse_config_args(test_args)
+
+    @pytest.mark.parametrize(
+        "test_args,expected_output",
+        [
+            (["option_a=1"], {"option_a": "1"}),
+            (["option_b = 2"], {"option_b ": " 2"}),
+            (["option_a=1", "option_b = 2"], {"option_a": "1", "option_b ": " 2"}),
+        ],
+    )
+    def test_valid_parse_config_args(self, test_args, expected_output):
+        """Test if parse_config_args handles duplicated parameters."""
+        output = validation_plugin.parse_config_args(test_args)
+        assert set(output.keys()) == set(expected_output.keys())
+        for k, v in output.items():
+            assert expected_output[k] == v
+
+    @pytest.mark.parametrize(
+        "input_args",
+        [
+            {"schedule": ""},
+            {"schedule": "5 4 * * *"},
+            {"schedule": "5 4 * * mon"},
+            {"schedule": "*/30 * * * *"},
+        ],
+    )
+    def test_valid_schedule_validated_config_args(self, input_args):
+        """Test validated_config_args handles valid key correctly."""
+        config = validation_plugin.validated_config_args(input_args)
+        assert config.schedule == input_args["schedule"]
+
+    @pytest.mark.parametrize(
+        "input_args",
+        [
+            {"schedule": "*/5 * * * *"},
+            {"schedule": "*/30 * * * * 6"},
+            {"schedule": "*/30 * *"},
+            {"schedule": "*/5 * * * xyz"},
+        ],
+    )
+    def test_invalid_schedule_validated_config_args(self, input_args):
+        """Test validated_config_args handles valid key but invalid value correctly."""
+        # This is raise by `validated_schedule`
+        with pytest.raises(click.ClickException):
+            validation_plugin.validated_config_args(input_args)
+
+    @pytest.mark.parametrize(
+        "input_args",
+        [
+            {"schedules": "*/5 * * * *"},  # e.g. typo
+            {"scehdule": "*/30 * * * * 6"},  # e.g. typo
+        ],
+    )
+    def test_invalid_key_validated_config_args(self, input_args):
+        """Test validated_config_args handles invalid key correctly."""
+        # This is raise by `validated_config_args`
+        with pytest.raises(click.ClickException):
+            validation_plugin.validated_config_args(input_args)
