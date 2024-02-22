@@ -253,6 +253,13 @@ class BasePlugin(ABC):
         """
         return {}
 
+    def preseed_questions_content(self) -> list:
+        """Generate preseed manifest content.
+
+        The returned content will be used in generation of manifest.
+        """
+        return []
+
     def get_terraform_plans_base_path(self) -> Path:
         """Return Terraform plan base location."""
         return Snap().paths.user_common
@@ -438,7 +445,7 @@ class BasePlugin(ABC):
                 # commands within the plugin can be registered on group.
                 # This allows plugin to create new groups and commands in single place.
                 if isinstance(cmd, click.Group):
-                    groups[cmd_name] = cmd
+                    groups[f"{group}.{cmd_name}"] = cmd
 
 
 class PluginRequirement(Requirement):
@@ -645,8 +652,16 @@ class EnableDisablePlugin(BasePlugin):
     @abstractmethod
     def enable_plugin(self) -> None:
         """Enable plugin command."""
+        self.user_manifest = None
         current_click_context = click.get_current_context()
-        self.user_manifest = current_click_context.parent.params.get("manifest")
+        while current_click_context.parent is not None:
+            if (
+                current_click_context.parent.command.name == "enable"
+                and "manifest" in current_click_context.parent.params  # noqa: W503
+            ):
+                self.user_manifest = current_click_context.parent.params.get("manifest")
+            current_click_context = current_click_context.parent
+
         self.pre_enable()
         self.run_enable_plans()
         self.post_enable()

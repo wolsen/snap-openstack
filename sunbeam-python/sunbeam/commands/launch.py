@@ -91,6 +91,7 @@ def launch(
             project_name=tf_output["OS_PROJECT_NAME"],
             user_domain_name=tf_output["OS_USER_DOMAIN_NAME"],
             project_domain_name=tf_output["OS_PROJECT_DOMAIN_NAME"],
+            cacert=admin_auth_info.get("OS_CACERT"),
         )
     except openstack.exceptions.SDKException:
         LOG.error("Could not authenticate to Keystone.")

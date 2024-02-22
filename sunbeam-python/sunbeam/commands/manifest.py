@@ -45,42 +45,12 @@ from sunbeam.jobs.checks import DaemonGroupCheck, VerifyBootstrappedCheck
 from sunbeam.jobs.common import FORMAT_TABLE, FORMAT_YAML, run_preflight_checks
 from sunbeam.jobs.deployment import Deployment
 from sunbeam.jobs.manifest import Manifest
-from sunbeam.jobs.questions import QuestionBank, load_answers
+from sunbeam.jobs.plugin import PluginManager
+from sunbeam.jobs.questions import QuestionBank, load_answers, show_questions
 from sunbeam.utils import asdict_with_extra_fields
 
 LOG = logging.getLogger(__name__)
 console = Console()
-
-
-def show_questions(
-    question_bank,
-    section=None,
-    subsection=None,
-    section_description=None,
-    comment_out=False,
-) -> list:
-    lines = []
-    space = " "
-    indent = ""
-    outer_indent = space * 2
-    if comment_out:
-        comment = "# "
-    else:
-        comment = ""
-    if section:
-        if section_description:
-            lines.append(f"{outer_indent}{comment}{indent}# {section_description}")
-        lines.append(f"{outer_indent}{comment}{indent}{section}:")
-        indent = space * 2
-    if subsection:
-        lines.append(f"{outer_indent}{comment}{indent}{subsection}:")
-        indent = space * 4
-    for key, question in question_bank.questions.items():
-        default = question.calculate_default() or ""
-        lines.append(f"{outer_indent}{comment}{indent}# {question.question}")
-        lines.append(f"{outer_indent}{comment}{indent}{key}: {default}")
-
-    return lines
 
 
 def generate_deployment_preseed(client: Client) -> str:
@@ -155,6 +125,8 @@ def generate_deployment_preseed(client: Client) -> str:
             section_description="MicroCeph config",
         )
     )
+
+    preseed_content.extend(PluginManager().get_preseed_questions_content(client))
 
     preseed_content_final = "\n".join(preseed_content)
     return preseed_content_final

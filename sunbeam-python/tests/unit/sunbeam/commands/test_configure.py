@@ -224,7 +224,7 @@ class TestUserOpenRCStep:
         outfile = tmpdir + "/" + "openrc"
         load_answers.return_value = {"user": {"run_demo_setup": True}}
         step = configure.UserOpenRCStep(
-            cclient, tfhelper, "http://keystone:5000", "3", outfile
+            cclient, tfhelper, "http://keystone:5000", "3", None, outfile
         )
         result = step.is_skip()
         assert result.result_type == ResultType.COMPLETED
@@ -233,7 +233,7 @@ class TestUserOpenRCStep:
         outfile = tmpdir + "/" + "openrc"
         load_answers.return_value = {"user": {"run_demo_setup": False}}
         step = configure.UserOpenRCStep(
-            cclient, tfhelper, "http://keystone:5000", "3", outfile
+            cclient, tfhelper, "http://keystone:5000", "3", None, outfile
         )
         result = step.is_skip()
         assert result.result_type == ResultType.SKIPPED
@@ -250,7 +250,7 @@ class TestUserOpenRCStep:
         tfhelper.output.return_value = creds
         auth_url = "http://keystone:5000"
         auth_version = 3
-        step = configure.UserOpenRCStep(cclient, tfhelper, auth_url, "3", outfile)
+        step = configure.UserOpenRCStep(cclient, tfhelper, auth_url, "3", None, outfile)
         step.run()
         with open(outfile, "r") as f:
             contents = f.read()
