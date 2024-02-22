@@ -289,6 +289,16 @@ class PluginManager:
             plugin.add_manifest_section(software_config)
 
     @classmethod
+    def get_preseed_questions_content(cls, deployment: Deployment) -> list:
+        content = []
+        plugins = cls.get_all_plugin_classes()
+        for klass in plugins:
+            plugin = klass(deployment)
+            content.extend(plugin.preseed_questions_content())
+
+        return content
+
+    @classmethod
     def get_all_charms_in_openstack_plan(cls, deployment: Deployment) -> list:
         charms = []
         plugins = cls.get_all_plugin_classes()

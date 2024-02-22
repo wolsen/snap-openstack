@@ -31,7 +31,12 @@ from sunbeam.commands.terraform import (
     TerraformInitStep,
 )
 from sunbeam.jobs.common import BaseStep, Result, ResultType, Status
-from sunbeam.jobs.juju import JujuHelper, run_sync
+from sunbeam.jobs.juju import (
+    ActionFailedException,
+    JujuHelper,
+    LeaderNotFoundException,
+    run_sync,
+)
 
 CLOUD_CONFIG_SECTION = "CloudConfig"
 LOG = logging.getLogger(__name__)
@@ -164,17 +169,21 @@ def retrieve_admin_credentials(jhelper: JujuHelper, model: str) -> dict:
     app = "keystone"
     action_cmd = "get-admin-account"
 
-    unit = run_sync(jhelper.get_leader_unit(app, model))
-    if not unit:
-        _message = f"Unable to get {app} leader"
-        raise click.ClickException(_message)
+    try:
+        unit = run_sync(jhelper.get_leader_unit(app, model))
+    except LeaderNotFoundException:
+        raise click.ClickException(f"Unable to get {app} leader")
 
-    action_result = run_sync(jhelper.run_action(unit, model, action_cmd))
+    try:
+        action_result = run_sync(jhelper.run_action(unit, model, action_cmd))
+    except ActionFailedException as e:
+        LOG.debug(f"Running action {action_cmd} on {unit} failed: {str(e)}")
+        raise click.ClickException("Unable to retrieve openrc from Keystone service")
+
     if action_result.get("return-code", 0) > 1:
-        _message = "Unable to retrieve openrc from Keystone service"
-        raise click.ClickException(_message)
+        raise click.ClickException("Unable to retrieve openrc from Keystone service")
 
-    return {
+    params = {
         "OS_USERNAME": action_result.get("username"),
         "OS_PASSWORD": action_result.get("password"),
         "OS_AUTH_URL": action_result.get("public-endpoint"),
@@ -184,6 +193,46 @@ def retrieve_admin_credentials(jhelper: JujuHelper, model: str) -> dict:
         "OS_AUTH_VERSION": action_result.get("api-version"),
         "OS_IDENTITY_API_VERSION": action_result.get("api-version"),
     }
+
+    action_cmd = "list-ca-certs"
+    try:
+        action_result = run_sync(jhelper.run_action(unit, model, action_cmd))
+    except ActionFailedException as e:
+        LOG.debug(f"Running action {action_cmd} on {unit} failed: {str(e)}")
+        raise click.ClickException("Unable to retrieve CA certs from Keystone service")
+
+    if action_result.get("return-code", 0) > 1:
+        raise click.ClickException("Unable to retrieve CA certs from Keystone service")
+
+    action_result.pop("return-code")
+    ca_bundle = []
+    for name, certs in action_result.items():
+        # certs = json.loads(certs)
+        ca = certs.get("ca")
+        chain = certs.get("chain")
+        if ca and ca not in ca_bundle:
+            ca_bundle.append(ca)
+        if chain and chain not in ca_bundle:
+            ca_bundle.append(chain)
+
+    bundle = "\n".join(ca_bundle)
+
+    if bundle:
+        home = os.environ.get("SNAP_REAL_HOME")
+        cafile = Path(home) / ".config" / "openstack" / "ca_bundle.pem"
+        LOG.debug("Writing CA bundle to {str(cafile)}")
+
+        cafile.parent.mkdir(mode=0o775, parents=True, exist_ok=True)
+        if not cafile.exists():
+            cafile.touch()
+        cafile.chmod(0o660)
+
+        with cafile.open("w") as file:
+            file.write(bundle)
+
+        params["OS_CACERT"] = str(cafile)
+
+    return params
 
 
 class SetHypervisorCharmConfigStep(BaseStep):
@@ -266,6 +315,7 @@ class UserOpenRCStep(BaseStep):
         tfhelper: TerraformHelper,
         auth_url: str,
         auth_version: str,
+        cacert: str | None = None,
         openrc: Path | None = None,
     ):
         super().__init__(
@@ -275,6 +325,7 @@ class UserOpenRCStep(BaseStep):
         self.tfhelper = tfhelper
         self.auth_url = auth_url
         self.auth_version = auth_version
+        self.cacert = cacert
         self.openrc = openrc
 
     def is_skip(self, status: Optional[Status] = None) -> Result:
@@ -315,6 +366,8 @@ export OS_PROJECT_DOMAIN_NAME={tf_output["OS_PROJECT_DOMAIN_NAME"]}
 export OS_PROJECT_NAME={tf_output["OS_PROJECT_NAME"]}
 export OS_AUTH_VERSION={self.auth_version}
 export OS_IDENTITY_API_VERSION={self.auth_version}"""
+        if self.cacert:
+            _openrc = f"{_openrc}\nexport OS_CACERT={self.cacert}"
         if self.openrc:
             message = f"Writing openrc to {self.openrc} ... "
             console.status(message)

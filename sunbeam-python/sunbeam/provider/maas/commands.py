@@ -609,6 +609,8 @@ def configure_cmd(
         LOG.error(f"Expected model {OPENSTACK_MODEL} missing")
         raise click.ClickException("Please run `sunbeam cluster bootstrap` first")
     admin_credentials = retrieve_admin_credentials(jhelper, OPENSTACK_MODEL)
+    # Add OS_INSECURE as https not working with terraform openstack provider.
+    admin_credentials["OS_INSECURE"] = "true"
 
     tfplan = "demo-setup"
     tfhelper = manifest_obj.get_tfhelper(tfplan)
@@ -636,6 +638,7 @@ def configure_cmd(
             tfhelper=tfhelper,
             auth_url=admin_credentials["OS_AUTH_URL"],
             auth_version=admin_credentials["OS_AUTH_VERSION"],
+            cacert=admin_credentials.get("OS_CACERT"),
             openrc=openrc,
         ),
         SetHypervisorCharmConfigStep(

@@ -28,10 +28,7 @@ from snaphelpers import Snap
 
 from sunbeam.clusterd.service import ConfigItemNotFoundException
 from sunbeam.commands.juju import JujuStepHelper
-from sunbeam.commands.openstack import (
-    OPENSTACK_MODEL,
-    TOPOLOGY_KEY,
-)
+from sunbeam.commands.openstack import OPENSTACK_MODEL, TOPOLOGY_KEY
 from sunbeam.commands.terraform import TerraformException, TerraformInitStep
 from sunbeam.jobs.checks import VerifyBootstrappedCheck
 from sunbeam.jobs.common import (

@@ -43,12 +43,7 @@ from sunbeam.jobs.common import (
     update_config,
     update_status_background,
 )
-from sunbeam.jobs.juju import (
-    JujuHelper,
-    JujuWaitException,
-    TimeoutException,
-    run_sync,
-)
+from sunbeam.jobs.juju import JujuHelper, JujuWaitException, TimeoutException, run_sync
 from sunbeam.jobs.manifest import Manifest
 
 LOG = logging.getLogger(__name__)
@@ -102,17 +97,6 @@ def compute_ingress_scale(topology: str, control_nodes: int) -> int:
     return min(control_nodes, 3)
 
 
-def compute_ceph_replica_scale(osds: int) -> int:
-    return min(osds, 3)
-
-
-async def _get_number_of_osds(jhelper: JujuHelper, machine_model: str) -> int:
-    """Fetch the number of osds from the microceph application"""
-    leader = await jhelper.get_leader_unit(microceph.APPLICATION, machine_model)
-    osds, _ = await microceph.list_disks(jhelper, machine_model, leader)
-    return len(osds)
-
-
 class DeployControlPlaneStep(BaseStep, JujuStepHelper):
     """Deploy OpenStack using Terraform cloud"""
 
@@ -147,9 +131,7 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         """Create terraform variables related to storage."""
         tfvars = {}
         if storage_nodes:
-            tfvars["ceph-osd-replication-count"] = compute_ceph_replica_scale(
-                run_sync(_get_number_of_osds(self.jhelper, self.machine_model))
-            )
+            tfvars["ceph-osd-replication-count"] = 3
             tfvars["enable-ceph"] = True
             tfvars["ceph-offer-url"] = (
                 f"admin/{self.machine_model}.{microceph.APPLICATION}"

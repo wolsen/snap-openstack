@@ -475,7 +475,7 @@ class PatchCosLoadBalancerStep(PatchLoadBalancerServicesStep):
 
 class ObservabilityPlugin(EnableDisablePlugin):
     version = Version("0.0.1")
-    requires = {PluginRequirement("telemetry", optional=True)}
+    requires = {PluginRequirement("telemetry")}
 
     def __init__(self, deployment: Deployment) -> None:
         super().__init__("observability", deployment)
@@ -716,7 +716,7 @@ class ObservabilityPlugin(EnableDisablePlugin):
                     "init": [
                         {"name": "observability", "command": self.observability_group}
                     ],
-                    "observability": [
+                    "init.observability": [
                         {"name": "dashboard-url", "command": self.dashboard_url}
                     ],
                 }
