@@ -259,9 +259,9 @@ class ValidationPlugin(OpenStackControlPlanePlugin):
             # Note: this is a workaround to run command to payload container
             # since python-libjuju does not support such feature. See related
             # bug: https://github.com/juju/python-libjuju/issues/1029
-            if destination == ".":
-                # juju scp does not allow "." as destination
-                destination = Path("./", Path(source).name)
+            if Path(destination).is_dir():
+                # juju scp does not allow directory as destination
+                destination = str(Path(destination, Path(source).name))
             subprocess.run(
                 [
                     "juju",
