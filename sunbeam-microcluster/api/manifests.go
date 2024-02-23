@@ -19,8 +19,8 @@ import (
 var manifestsCmd = rest.Endpoint{
 	Path: "manifests",
 
-	Get:  rest.EndpointAction{Handler: cmdManifestsGetAll, ProxyTarget: true},
-	Post: rest.EndpointAction{Handler: cmdManifestsPost, ProxyTarget: true},
+	Get:  rest.EndpointAction{Handler: cmdManifestsGetAll, ProxyTarget: true, AllowUntrusted: true},
+	Post: rest.EndpointAction{Handler: cmdManifestsPost, ProxyTarget: true, AllowUntrusted: true},
 }
 
 // /1.0/manifests/<manifestid> endpoint.
@@ -28,8 +28,8 @@ var manifestsCmd = rest.Endpoint{
 var manifestCmd = rest.Endpoint{
 	Path: "manifests/{manifestid}",
 
-	Get:    rest.EndpointAction{Handler: cmdManifestGet, ProxyTarget: true},
-	Delete: rest.EndpointAction{Handler: cmdManifestDelete, ProxyTarget: true},
+	Get:    rest.EndpointAction{Handler: cmdManifestGet, ProxyTarget: true, AllowUntrusted: true},
+	Delete: rest.EndpointAction{Handler: cmdManifestDelete, ProxyTarget: true, AllowUntrusted: true},
 }
 
 func cmdManifestsGetAll(s *state.State, _ *http.Request) response.Response {

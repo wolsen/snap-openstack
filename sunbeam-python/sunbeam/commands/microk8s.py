@@ -27,7 +27,6 @@ from sunbeam.commands.juju import JujuStepHelper
 from sunbeam.jobs import questions
 from sunbeam.jobs.common import BaseStep, Result, ResultType, read_config, update_config
 from sunbeam.jobs.juju import (
-    MODEL,
     ActionFailedException,
     ApplicationNotFoundException,
     JujuHelper,
@@ -37,7 +36,7 @@ from sunbeam.jobs.juju import (
 )
 from sunbeam.jobs.manifest import Manifest
 from sunbeam.jobs.steps import (
-    AddMachineUnitStep,
+    AddMachineUnitsStep,
     DeployMachineApplicationStep,
     RemoveMachineUnitStep,
 )
@@ -93,6 +92,7 @@ class DeployMicrok8sApplicationStep(DeployMachineApplicationStep):
         client: Client,
         manifest: Manifest,
         jhelper: JujuHelper,
+        model: str,
         deployment_preseed: dict | None = None,
         accept_defaults: bool = False,
         refresh: bool = False,
@@ -103,7 +103,7 @@ class DeployMicrok8sApplicationStep(DeployMachineApplicationStep):
             jhelper,
             MICROK8S_CONFIG_KEY,
             APPLICATION,
-            MODEL,
+            model,
             "microk8s-plan",
             "Deploy MicroK8S",
             "Deploying MicroK8S",
@@ -160,17 +160,23 @@ class DeployMicrok8sApplicationStep(DeployMachineApplicationStep):
         return True
 
 
-class AddMicrok8sUnitStep(AddMachineUnitStep):
+class AddMicrok8sUnitsStep(AddMachineUnitsStep):
     """Add Microk8s Unit."""
 
-    def __init__(self, client: Client, name: str, jhelper: JujuHelper):
+    def __init__(
+        self,
+        client: Client,
+        names: list[str] | str,
+        jhelper: JujuHelper,
+        model: str,
+    ):
         super().__init__(
             client,
-            name,
+            names,
             jhelper,
             MICROK8S_CONFIG_KEY,
             APPLICATION,
-            MODEL,
+            model,
             "Add MicroK8S unit",
             "Adding MicroK8S unit to machine",
         )
@@ -182,14 +188,14 @@ class AddMicrok8sUnitStep(AddMachineUnitStep):
 class RemoveMicrok8sUnitStep(RemoveMachineUnitStep):
     """Remove Microk8s Unit."""
 
-    def __init__(self, client: Client, name: str, jhelper: JujuHelper):
+    def __init__(self, client: Client, name: str, jhelper: JujuHelper, model: str):
         super().__init__(
             client,
             name,
             jhelper,
             MICROK8S_CONFIG_KEY,
             APPLICATION,
-            MODEL,
+            model,
             "Remove MicroK8S unit",
             "Removing MicroK8S unit from machine",
         )
@@ -241,13 +247,14 @@ class AddMicrok8sCloudStep(BaseStep, JujuStepHelper):
 class StoreMicrok8sConfigStep(BaseStep, JujuStepHelper):
     _CONFIG = MICROK8S_KUBECONFIG_KEY
 
-    def __init__(self, client: Client, jhelper: JujuHelper):
+    def __init__(self, client: Client, jhelper: JujuHelper, model: str):
         super().__init__(
             "Store MicroK8S config",
             "Storing MicroK8S configuration in sunbeam database",
         )
         self.client = client
         self.jhelper = jhelper
+        self.model = model
 
     def is_skip(self, status: Optional[Status] = None) -> Result:
         """Determines if the step should be skipped or not.
@@ -265,8 +272,8 @@ class StoreMicrok8sConfigStep(BaseStep, JujuStepHelper):
     def run(self, status: Optional[Status] = None) -> Result:
         """Store MicroK8S config in clusterd."""
         try:
-            unit = run_sync(self.jhelper.get_leader_unit(APPLICATION, MODEL))
-            result = run_sync(self.jhelper.run_action(unit, MODEL, "kubeconfig"))
+            unit = run_sync(self.jhelper.get_leader_unit(APPLICATION, self.model))
+            result = run_sync(self.jhelper.run_action(unit, self.model, "kubeconfig"))
             if not result.get("content"):
                 return Result(
                     ResultType.FAILED,

@@ -20,6 +20,9 @@ RABBITMQ_CHANNEL = "3.12/edge"
 TRAEFIK_CHANNEL = "1.0/edge"
 MICROCEPH_CHANNEL = "latest/edge"
 SUNBEAM_MACHINE_CHANNEL = "2023.2/edge"
+SUNBEAM_CLUSTERD_CHANNEL = "2023.2/edge"
+# TODO(gboutry): Until snap is published to main branch
+SNAP_SUNBEAM_CLUSTERD_CHANNEL = "2023.2/edge/maas"
 MICROK8S_CHANNEL = "legacy/stable"
 MYSQL_CHANNEL = "8.0/candidate"
 CERT_AUTH_CHANNEL = "latest/beta"
@@ -55,6 +58,7 @@ MACHINE_CHARMS = {
     "microk8s": MICROK8S_CHANNEL,
     "openstack-hypervisor": OPENSTACK_CHANNEL,
     "sunbeam-machine": SUNBEAM_MACHINE_CHANNEL,
+    "sunbeam-clusterd": SUNBEAM_CLUSTERD_CHANNEL,
 }
 
 

@@ -96,7 +96,7 @@ class TestStoreMicrok8sConfigStep(unittest.TestCase):
         self.jhelper = AsyncMock()
 
     def test_is_skip(self):
-        step = StoreMicrok8sConfigStep(self.client, self.jhelper)
+        step = StoreMicrok8sConfigStep(self.client, self.jhelper, "test-model")
         result = step.is_skip()
 
         assert result.result_type == ResultType.SKIPPED
@@ -106,7 +106,7 @@ class TestStoreMicrok8sConfigStep(unittest.TestCase):
             "sunbeam.commands.microk8s.read_config",
             Mock(side_effect=ConfigItemNotFoundException),
         ):
-            step = StoreMicrok8sConfigStep(self.client, self.jhelper)
+            step = StoreMicrok8sConfigStep(self.client, self.jhelper, "test-model")
             result = step.is_skip()
 
         assert result.result_type == ResultType.COMPLETED
@@ -137,7 +137,7 @@ users:
         }
         self.jhelper.run_action.return_value = action_result
 
-        step = StoreMicrok8sConfigStep(self.client, self.jhelper)
+        step = StoreMicrok8sConfigStep(self.client, self.jhelper, "test-model")
         result = step.run()
 
         self.jhelper.get_leader_unit.assert_called_once()
@@ -149,7 +149,7 @@ users:
             "Application missing..."
         )
 
-        step = StoreMicrok8sConfigStep(self.client, self.jhelper)
+        step = StoreMicrok8sConfigStep(self.client, self.jhelper, "test-model")
         result = step.run()
 
         self.jhelper.get_leader_unit.assert_called_once()
@@ -161,7 +161,7 @@ users:
             "Leader missing..."
         )
 
-        step = StoreMicrok8sConfigStep(self.client, self.jhelper)
+        step = StoreMicrok8sConfigStep(self.client, self.jhelper, "test-model")
         result = step.run()
 
         self.jhelper.get_leader_unit.assert_called_once()
@@ -171,7 +171,7 @@ users:
     def test_run_action_failed(self):
         self.jhelper.run_action.side_effect = ActionFailedException("Action failed...")
 
-        step = StoreMicrok8sConfigStep(self.client, self.jhelper)
+        step = StoreMicrok8sConfigStep(self.client, self.jhelper, "test-model")
         result = step.run()
 
         self.jhelper.get_leader_unit.assert_called_once()

@@ -69,7 +69,7 @@ class FakeLDAPPlugin(LDAPPlugin):
         self.tf_plan_location = 1
         self.tfplan = "fake-plan"
         self._manifest = Mock()
-        self.client = Mock()
+        self.deployment = Mock()
 
 
 class TestAddLDAPDomainStep:

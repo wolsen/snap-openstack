@@ -54,13 +54,8 @@ from sunbeam.jobs.common import (
     update_config,
     update_status_background,
 )
-from sunbeam.jobs.juju import (
-    CONTROLLER_MODEL,
-    JujuHelper,
-    JujuWaitException,
-    TimeoutException,
-    run_sync,
-)
+from sunbeam.jobs.deployment import Deployment
+from sunbeam.jobs.juju import JujuHelper, JujuWaitException, TimeoutException, run_sync
 from sunbeam.jobs.manifest import AddManifestStep, Manifest
 from sunbeam.plugins.interface.v1.base import EnableDisablePlugin, PluginRequirement
 from sunbeam.plugins.interface.v1.openstack import (
@@ -73,7 +68,6 @@ console = Console()
 
 OBSERVABILITY_MODEL = "observability"
 OBSERVABILITY_DEPLOY_TIMEOUT = 1200  # 20 minutes
-CONTROLLER_MODEL = CONTROLLER_MODEL.split("/")[-1]
 COS_TFPLAN = "cos-plan"
 GRAFANA_AGENT_TFPLAN = "grafana-agent-plan"
 GRAFANA_AGENT_K8S_TFPLAN = "grafana-agent-k8s-plan"
@@ -185,6 +179,7 @@ class DeployObservabilityStackStep(BaseStep, JujuStepHelper):
         self.plugin = plugin
         self.jhelper = jhelper
         self.manifest = self.plugin.manifest
+        self.client = self.plugin.deployment.get_client()
         self.tfplan = self.plugin.tfplan_cos
         self.model = OBSERVABILITY_MODEL
         self.cloud = MICROK8S_CLOUD
@@ -201,6 +196,7 @@ class DeployObservabilityStackStep(BaseStep, JujuStepHelper):
         try:
             self.update_status(status, "deploying services")
             self.manifest.update_tfvars_and_apply_tf(
+                self.client,
                 tfplan=self.tfplan,
                 tfvar_config=self._CONFIG,
                 override_tfvars=extra_tfvars,
@@ -244,8 +240,9 @@ class DeployGrafanaAgentStep(BaseStep, JujuStepHelper):
         self.plugin = plugin
         self.jhelper = jhelper
         self.manifest = self.plugin.manifest
+        self.client = self.plugin.deployment.get_client()
         self.tfplan = self.plugin.tfplan_grafana_agent
-        self.model = CONTROLLER_MODEL
+        self.model = self.plugin.deployment.infrastructure_model
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Execute configuration using terraform."""
@@ -263,6 +260,7 @@ class DeployGrafanaAgentStep(BaseStep, JujuStepHelper):
         try:
             self.update_status(status, "deploying services")
             self.manifest.update_tfvars_and_apply_tf(
+                self.client,
                 tfplan=self.tfplan,
                 tfvar_config=self._CONFIG,
                 override_tfvars=extra_tfvars,
@@ -302,6 +300,7 @@ class DeployGrafanaAgentK8sStep(BaseStep, JujuStepHelper):
         self.plugin = plugin
         self.jhelper = jhelper
         self.manifest = self.plugin.manifest
+        self.client = self.plugin.deployment.get_client()
         self.tfplan = self.plugin.tfplan_grafana_agent_k8s
         self.model = OPENSTACK_MODEL
 
@@ -321,6 +320,7 @@ class DeployGrafanaAgentK8sStep(BaseStep, JujuStepHelper):
         self.update_status(status, "deploying application")
         try:
             self.manifest.update_tfvars_and_apply_tf(
+                self.client,
                 tfplan=self.tfplan,
                 tfvar_config=self._CONFIG,
                 override_tfvars=extra_tfvars,
@@ -401,7 +401,7 @@ class RemoveGrafanaAgentStep(BaseStep, JujuStepHelper):
         self.manifest = self.plugin.manifest
         self.tfplan = self.plugin.tfplan_grafana_agent
         self.jhelper = jhelper
-        self.model = CONTROLLER_MODEL
+        self.model = self.plugin.deployment.infrastructure_model
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Execute configuration using terraform."""
@@ -477,8 +477,8 @@ class ObservabilityPlugin(EnableDisablePlugin):
     version = Version("0.0.1")
     requires = {PluginRequirement("telemetry")}
 
-    def __init__(self, client: Client) -> None:
-        super().__init__("observability", client)
+    def __init__(self, deployment: Deployment) -> None:
+        super().__init__("observability", deployment)
         self.snap = Snap()
         self.tfplan_cos = COS_TFPLAN
         self.tfplan_cos_dir = "deploy-cos"
@@ -494,7 +494,7 @@ class ObservabilityPlugin(EnableDisablePlugin):
             return self._manifest
 
         self._manifest = Manifest.load_latest_from_clusterdb(
-            self.client, include_defaults=True
+            self.deployment, include_defaults=True
         )
         return self._manifest
 
@@ -586,24 +586,23 @@ class ObservabilityPlugin(EnableDisablePlugin):
         }
 
     def run_enable_plans(self):
-        data_location = self.snap.paths.user_data
-        jhelper = JujuHelper(self.client, data_location)
+        jhelper = JujuHelper(self.deployment.get_connected_controller())
 
         tfhelper_cos = self.manifest.get_tfhelper(self.tfplan_cos)
         tfhelper_openstack = self.manifest.get_tfhelper(
             f"{OPENSTACK_TERRAFORM_PLAN}-plan"
         )
-
+        client = self.deployment.get_client()
         plan = []
         if self.user_manifest:
-            plan.append(AddManifestStep(self.client, self.user_manifest))
+            plan.append(AddManifestStep(client, self.user_manifest))
 
         cos_plan = [
             TerraformInitStep(tfhelper_cos),
             DeployObservabilityStackStep(self, jhelper),
-            PatchCosLoadBalancerStep(self.client),
+            PatchCosLoadBalancerStep(client),
             FillObservabilityOffersStep(
-                self.client, tfhelper_openstack, tfhelper_cos, jhelper
+                client, tfhelper_openstack, tfhelper_cos, jhelper
             ),
         ]
 
@@ -627,18 +626,16 @@ class ObservabilityPlugin(EnableDisablePlugin):
         click.echo("Observability enabled.")
 
     def run_disable_plans(self):
-        data_location = self.snap.paths.user_data
-        jhelper = JujuHelper(self.client, data_location)
+        jhelper = JujuHelper(self.deployment.get_connected_controller())
 
         tfhelper_openstack = self.manifest.get_tfhelper(
             f"{OPENSTACK_TERRAFORM_PLAN}-plan"
         )
+        client = self.deployment.get_client()
 
         cos_plan = [
             TerraformInitStep(self.manifest.get_tfhelper(self.tfplan_cos)),
-            RemoveObservabilityIntegrationStep(
-                self.client, tfhelper_openstack, jhelper
-            ),
+            RemoveObservabilityIntegrationStep(client, tfhelper_openstack, jhelper),
             RemoveObservabilityStackStep(self, jhelper),
         ]
 
@@ -676,8 +673,7 @@ class ObservabilityPlugin(EnableDisablePlugin):
     @click.command()
     def dashboard_url(self) -> None:
         """Retrieve COS Dashboard URL."""
-        data_location = self.snap.paths.user_data
-        jhelper = JujuHelper(self.client, data_location)
+        jhelper = JujuHelper(self.deployment.get_connected_controller())
 
         with console.status("Retrieving dashboard URL from Grafana service ... "):
             # Retrieve config from juju actions

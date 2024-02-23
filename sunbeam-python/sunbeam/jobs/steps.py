@@ -96,8 +96,14 @@ class DeployMachineApplicationStep(BaseStep):
 
         try:
             extra_tfvars = self.extra_tfvars()
-            extra_tfvars.update({"machine_ids": machine_ids})
+            extra_tfvars.update(
+                {
+                    "machine_ids": machine_ids,
+                    "machine_model": self.model,
+                }
+            )
             self.manifest.update_tfvars_and_apply_tf(
+                self.client,
                 tfplan=self.tfplan,
                 tfvar_config=self.config,
                 override_tfvars=extra_tfvars,
@@ -123,13 +129,13 @@ class DeployMachineApplicationStep(BaseStep):
         return Result(ResultType.COMPLETED)
 
 
-class AddMachineUnitStep(BaseStep):
-    """Base class to add unit of machine application"""
+class AddMachineUnitsStep(BaseStep):
+    """Base class to add units of machine application"""
 
     def __init__(
         self,
         client: Client,
-        name: str,
+        names: list[str] | str,
         jhelper: JujuHelper,
         config: str,
         application: str,
@@ -139,12 +145,14 @@ class AddMachineUnitStep(BaseStep):
     ):
         super().__init__(banner, description)
         self.client = client
-        self.name = name
+        if isinstance(names, str):
+            names = [names]
+        self.names = names
         self.jhelper = jhelper
         self.config = config
         self.application = application
         self.model = model
-        self.machine_id = ""
+        self.to_deploy = set()
 
     def get_unit_timeout(self) -> int:
         return 600  # 10 minutes
@@ -155,12 +163,34 @@ class AddMachineUnitStep(BaseStep):
         :return: ResultType.SKIPPED if the Step should be skipped,
                 ResultType.COMPLETED or ResultType.FAILED otherwise
         """
-        try:
-            node = self.client.cluster.get_node_info(self.name)
-            self.machine_id = str(node.get("machineid"))
-        except NodeNotExistInClusterException as e:
-            return Result(ResultType.FAILED, str(e))
+        if len(self.names) == 0:
+            return Result(ResultType.SKIPPED)
+        nodes: list[dict] = self.client.cluster.list_nodes()
 
+        filtered_nodes = list(filter(lambda node: node["name"] in self.names, nodes))
+        if len(filtered_nodes) != len(self.names):
+            filtered_node_names = [node["name"] for node in filtered_nodes]
+            missing_nodes = set(self.names) - set(filtered_node_names)
+            return Result(
+                ResultType.FAILED,
+                f"Nodes '{','.join(missing_nodes)}' do not exist in cluster database",
+            )
+
+        nodes_without_machine_id = []
+
+        for node in filtered_nodes:
+            node_machine_id = node.get("machineid", -1)
+            if node_machine_id == -1:
+                nodes_without_machine_id.append(node["name"])
+                continue
+            self.to_deploy.add(str(node_machine_id))
+
+        if len(nodes_without_machine_id) > 0:
+            return Result(
+                ResultType.FAILED,
+                f"Nodes '{','.join(nodes_without_machine_id)}' do not have machine id,"
+                " are they deployed?",
+            )
         try:
             app = run_sync(self.jhelper.get_application(self.application, self.model))
         except ApplicationNotFoundException:
@@ -169,15 +199,10 @@ class AddMachineUnitStep(BaseStep):
                 f"Application {self.application} has not been deployed",
             )
 
-        for unit in app.units:
-            if unit.machine.id == self.machine_id:
-                LOG.debug(
-                    (
-                        f"Unit {unit.name} is already deployed"
-                        f" on machine: {self.machine_id}"
-                    )
-                )
-                return Result(ResultType.SKIPPED)
+        deployed_units_machine_ids = set(unit.machine.id for unit in app.units)
+        self.to_deploy -= deployed_units_machine_ids
+        if len(self.to_deploy) == 0:
+            return Result(ResultType.SKIPPED, "No new units to deploy")
 
         return Result(ResultType.COMPLETED)
 
@@ -188,29 +213,28 @@ class AddMachineUnitStep(BaseStep):
         except ConfigItemNotFoundException:
             tfvars = {}
 
-        if not self.machine_id:
+        machine_ids = set(tfvars.get("machine_ids", []))
+
+        if len(self.to_deploy) > 0 and self.to_deploy.issubset(machine_ids):
+            LOG.debug("All machine ids are already in tfvars, skipping update")
             return
 
-        machine_ids = tfvars.get("machine_ids", [])
-        if self.machine_id in machine_ids:
-            return
-
-        machine_ids.append(self.machine_id)
-        tfvars.update({"machine_ids": machine_ids})
+        machine_ids.update(self.to_deploy)
+        tfvars.update({"machine_ids": sorted(machine_ids)})
         update_config(self.client, self.config, tfvars)
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Add unit to machine application on Juju model."""
         try:
-            unit = run_sync(
+            units = run_sync(
                 self.jhelper.add_unit(
-                    self.application, self.model, str(self.machine_id)
+                    self.application, self.model, sorted(self.to_deploy)
                 )
             )
             self.add_machine_id_to_tfvar()
             run_sync(
-                self.jhelper.wait_unit_ready(
-                    unit.name,
+                self.jhelper.wait_units_ready(
+                    units,
                     self.model,
                     timeout=self.get_unit_timeout(),
                 )

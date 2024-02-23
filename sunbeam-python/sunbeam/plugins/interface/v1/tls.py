@@ -21,7 +21,6 @@ from packaging.version import Version
 from rich.console import Console
 from rich.status import Status
 
-from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import ConfigItemNotFoundException
 from sunbeam.commands.openstack import OPENSTACK_MODEL
 from sunbeam.jobs.common import (
@@ -32,6 +31,7 @@ from sunbeam.jobs.common import (
     run_plan,
     update_config,
 )
+from sunbeam.jobs.deployment import Deployment
 from sunbeam.jobs.juju import (
     ActionFailedException,
     JujuHelper,
@@ -52,9 +52,9 @@ class TlsPluginGroup(OpenStackControlPlanePlugin):
     version = Version("0.0.1")
 
     def __init__(
-        self, name: str, client: Client, tf_plan_location: TerraformPlanLocation
+        self, name: str, deployment: Deployment, tf_plan_location: TerraformPlanLocation
     ) -> None:
-        super().__init__(name, client, tf_plan_location)
+        super().__init__(name, deployment, tf_plan_location)
         self.group = "tls"
         self.ca = None
         self.ca_chain = None
@@ -77,7 +77,7 @@ class TlsPluginGroup(OpenStackControlPlanePlugin):
         """Handler to perform tasks before enabling the plugin."""
         super().pre_enable()
         try:
-            config = read_config(self.client, CERTIFICATE_PLUGIN_KEY)
+            config = read_config(self.deployment.get_client(), CERTIFICATE_PLUGIN_KEY)
         except ConfigItemNotFoundException:
             config = {}
 
@@ -88,8 +88,7 @@ class TlsPluginGroup(OpenStackControlPlanePlugin):
     def post_enable(self) -> None:
         """Handler to perform tasks after the plugin is enabled."""
         super().post_enable()
-        data_location = self.snap.paths.user_data
-        jhelper = JujuHelper(self.client, data_location)
+        jhelper = JujuHelper(self.deployment.get_connected_controller())
         plan = [
             AddCACertsToKeystoneStep(jhelper, self.plugin_key, self.ca, self.ca_chain)
         ]
@@ -101,18 +100,17 @@ class TlsPluginGroup(OpenStackControlPlanePlugin):
             "chain": self.ca_chain,
             "endpoints": self.endpoints,
         }
-        update_config(self.client, CERTIFICATE_PLUGIN_KEY, config)
+        update_config(self.deployment.get_client(), CERTIFICATE_PLUGIN_KEY, config)
 
     def post_disable(self) -> None:
         """Handler to perform tasks after the plugin is disabled."""
         super().post_disable()
-        data_location = self.snap.paths.user_data
-        jhelper = JujuHelper(self.client, data_location)
+        jhelper = JujuHelper(self.deployment.get_connected_controller())
         plan = [RemoveCACertsFromKeystoneStep(jhelper, self.plugin_key)]
         run_plan(plan, console)
 
         config = {}
-        update_config(self.client, CERTIFICATE_PLUGIN_KEY, config)
+        update_config(self.deployment.get_client(), CERTIFICATE_PLUGIN_KEY, config)
 
 
 class AddCACertsToKeystoneStep(BaseStep):

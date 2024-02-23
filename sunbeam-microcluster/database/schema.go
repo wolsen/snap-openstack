@@ -15,6 +15,7 @@ var SchemaExtensions = map[int]schema.Update{
 	2: ConfigSchemaUpdate,
 	3: JujuUserSchemaUpdate,
 	4: ManifestsSchemaUpdate,
+	5: AddSystemIDToNodes,
 }
 
 // NodesSchemaUpdate is schema for table nodes
@@ -79,6 +80,16 @@ CREATE TABLE manifest (
   data                          TEXT,
   UNIQUE(manifest_id)
 );
+  `
+	_, err := tx.Exec(stmt)
+
+	return err
+}
+
+// AddSystemIDToNodes is schema update for table nodes
+func AddSystemIDToNodes(_ context.Context, tx *sql.Tx) error {
+	stmt := `
+ALTER TABLE nodes ADD COLUMN system_id TEXT default '';
   `
 
 	_, err := tx.Exec(stmt)

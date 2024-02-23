@@ -30,6 +30,7 @@ from sunbeam.clusterd.service import (
 from sunbeam.commands.openstack import OPENSTACK_MODEL
 from sunbeam.jobs import questions
 from sunbeam.jobs.common import BaseStep, Result, ResultType, read_config, run_plan
+from sunbeam.jobs.deployment import Deployment
 from sunbeam.jobs.juju import (
     ActionFailedException,
     JujuHelper,
@@ -214,9 +215,11 @@ class ConfigureCAStep(BaseStep):
 class CaTlsPlugin(TlsPluginGroup):
     version = Version("0.0.1")
 
-    def __init__(self, client: Client) -> None:
+    def __init__(self, deployment: Deployment) -> None:
         super().__init__(
-            "ca", client, tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO
+            "ca",
+            deployment,
+            tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO,
         )
         self.endpoints = []
 
@@ -328,18 +331,18 @@ class CaTlsPlugin(TlsPluginGroup):
     @click.command()
     def configure(self) -> None:
         """Configure CA certs."""
+        client = self.deployment.get_client()
         try:
-            config = read_config(self.client, CERTIFICATE_PLUGIN_KEY)
+            config = read_config(client, CERTIFICATE_PLUGIN_KEY)
         except ConfigItemNotFoundException:
             config = {}
         self.ca = config.get("ca")
         self.ca_chain = config.get("chain")
 
-        data_location = self.snap.paths.user_data
-        jhelper = JujuHelper(self.client, data_location)
+        jhelper = JujuHelper(self.deployment.get_connected_controller())
         plan = [
             ConfigureCAStep(
-                self.client,
+                client,
                 jhelper,
                 self.ca,
                 self.ca_chain,

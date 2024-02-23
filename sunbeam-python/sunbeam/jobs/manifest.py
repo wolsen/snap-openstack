@@ -41,6 +41,7 @@ from sunbeam.jobs.common import (
     read_config,
     update_config,
 )
+from sunbeam.jobs.deployment import Deployment
 from sunbeam.jobs.plugin import PluginManager
 from sunbeam.versions import (
     MANIFEST_ATTRIBUTES_TFVAR_MAP,
@@ -66,8 +67,11 @@ class JujuManifest:
     # Newer version of pydantic can be used once the below
     # PR is released
     # https://github.com/juju/python-libjuju/pull/1005
-    bootstrap_args: List[str] = Field(
+    bootstrap_args: list[str] = Field(
         default=[], description="Extra args for juju bootstrap"
+    )
+    scale_args: list[str] = Field(
+        default=[], description="Extra args for juju enable-ha"
     )
 
 
@@ -95,7 +99,7 @@ class TerraformManifest:
 
 @dataclass(config=dict(extra="allow"))
 class SoftwareConfig:
-    client: InitVar[Client]
+    deployment: InitVar[Deployment]
     plugin_manager: InitVar[PluginManager]
     juju: Optional[JujuManifest] = None
     charms: Optional[Dict[str, CharmsManifest]] = None
@@ -133,11 +137,11 @@ class SoftwareConfig:
                     f"Manifest Software charms keys should be one of {all_charms} "
                 )
 
-    def __post_init__(self, client: Client, plugin_manager: PluginManager):
+    def __post_init__(self, deployment: Deployment, plugin_manager: PluginManager):
         LOG.debug("Calling __post__init__")
-        plugin_manager.add_manifest_section(client, self)
+        plugin_manager.add_manifest_section(deployment, self)
         default_software_config = self.get_default_software_as_dict(
-            client, plugin_manager
+            deployment, plugin_manager
         )
         # Add custom validations
         self.validate_terraform_keys(default_software_config)
@@ -145,7 +149,7 @@ class SoftwareConfig:
 
     @classmethod
     def get_default_software_as_dict(
-        cls, client: Client, plugin_manager: PluginManager
+        cls, deployment: Deployment, plugin_manager: PluginManager
     ) -> dict:
         snap = Snap()
         software = {"juju": {"bootstrap_args": []}}
@@ -159,7 +163,7 @@ class SoftwareConfig:
         }
 
         # Update manifests from plugins
-        software_from_plugins = plugin_manager.get_all_plugin_manifests(client)
+        software_from_plugins = plugin_manager.get_all_plugin_manifests(deployment)
         utils.merge_dict(software, software_from_plugins)
         return copy.deepcopy(software)
 
@@ -168,34 +172,34 @@ class Manifest:
 
     def __init__(
         self,
-        client: Client,
+        deployment: Deployment,
         plugin_manager: PluginManager,
-        deployment: dict,
+        deployment_config: dict,
         software: dict,
     ):
-        self.client = client
-        self.plugin_manager = plugin_manager
         self.deployment = deployment
-        self.software = SoftwareConfig(client, plugin_manager, **software)
+        self.plugin_manager = plugin_manager
+        self.deployment_config = deployment_config
+        self.software_config = SoftwareConfig(deployment, plugin_manager, **software)
         self.tf_helpers = {}
-        self.tfvar_map = self._get_all_tfvar_map(client, plugin_manager)
+        self.tfvar_map = self._get_all_tfvar_map(deployment, plugin_manager)
 
     @classmethod
     def load(
-        cls, client: Client, manifest_file: Path, include_defaults: bool = False
+        cls, deployment: Deployment, manifest_file: Path, include_defaults: bool = False
     ) -> "Manifest":
         """Load the manifest with the provided file input
 
         If include_defaults is True, load the manifest over the defaut manifest.
         """
         if include_defaults:
-            return cls.load_on_default(client, manifest_file)
+            return cls.load_on_default(deployment, manifest_file)
 
         plugin_manager = PluginManager()
         with manifest_file.open() as file:
             override = yaml.safe_load(file)
             return Manifest(
-                client,
+                deployment,
                 plugin_manager,
                 override.get("deployment", {}),
                 override.get("software", {}),
@@ -203,7 +207,7 @@ class Manifest:
 
     @classmethod
     def load_latest_from_clusterdb(
-        cls, client: Client, include_defaults: bool = False
+        cls, deployment: Deployment, include_defaults: bool = False
     ) -> "Manifest":
         """Load the latest manifest from clusterdb
 
@@ -211,24 +215,24 @@ class Manifest:
         values.
         """
         if include_defaults:
-            return cls.load_latest_from_clusterdb_on_default(client)
+            return cls.load_latest_from_clusterdb_on_default(deployment)
 
         plugin_manager = PluginManager()
         try:
-            manifest_latest = client.cluster.get_latest_manifest()
+            manifest_latest = deployment.get_client().cluster.get_latest_manifest()
             override = yaml.safe_load(manifest_latest.get("data"))
             return Manifest(
-                client,
+                deployment,
                 plugin_manager,
                 override.get("deployment", {}),
                 override.get("software", {}),
             )
         except ManifestItemNotFoundException as e:
             LOG.debug(f"Error in getting latest manifest from cluster DB: {str(e)}")
-            return Manifest(client, plugin_manager, {}, {})
+            return Manifest(deployment, plugin_manager, {}, {})
 
     @classmethod
-    def load_on_default(cls, client: Client, manifest_file: Path) -> "Manifest":
+    def load_on_default(cls, deployment: Deployment, manifest_file: Path) -> "Manifest":
         """Load manifest and override the default manifest"""
         plugin_manager = PluginManager()
         with manifest_file.open() as file:
@@ -236,22 +240,24 @@ class Manifest:
             override_deployment = override.get("deployment") or {}
             override_software = override.get("software") or {}
             default_software = SoftwareConfig.get_default_software_as_dict(
-                client, plugin_manager
+                deployment, plugin_manager
             )
             utils.merge_dict(default_software, override_software)
             return Manifest(
-                client, plugin_manager, override_deployment, default_software
+                deployment, plugin_manager, override_deployment, default_software
             )
 
     @classmethod
-    def load_latest_from_clusterdb_on_default(cls, client: Client) -> "Manifest":
+    def load_latest_from_clusterdb_on_default(
+        cls, deployment: Deployment
+    ) -> "Manifest":
         """Load the latest manifest from clusterdb"""
         plugin_manager = PluginManager()
         default_software = SoftwareConfig.get_default_software_as_dict(
-            client, plugin_manager
+            deployment, plugin_manager
         )
         try:
-            manifest_latest = client.cluster.get_latest_manifest()
+            manifest_latest = deployment.get_client().cluster.get_latest_manifest()
             override = yaml.safe_load(manifest_latest.get("data"))
         except ManifestItemNotFoundException as e:
             LOG.debug(f"Error in getting latest manifest from cluster DB: {str(e)}")
@@ -260,19 +266,23 @@ class Manifest:
         override_deployment = override.get("deployment") or {}
         override_software = override.get("software") or {}
         utils.merge_dict(default_software, override_software)
-        return Manifest(client, plugin_manager, override_deployment, default_software)
+        return Manifest(
+            deployment, plugin_manager, override_deployment, default_software
+        )
 
     @classmethod
-    def get_default_manifest(cls, client: Client) -> "Manifest":
+    def get_default_manifest(cls, deployment: Deployment) -> "Manifest":
         plugin_manager = PluginManager()
         default_software = SoftwareConfig.get_default_software_as_dict(
-            client, plugin_manager
+            deployment, plugin_manager
         )
-        return Manifest(client, plugin_manager, {}, default_software)
+        return Manifest(deployment, plugin_manager, {}, default_software)
 
-    def _get_all_tfvar_map(self, client: Client, plugin_manager: PluginManager) -> dict:
+    def _get_all_tfvar_map(
+        self, deployment: Deployment, plugin_manager: PluginManager
+    ) -> dict:
         tfvar_map = copy.deepcopy(MANIFEST_ATTRIBUTES_TFVAR_MAP)
-        tfvar_map_plugin = plugin_manager.get_all_plugin_manfiest_tfvar_map(client)
+        tfvar_map_plugin = plugin_manager.get_all_plugin_manfiest_tfvar_map(deployment)
         utils.merge_dict(tfvar_map, tfvar_map_plugin)
         return tfvar_map
 
@@ -282,35 +292,55 @@ class Manifest:
         if self.tf_helpers.get(tfplan):
             return self.tf_helpers.get(tfplan)
 
-        if not (self.software.terraform and self.software.terraform.get(tfplan)):
+        if not (
+            self.software_config.terraform
+            and self.software_config.terraform.get(tfplan)  # noqa W503
+        ):
             raise MissingTerraformInfoException(
                 f"Terraform information missing in manifest for {tfplan}"
             )
 
         tfplan_dir = TERRAFORM_DIR_NAMES.get(tfplan, tfplan)
-        src = self.software.terraform.get(tfplan).source
-        dst = snap.paths.user_common / "etc" / tfplan_dir
+        src = self.software_config.terraform.get(tfplan).source
+        dst = snap.paths.user_common / "etc" / self.deployment.name / tfplan_dir
         LOG.debug(f"Updating {dst} from {src}...")
         shutil.copytree(src, dst, dirs_exist_ok=True)
+        env = {}
+        if self.deployment.juju_controller and self.deployment.juju_account:
+            env.update(
+                dict(
+                    JUJU_USERNAME=self.deployment.juju_account.user,
+                    JUJU_PASSWORD=self.deployment.juju_account.password,
+                    JUJU_CONTROLLER_ADDRESSES=",".join(
+                        self.deployment.juju_controller.api_endpoints
+                    ),
+                    JUJU_CA_CERT=self.deployment.juju_controller.ca_cert,
+                )
+            )
 
         self.tf_helpers[tfplan] = TerraformHelper(
-            path=snap.paths.user_common / "etc" / tfplan_dir,
+            path=dst,
             plan=tfplan,
             backend="http",
-            data_location=snap.paths.user_data,
+            env=env,
+            clusterd_address=self.deployment.get_clusterd_http_address(),
         )
 
         return self.tf_helpers[tfplan]
 
     def update_partial_tfvars_and_apply_tf(
-        self, charms: List[str], tfplan: str, tfvar_config: Optional[str] = None
+        self,
+        client: Client,
+        charms: List[str],
+        tfplan: str,
+        tfvar_config: Optional[str] = None,
     ) -> None:
         """Updates tfvars for specific charms and apply the plan."""
         current_tfvars = {}
         updated_tfvars = {}
         if tfvar_config:
             try:
-                current_tfvars = read_config(self.client, tfvar_config)
+                current_tfvars = read_config(client, tfvar_config)
                 # Exclude all default tfvar keys from the previous terraform
                 # vars applied to the plan.
                 _tfvar_names = self._get_tfvar_names(tfplan, charms)
@@ -322,7 +352,7 @@ class Manifest:
 
         updated_tfvars.update(self._get_tfvars(tfplan, charms))
         if tfvar_config:
-            update_config(self.client, tfvar_config, updated_tfvars)
+            update_config(client, tfvar_config, updated_tfvars)
 
         tfhelper = self.get_tfhelper(tfplan)
         tfhelper.write_tfvars(updated_tfvars)
@@ -331,6 +361,7 @@ class Manifest:
 
     def update_tfvars_and_apply_tf(
         self,
+        client: Client,
         tfplan: str,
         tfvar_config: Optional[str] = None,
         override_tfvars: dict = {},
@@ -350,11 +381,11 @@ class Manifest:
         :param override_tfvars: Terraform vars to override
         :type override_tfvars: dict
         """
-        current_tfvars = {}
+        current_tfvars = None
         updated_tfvars = {}
         if tfvar_config:
             try:
-                current_tfvars = read_config(self.client, tfvar_config)
+                current_tfvars = read_config(client, tfvar_config)
                 # Exclude all default tfvar keys from the previous terraform
                 # vars applied to the plan.
                 _tfvar_names = self._get_tfvar_names(tfplan)
@@ -370,7 +401,7 @@ class Manifest:
         updated_tfvars.update(self._get_tfvars(tfplan))
         updated_tfvars.update(override_tfvars)
         if tfvar_config:
-            update_config(self.client, tfvar_config, updated_tfvars)
+            update_config(client, tfvar_config, updated_tfvars)
 
         tfhelper = self.get_tfhelper(tfplan)
         tfhelper.write_tfvars(updated_tfvars)
@@ -398,7 +429,7 @@ class Manifest:
 
         # handle tfvars for charms section
         for charm, per_charm_tfvar_map in charms_tfvar_map.items():
-            charm_ = self.software.charms.get(charm)
+            charm_ = self.software_config.charms.get(charm)
             if charm_:
                 manifest_charm = asdict(charm_)
                 for charm_attribute, tfvar_name in per_charm_tfvar_map.items():

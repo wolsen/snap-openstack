@@ -41,3 +41,8 @@ variable "machine_ids" {
   type        = list(string)
   default     = []
 }
+
+variable "machine_model" {
+  description = "Model to deploy to"
+  type        = string
+}

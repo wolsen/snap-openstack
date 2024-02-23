@@ -20,11 +20,11 @@ import click
 from packaging.version import Version
 from rich.console import Console
 
-from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import ClusterServiceUnavailableException
 from sunbeam.commands.openstack import OPENSTACK_MODEL, PatchLoadBalancerServicesStep
 from sunbeam.commands.terraform import TerraformInitStep
 from sunbeam.jobs.common import run_plan
+from sunbeam.jobs.deployment import Deployment
 from sunbeam.jobs.juju import JujuHelper, run_sync
 from sunbeam.jobs.manifest import AddManifestStep
 from sunbeam.plugins.interface.v1.openstack import (
@@ -47,10 +47,10 @@ class DnsPlugin(OpenStackControlPlanePlugin):
     version = Version("0.0.1")
     nameservers: Optional[str]
 
-    def __init__(self, client: Client) -> None:
+    def __init__(self, deployment: Deployment) -> None:
         super().__init__(
             "dns",
-            client,
+            deployment,
             tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO,
         )
         self.nameservers = None
@@ -85,17 +85,18 @@ class DnsPlugin(OpenStackControlPlanePlugin):
 
     def run_enable_plans(self) -> None:
         """Run plans to enable plugin."""
-        data_location = self.snap.paths.user_data
-        jhelper = JujuHelper(self.client, data_location)
+        jhelper = JujuHelper(self.deployment.get_connected_controller())
 
         plan = []
         if self.user_manifest:
-            plan.append(AddManifestStep(self.client, self.user_manifest))
+            plan.append(
+                AddManifestStep(self.deployment.get_client(), self.user_manifest)
+            )
         plan.extend(
             [
                 TerraformInitStep(self.manifest.get_tfhelper(self.tfplan)),
                 EnableOpenStackApplicationStep(jhelper, self),
-                PatchBindLoadBalancerStep(self.client),
+                PatchBindLoadBalancerStep(self.deployment.get_client()),
             ]
         )
 
@@ -163,8 +164,7 @@ class DnsPlugin(OpenStackControlPlanePlugin):
         """Fetch bind address from juju."""
         model = OPENSTACK_MODEL
         application = "bind"
-        data_location = self.snap.paths.user_data
-        jhelper = JujuHelper(self.client, data_location)
+        jhelper = JujuHelper(self.deployment.get_connected_controller())
         model_impl = await jhelper.get_model(model)
         status = await model_impl.get_status([application])
         if application not in status["applications"]:

@@ -26,13 +26,9 @@ from rich.console import Console
 from rich.status import Status
 from snaphelpers import Snap
 
-from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import ConfigItemNotFoundException
 from sunbeam.commands.juju import JujuStepHelper
-from sunbeam.commands.openstack import (
-    OPENSTACK_MODEL,
-    determine_target_topology_at_bootstrap,
-)
+from sunbeam.commands.openstack import OPENSTACK_MODEL, TOPOLOGY_KEY
 from sunbeam.commands.terraform import TerraformException, TerraformInitStep
 from sunbeam.jobs.checks import VerifyBootstrappedCheck
 from sunbeam.jobs.common import (
@@ -45,6 +41,7 @@ from sunbeam.jobs.common import (
     run_preflight_checks,
     update_status_background,
 )
+from sunbeam.jobs.deployment import Deployment
 from sunbeam.jobs.juju import JujuHelper, JujuWaitException, TimeoutException, run_sync
 from sunbeam.jobs.manifest import AddManifestStep, Manifest
 from sunbeam.plugins.interface.v1.base import EnableDisablePlugin
@@ -92,14 +89,14 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
     interface_version = Version("0.0.1")
 
     def __init__(
-        self, name: str, client: Client, tf_plan_location: TerraformPlanLocation
+        self, name: str, deployment: Deployment, tf_plan_location: TerraformPlanLocation
     ) -> None:
         """Constructor for plugin interface.
 
         :param name: Name of the plugin
         :param tf_plan_location: Location where terraform plans are placed
         """
-        super().__init__(name, client)
+        super().__init__(name, deployment)
         self.app_name = self.name.capitalize()
         self.tf_plan_location = tf_plan_location
 
@@ -122,11 +119,13 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
 
         if self.user_manifest:
             self._manifest = Manifest.load(
-                self.client, manifest_file=self.user_manifest, include_defaults=True
+                self.deployment,
+                manifest_file=self.user_manifest,
+                include_defaults=True,
             )
         else:
             self._manifest = Manifest.load_latest_from_clusterdb(
-                self.client, include_defaults=True
+                self.deployment, include_defaults=True
             )
 
         return self._manifest
@@ -148,7 +147,7 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         Also copies terraform plans to required locations.
         """
         preflight_checks = []
-        preflight_checks.append(VerifyBootstrappedCheck(self.client))
+        preflight_checks.append(VerifyBootstrappedCheck(self.deployment.get_client()))
         run_preflight_checks(preflight_checks, console)
 
     def pre_enable(self) -> None:
@@ -158,12 +157,13 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
 
     def run_enable_plans(self) -> None:
         """Run plans to enable plugin."""
-        data_location = self.snap.paths.user_data
-        jhelper = JujuHelper(self.client, data_location)
+        jhelper = JujuHelper(self.deployment.get_connected_controller())
 
         plan = []
         if self.user_manifest:
-            plan.append(AddManifestStep(self.client, self.user_manifest))
+            plan.append(
+                AddManifestStep(self.deployment.get_client(), self.user_manifest)
+            )
         plan.extend(
             [
                 TerraformInitStep(self.manifest.get_tfhelper(self.tfplan)),
@@ -181,8 +181,7 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
 
     def run_disable_plans(self) -> None:
         """Run plans to disable the plugin."""
-        data_location = self.snap.paths.user_data
-        jhelper = JujuHelper(self.client, data_location)
+        jhelper = JujuHelper(self.deployment.get_connected_controller())
         plan = [
             TerraformInitStep(self.manifest.get_tfhelper(self.tfplan)),
             DisableOpenStackApplicationStep(jhelper, self),
@@ -208,7 +207,9 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
     def get_database_topology(self) -> str:
         """Returns the database topology of the cluster."""
         # Database topology can be set only during bootstrap and cannot be changed.
-        return determine_target_topology_at_bootstrap()
+        client = self.deployment.get_client()
+        topology = read_config(client, TOPOLOGY_KEY)
+        return topology["database"]
 
     def set_application_timeout_on_enable(self) -> int:
         """Set Application Timeout on enabling the plugin.
@@ -263,7 +264,10 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         Return of the function is expected to be passed to set_tfvars_on_enable.
         """
         try:
-            tfvars = read_config(self.client, self.get_tfvar_config_key())
+            tfvars = read_config(
+                self.deployment.get_client(),
+                self.get_tfvar_config_key(),
+            )
         except ConfigItemNotFoundException:
             tfvars = {}
 
@@ -279,7 +283,10 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
         Return of the function is expected to be passed to set_tfvars_on_disable.
         """
         try:
-            tfvars = read_config(self.client, self.get_tfvar_config_key())
+            tfvars = read_config(
+                self.deployment.get_client(),
+                self.get_tfvar_config_key(),
+            )
         except ConfigItemNotFoundException:
             tfvars = {}
 
@@ -317,8 +324,7 @@ class OpenStackControlPlanePlugin(EnableDisablePlugin):
             )
             return
 
-        data_location = self.snap.paths.user_data
-        jhelper = JujuHelper(self.client, data_location)
+        jhelper = JujuHelper(self.deployment.get_connected_controller())
         plan = [
             UpgradeOpenStackApplicationStep(jhelper, self, upgrade_release),
         ]
@@ -348,7 +354,6 @@ class UpgradeOpenStackApplicationStep(BaseStep, JujuStepHelper):
         self.model = OPENSTACK_MODEL
         self.upgrade_release = upgrade_release
         self.tfhelper = self.plugin.manifest.get_tfhelper(self.plugin.tfplan)
-        self.client = self.plugin.client
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Run plugin upgrade."""
@@ -362,7 +367,7 @@ class UpgradeOpenStackApplicationStep(BaseStep, JujuStepHelper):
 
         try:
             self.plugin.manifest.update_partial_tfvars_and_apply_tf(
-                charms, self.plugin.tfplan, config
+                self.plugin.deployment.get_client(), charms, self.plugin.tfplan, config
             )
         except TerraformException as e:
             LOG.exception(f"Error upgrading plugin {self.plugin.name}")
@@ -409,7 +414,6 @@ class EnableOpenStackApplicationStep(BaseStep, JujuStepHelper):
         self.jhelper = jhelper
         self.plugin = plugin
         self.model = OPENSTACK_MODEL
-        self.client = self.plugin.client
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Apply terraform configuration to deploy openstack application"""
@@ -418,6 +422,7 @@ class EnableOpenStackApplicationStep(BaseStep, JujuStepHelper):
 
         try:
             self.plugin.manifest.update_tfvars_and_apply_tf(
+                self.plugin.deployment.get_client(),
                 tfplan=self.plugin.tfplan,
                 tfvar_config=config_key,
                 override_tfvars=extra_tfvars,
@@ -463,7 +468,6 @@ class DisableOpenStackApplicationStep(BaseStep, JujuStepHelper):
         self.jhelper = jhelper
         self.plugin = plugin
         self.model = OPENSTACK_MODEL
-        self.client = self.plugin.client
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Apply terraform configuration to remove openstack application"""
@@ -472,13 +476,14 @@ class DisableOpenStackApplicationStep(BaseStep, JujuStepHelper):
         try:
             if self.plugin.tf_plan_location == TerraformPlanLocation.PLUGIN_REPO:
                 # Just destroy the terraform plan
-                tfhelper = self.manifest.get_tfhelper(self.plugin.tfplan)
+                tfhelper = self.plugin.manifest.get_tfhelper(self.plugin.tfplan)
                 tfhelper.destroy()
-                delete_config(self.client, config_key)
+                delete_config(self.plugin.deployment.get_client(), config_key)
             else:
                 # Update terraform variables to disable the application
                 extra_tfvars = self.plugin.set_tfvars_on_disable()
                 self.plugin.manifest.update_tfvars_and_apply_tf(
+                    self.plugin.deployment.get_client(),
                     tfplan=self.plugin.tfplan,
                     tfvar_config=config_key,
                     override_tfvars=extra_tfvars,

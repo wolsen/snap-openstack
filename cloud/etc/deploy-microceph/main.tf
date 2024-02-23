@@ -26,14 +26,14 @@ terraform {
 
 provider "juju" {}
 
-data "juju_model" "controller" {
-  name = "controller"
+data "juju_model" "machine_model" {
+  name = var.machine_model
 }
 
 resource "juju_application" "microceph" {
   name  = "microceph"
   trust = true
-  model = data.juju_model.controller.name
+  model = data.juju_model.machine_model.name
   units = length(var.machine_ids) # need to manage the number of units
 
   charm {
@@ -52,5 +52,5 @@ resource "juju_application" "microceph" {
 resource "juju_offer" "microceph_offer" {
   application_name = juju_application.microceph.name
   endpoint         = "ceph"
-  model            = data.juju_model.controller.name
+  model            = data.juju_model.machine_model.name
 }

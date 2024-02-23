@@ -25,10 +25,7 @@ from typing import Optional
 from rich.status import Status
 from snaphelpers import Snap
 
-from sunbeam import utils
-from sunbeam.clusterd.client import Client
 from sunbeam.jobs.common import BaseStep, Result, ResultType
-from sunbeam.jobs.juju import JujuAccount, JujuController
 
 LOG = logging.getLogger(__name__)
 
@@ -77,7 +74,7 @@ class TerraformHelper:
         env: Optional[dict] = None,
         parallelism: Optional[int] = None,
         backend: Optional[str] = None,
-        data_location: Optional[Path] = None,
+        clusterd_address: str | None = None,
     ):
         self.snap = Snap()
         self.path = path
@@ -85,34 +82,39 @@ class TerraformHelper:
         self.env = env
         self.parallelism = parallelism
         self.backend = backend or "local"
-        self.data_location = data_location
         self.terraform = str(self.snap.paths.snap / "bin" / "terraform")
+        self.clusterd_address = clusterd_address
 
     def backend_config(self) -> dict:
-        if self.backend == "http":
-            local_ip = utils.get_local_ip_by_default_route()
-            local_address = f"https://{local_ip}:7000"
+        if self.backend == "http" and self.clusterd_address is not None:
+            address = self.clusterd_address
             return {
-                "address": f"{local_address}/1.0/terraformstate/{self.plan}",
+                "address": f"{address}/1.0/terraformstate/{self.plan}",
                 "update_method": "PUT",
-                "lock_address": f"{local_address}/1.0/terraformlock/{self.plan}",
+                "lock_address": f"{address}/1.0/terraformlock/{self.plan}",
                 "lock_method": "PUT",
-                "unlock_address": f"{local_address}/1.0/terraformunlock/{self.plan}",
+                "unlock_address": f"{address}/1.0/terraformunlock/{self.plan}",
                 "unlock_method": "PUT",
                 "skip_cert_verification": True,
             }
         return {}
 
-    def write_backend_tf(self) -> None:
+    def write_backend_tf(self) -> bool:
         backend = self.backend_config()
         if self.backend == "http":
             backend_obj = Template(http_backend_template)
             backend = backend_obj.safe_substitute(
                 {key: json.dumps(value) for key, value in backend.items()}
             )
-
-            with Path(self.path / "backend.tf").open(mode="w") as file:
-                file.write(backend)
+            backend_path = self.path / "backend.tf"
+            old_backend = None
+            if backend_path.exists():
+                old_backend = backend_path.read_text()
+            if old_backend != backend:
+                with backend_path.open(mode="w") as file:
+                    file.write(backend)
+                return True
+        return False
 
     def write_tfvars(self, vars: dict, location: Optional[Path] = None) -> None:
         """Write terraform variables file"""
@@ -130,22 +132,6 @@ class TerraformHelper:
                 )
             )
 
-    def update_juju_provider_credentials(self) -> dict:
-        os_env = {}
-        if self.data_location:
-            LOG.debug("Updating terraform env variables related to juju credentials")
-            account = JujuAccount.load(self.data_location)
-            # TODO(gboutry): refactor when Manifest support lands
-            controller = JujuController.load(Client.from_socket())
-            os_env.update(
-                JUJU_USERNAME=account.user,
-                JUJU_PASSWORD=account.password,
-                JUJU_CONTROLLER_ADDRESSES=",".join(controller.api_endpoints),
-                JUJU_CA_CERT=controller.ca_cert,
-            )
-
-        return os_env
-
     def init(self) -> None:
         """terraform init"""
         os_env = os.environ.copy()
@@ -155,14 +141,16 @@ class TerraformHelper:
         os_env.setdefault("TF_LOG", "INFO")
         if self.env:
             os_env.update(self.env)
+        backend_updated = False
         if self.backend:
-            self.write_backend_tf()
-        if self.data_location:
-            os_env.update(self.update_juju_provider_credentials())
+            backend_updated = self.write_backend_tf()
         self.write_terraformrc()
 
         try:
             cmd = [self.terraform, "init", "-upgrade", "-no-color"]
+            if backend_updated:
+                LOG.debug("Backend updated, running terraform init -reconfigure")
+                cmd.append("-reconfigure")
             LOG.debug(f'Running command {" ".join(cmd)}')
             process = subprocess.run(
                 cmd,
@@ -189,8 +177,6 @@ class TerraformHelper:
         os_env.setdefault("TF_LOG", "INFO")
         if self.env:
             os_env.update(self.env)
-        if self.data_location:
-            os_env.update(self.update_juju_provider_credentials())
 
         try:
             cmd = [self.terraform, "apply", "-auto-approve", "-no-color"]
@@ -222,8 +208,6 @@ class TerraformHelper:
         os_env.setdefault("TF_LOG", "INFO")
         if self.env:
             os_env.update(self.env)
-        if self.data_location:
-            os_env.update(self.update_juju_provider_credentials())
 
         try:
             cmd = [self.terraform, "destroy", "-auto-approve", "-no-color"]
@@ -246,7 +230,7 @@ class TerraformHelper:
             LOG.warning(e.stderr)
             raise TerraformException(str(e))
 
-    def output(self) -> dict:
+    def output(self, hide_output: bool = False) -> dict:
         """terraform output"""
         os_env = os.environ.copy()
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -255,8 +239,6 @@ class TerraformHelper:
         os_env.setdefault("TF_LOG", "INFO")
         if self.env:
             os_env.update(self.env)
-        if self.data_location:
-            os_env.update(self.update_juju_provider_credentials())
 
         try:
             cmd = [self.terraform, "output", "-json", "-no-color"]
@@ -270,7 +252,10 @@ class TerraformHelper:
                 env=os_env,
             )
             stdout = process.stdout
-            LOG.debug(f"Command finished. stdout={stdout}, stderr={process.stderr}")
+            output = ""
+            if not hide_output:
+                output = f" stdout={stdout}, stderr={process.stderr}"
+            LOG.debug("Command finished." + output)
             tf_output = json.loads(stdout)
             output = {}
             for key, value in tf_output.items():
@@ -290,8 +275,6 @@ class TerraformHelper:
         os_env.setdefault("TF_LOG", "INFO")
         if self.env:
             os_env.update(self.env)
-        if self.data_location:
-            os_env.update(self.update_juju_provider_credentials())
 
         try:
             cmd = [self.terraform, "apply", "-refresh-only", "-auto-approve"]

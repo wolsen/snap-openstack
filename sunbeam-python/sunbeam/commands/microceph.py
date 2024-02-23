@@ -25,7 +25,6 @@ from sunbeam.clusterd.client import Client
 from sunbeam.jobs import questions
 from sunbeam.jobs.common import BaseStep, Result, ResultType
 from sunbeam.jobs.juju import (
-    MODEL,
     ActionFailedException,
     JujuHelper,
     UnitNotFoundException,
@@ -33,7 +32,7 @@ from sunbeam.jobs.juju import (
 )
 from sunbeam.jobs.manifest import Manifest
 from sunbeam.jobs.steps import (
-    AddMachineUnitStep,
+    AddMachineUnitsStep,
     DeployMachineApplicationStep,
     RemoveMachineUnitStep,
 )
@@ -81,6 +80,7 @@ class DeployMicrocephApplicationStep(DeployMachineApplicationStep):
         client: Client,
         manifest: Manifest,
         jhelper: JujuHelper,
+        model: str,
         refresh: bool = False,
     ):
         super().__init__(
@@ -89,7 +89,7 @@ class DeployMicrocephApplicationStep(DeployMachineApplicationStep):
             jhelper,
             CONFIG_KEY,
             APPLICATION,
-            MODEL,
+            model,
             "microceph-plan",
             "Deploy MicroCeph",
             "Deploying MicroCeph",
@@ -100,17 +100,23 @@ class DeployMicrocephApplicationStep(DeployMachineApplicationStep):
         return MICROCEPH_APP_TIMEOUT
 
 
-class AddMicrocephUnitStep(AddMachineUnitStep):
+class AddMicrocephUnitsStep(AddMachineUnitsStep):
     """Add Microceph Unit."""
 
-    def __init__(self, client: Client, name: str, jhelper: JujuHelper):
+    def __init__(
+        self,
+        client: Client,
+        names: list[str] | str,
+        jhelper: JujuHelper,
+        model: str,
+    ):
         super().__init__(
             client,
-            name,
+            names,
             jhelper,
             CONFIG_KEY,
             APPLICATION,
-            MODEL,
+            model,
             "Add MicroCeph unit",
             "Adding MicroCeph unit to machine",
         )
@@ -122,14 +128,14 @@ class AddMicrocephUnitStep(AddMachineUnitStep):
 class RemoveMicrocephUnitStep(RemoveMachineUnitStep):
     """Remove Microceph Unit."""
 
-    def __init__(self, client: Client, name: str, jhelper: JujuHelper):
+    def __init__(self, client: Client, name: str, jhelper: JujuHelper, model: str):
         super().__init__(
             client,
             name,
             jhelper,
             CONFIG_KEY,
             APPLICATION,
-            MODEL,
+            model,
             "Remove MicroCeph unit",
             "Removing MicroCeph unit from machine",
         )
@@ -148,6 +154,7 @@ class ConfigureMicrocephOSDStep(BaseStep):
         client: Client,
         name: str,
         jhelper: JujuHelper,
+        model: str,
         deployment_preseed: dict | None = None,
         accept_defaults: bool = False,
     ):
@@ -155,6 +162,7 @@ class ConfigureMicrocephOSDStep(BaseStep):
         self.client = client
         self.name = name
         self.jhelper = jhelper
+        self.model = model
         self.preseed = deployment_preseed
         self.accept_defaults = accept_defaults
         self.variables = {}
@@ -179,10 +187,12 @@ class ConfigureMicrocephOSDStep(BaseStep):
             node = self.client.cluster.get_node_info(self.name)
             self.machine_id = str(node.get("machineid"))
             unit = run_sync(
-                self.jhelper.get_unit_from_machine(APPLICATION, self.machine_id, MODEL)
+                self.jhelper.get_unit_from_machine(
+                    APPLICATION, self.machine_id, self.model
+                )
             )
             _, unpartitioned_disks = run_sync(
-                list_disks(self.jhelper, MODEL, unit.entity_id)
+                list_disks(self.jhelper, self.model, unit.entity_id)
             )
             unpartitioned_disks = [disk.get("path") for disk in unpartitioned_disks]
             # Remove duplicates if any
@@ -260,13 +270,15 @@ class ConfigureMicrocephOSDStep(BaseStep):
         """Configure local disks on microceph."""
         try:
             unit = run_sync(
-                self.jhelper.get_unit_from_machine(APPLICATION, self.machine_id, MODEL)
+                self.jhelper.get_unit_from_machine(
+                    APPLICATION, self.machine_id, self.model
+                )
             )
             LOG.debug(f"Running action add-osd on {unit.entity_id}")
             action_result = run_sync(
                 self.jhelper.run_action(
                     unit.entity_id,
-                    MODEL,
+                    self.model,
                     "add-osd",
                     action_params={
                         "device-id": self.disks,

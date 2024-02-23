@@ -16,7 +16,7 @@
 import json
 import logging
 import secrets
-from typing import Any, List, Optional, Union
+from typing import Any, List, Union
 
 from requests import codes
 from requests.models import HTTPError
@@ -108,12 +108,19 @@ class MicroClusterService(service.BaseService):
 class ExtendedAPIService(service.BaseService):
     """Client for Sunbeam extended Cluster API."""
 
-    def add_node_info(self, name: str, role: List[str]) -> None:
+    def add_node_info(
+        self, name: str, role: List[str], machineid: int = -1, systemid: str = ""
+    ) -> None:
         """Add Node information to cluster database."""
-        data = {"name": name, "role": role}
+        data = {
+            "name": name,
+            "role": role,
+            "machineid": machineid,
+            "systemid": systemid,
+        }
         self._post("/1.0/nodes", data=json.dumps(data))
 
-    def list_nodes(self) -> list:
+    def list_nodes(self) -> list[dict]:
         """List all nodes."""
         nodes = self._get("/1.0/nodes")
         return nodes.get("metadata")
@@ -127,10 +134,14 @@ class ExtendedAPIService(service.BaseService):
         self._delete(f"1.0/nodes/{name}")
 
     def update_node_info(
-        self, name: str, role: Optional[List[str]] = None, machineid: int = -1
+        self,
+        name: str,
+        role: list[str] | None = None,
+        machineid: int = -1,
+        systemid: str = "",
     ) -> None:
         """Update role and machineid for node."""
-        data = {"role": role, "machineid": machineid}
+        data = {"role": role, "machineid": machineid, "systemid": systemid}
         self._put(f"1.0/nodes/{name}", data=json.dumps(data))
 
     def add_juju_user(self, name: str, token: str) -> None:
@@ -228,9 +239,11 @@ class ClusterService(MicroClusterService, ExtendedAPIService):
     # sucessfully run. Note: this is distinct from microcluster bootstrap.
     SUNBEAM_BOOTSTRAP_KEY = "sunbeam_bootstrapped"
 
-    def bootstrap(self, name: str, address: str, role: List[str]) -> None:
+    def bootstrap(
+        self, name: str, address: str, role: List[str], machineid: int = -1
+    ) -> None:
         self.bootstrap_cluster(name, address)
-        self.add_node_info(name, role)
+        self.add_node_info(name, role, machineid)
 
     def add_node(self, name: str) -> str:
         return self.generate_token(name)

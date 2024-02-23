@@ -43,6 +43,7 @@ from sunbeam.commands.microk8s import (
 )
 from sunbeam.jobs.checks import DaemonGroupCheck, VerifyBootstrappedCheck
 from sunbeam.jobs.common import FORMAT_TABLE, FORMAT_YAML, run_preflight_checks
+from sunbeam.jobs.deployment import Deployment
 from sunbeam.jobs.manifest import Manifest
 from sunbeam.jobs.plugin import PluginManager
 from sunbeam.jobs.questions import QuestionBank, load_answers, show_questions
@@ -137,7 +138,7 @@ def generate_software_manifest(manifest: Manifest) -> str:
     comment = "# "
 
     try:
-        software_dict = asdict_with_extra_fields(manifest.software)
+        software_dict = asdict_with_extra_fields(manifest.software_config)
         LOG.debug(f"Manifest software dict with extra fields: {software_dict}")
 
         # Remove terraform default sources
@@ -176,7 +177,8 @@ def generate_software_manifest(manifest: Manifest) -> str:
 @click.pass_context
 def list(ctx: click.Context, format: str) -> None:
     """List manifests"""
-    client: Client = ctx.obj
+    deployment: Deployment = ctx.obj
+    client = deployment.get_client()
     manifests = []
 
     preflight_checks = [DaemonGroupCheck()]
@@ -209,7 +211,8 @@ def show(ctx: click.Context, id: str) -> None:
 
     Use '--id=latest' to get the last committed manifest.
     """
-    client: Client = ctx.obj
+    deployment: Deployment = ctx.obj
+    client = deployment.get_client()
 
     preflight_checks = [DaemonGroupCheck()]
     run_preflight_checks(preflight_checks, console)
@@ -241,7 +244,8 @@ def generate(
     If the cluster is not bootstrapped, fallback to default
     configuration.
     """
-    client: Client = ctx.obj
+    deployment: Deployment = ctx.obj
+    client = deployment.get_client()
 
     if not manifest_file:
         home = os.environ.get("SNAP_REAL_HOME")
@@ -254,12 +258,12 @@ def generate(
         preflight_checks = [DaemonGroupCheck(), VerifyBootstrappedCheck(client)]
         run_preflight_checks(preflight_checks, console)
         manifest_obj = Manifest.load_latest_from_clusterdb(
-            client, include_defaults=True
+            deployment, include_defaults=True
         )
     except (click.ClickException, ClusterServiceUnavailableException) as e:
         LOG.debug(e)
         LOG.debug("Fallback to generating manifest with defaults")
-        manifest_obj = Manifest.get_default_manifest(client)
+        manifest_obj = Manifest.get_default_manifest(deployment)
 
     preseed_content = generate_deployment_preseed(client)
     software_content = generate_software_manifest(manifest_obj)

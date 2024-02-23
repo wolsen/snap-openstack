@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import MagicMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 from requests.exceptions import HTTPError
@@ -29,8 +29,10 @@ from sunbeam.commands.clusterd import (
     ClusterRemoveNodeStep,
     ClusterUpdateJujuControllerStep,
     ClusterUpdateNodeStep,
+    DeploySunbeamClusterdApplicationStep,
 )
 from sunbeam.jobs.common import ResultType
+from sunbeam.jobs.juju import ApplicationNotFoundException
 
 
 @pytest.fixture()
@@ -38,12 +40,17 @@ def cclient():
     yield Mock()
 
 
+@pytest.fixture()
+def model():
+    return "test-model"
+
+
 class TestClusterdSteps:
     """Unit tests for sunbeam clusterd steps."""
 
     def test_init_step(self, cclient):
         role = "control"
-        init_step = ClusterInitStep(cclient, [role])
+        init_step = ClusterInitStep(cclient, [role], 0)
         init_step.client = MagicMock()
         result = init_step.run()
         assert result.result_type == ResultType.COMPLETED
@@ -503,7 +510,7 @@ class TestClusterService:
         mock_session.request.return_value = mock_response
 
         cs = ClusterService(mock_session, "http+unix://mock")
-        cs.add_node_info("node-1", "control")
+        cs.add_node_info("node-1", ["control"])
 
     def test_remove_node_info(self):
         json_data = {
@@ -574,7 +581,7 @@ class TestClusterService:
         mock_session.request.return_value = mock_response
 
         cs = ClusterService(mock_session, "http+unix://mock")
-        cs.update_node_info("node-2", "control", "2")
+        cs.update_node_info("node-2", ["control"], 2)
 
 
 class TestClusterUpdateJujuControllerStep:
@@ -591,3 +598,45 @@ class TestClusterUpdateJujuControllerStep:
             ["10.0.0.6:17070", "[fd42:5eda:f578:7bba:216:3eff:fe3d:7ef6]:17070"],
             "10.0.0.0/24",
         ) == ["10.0.0.6:17070"]
+
+
+@pytest.fixture()
+def manifest():
+    mock = Mock()
+    mock.software_config.charms = {
+        "sunbeam-clusterd": Mock(channel="my-channel", config={})
+    }
+    return mock
+
+
+class TestDeploySunbeamClusterdApplicationStep:
+    def test_is_skip_when_application_not_found(self, manifest, model):
+        jhelper = AsyncMock()
+        jhelper.get_application.side_effect = ApplicationNotFoundException
+        step = DeploySunbeamClusterdApplicationStep(jhelper, manifest, model)
+        result = step.is_skip()
+        assert result.result_type == ResultType.COMPLETED
+
+    def test_is_skip_when_application_found(self, manifest, model):
+        jhelper = AsyncMock()
+        jhelper.get_application.return_value = AsyncMock()
+        step = DeploySunbeamClusterdApplicationStep(jhelper, manifest, model)
+        result = step.is_skip()
+        assert result.result_type == ResultType.SKIPPED
+
+    def test_run_when_no_controller_machines_found(self, manifest, model):
+        jhelper = AsyncMock()
+        jhelper.get_application.return_value = AsyncMock()
+        step = DeploySunbeamClusterdApplicationStep(jhelper, manifest, model)
+        step._get_controller_machines = MagicMock(return_value=[])
+        result = step.run()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == "No controller machines found"
+
+    def test_run_when_controller_machines_found(self, manifest, model):
+        jhelper = AsyncMock()
+        jhelper.get_application.return_value = AsyncMock()
+        step = DeploySunbeamClusterdApplicationStep(jhelper, manifest, model)
+        step._get_controller_machines = MagicMock(return_value=["1", "2", "3"])
+        result = step.run()
+        assert result.result_type == ResultType.COMPLETED

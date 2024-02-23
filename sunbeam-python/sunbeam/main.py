@@ -20,21 +20,18 @@ import click
 from snaphelpers import Snap
 
 from sunbeam import log
-from sunbeam.clusterd.client import Client
-from sunbeam.commands import bootstrap as bootstrap_cmds
 from sunbeam.commands import configure as configure_cmds
 from sunbeam.commands import dashboard_url as dasboard_url_cmds
 from sunbeam.commands import generate_cloud_config as generate_cloud_config_cmds
 from sunbeam.commands import inspect as inspect_cmds
 from sunbeam.commands import launch as launch_cmds
 from sunbeam.commands import manifest as manifest_commands
-from sunbeam.commands import node as node_cmds
 from sunbeam.commands import openrc as openrc_cmds
 from sunbeam.commands import prepare_node as prepare_node_cmds
-from sunbeam.commands import refresh as refresh_cmds
-from sunbeam.commands import resize as resize_cmds
 from sunbeam.commands import utils as utils_cmds
+from sunbeam.jobs import deployments as deployments_jobs
 from sunbeam.jobs.plugin import PluginManager
+from sunbeam.provider import commands as provider_cmds
 from sunbeam.utils import CatchGroup
 
 LOG = logging.getLogger()
@@ -58,12 +55,6 @@ def cli(ctx, quiet, verbose):
     with by initializing the local node. Once the local node has been initialized,
     run the bootstrap process to get a live cloud.
     """
-
-
-@click.group("cluster", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
-@click.pass_context
-def cluster(ctx):
-    """Manage the Sunbeam Cluster"""
 
 
 @click.group("manifest", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
@@ -109,14 +100,11 @@ def main():
     cli.add_command(dasboard_url_cmds.dashboard_url)
 
     # Cluster management
-    cli.add_command(cluster)
-    cluster.add_command(bootstrap_cmds.bootstrap)
-    cluster.add_command(node_cmds.add)
-    cluster.add_command(node_cmds.join)
-    cluster.add_command(node_cmds.list)
-    cluster.add_command(node_cmds.remove)
-    cluster.add_command(refresh_cmds.refresh)
-    cluster.add_command(resize_cmds.resize)
+    provider_cmds.register_providers()
+    deployment = provider_cmds.load_deployment(
+        snap.paths.real_home / deployments_jobs.DEPLOYMENTS_CONFIG
+    )
+    provider_cmds.register_cli(cli, configure_cmds.configure, deployment)
 
     # Manifst management
     cli.add_command(manifest)
@@ -130,11 +118,10 @@ def main():
     cli.add_command(utils)
     utils.add_command(utils_cmds.juju_login)
 
-    client = Client.from_socket()
     # Register the plugins after all groups,commands are registered
-    PluginManager.register(client, cli)
+    PluginManager.register(deployment, cli)
 
-    cli(obj=client)
+    cli(obj=deployment)
 
 
 if __name__ == "__main__":

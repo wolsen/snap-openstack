@@ -21,6 +21,7 @@ from rich.status import Status
 
 from sunbeam.clusterd.client import Client
 from sunbeam.jobs.common import BaseStep, Result, ResultType, run_plan
+from sunbeam.jobs.deployments import Deployment
 from sunbeam.jobs.juju import JujuHelper
 from sunbeam.jobs.manifest import Manifest
 from sunbeam.jobs.plugin import PluginManager
@@ -32,7 +33,7 @@ console = Console()
 class UpgradePlugins(BaseStep):
     def __init__(
         self,
-        client: Client,
+        deployment: Deployment,
         upgrade_release: bool = False,
     ):
         """Upgrade plugins.
@@ -41,12 +42,12 @@ class UpgradePlugins(BaseStep):
         :upgrade_release: Whether to upgrade channel
         """
         super().__init__("Validation", "Running pre-upgrade validation")
-        self.client = client
+        self.deployment = deployment
         self.upgrade_release = upgrade_release
 
     def run(self, status: Optional[Status] = None) -> Result:
         PluginManager.update_plugins(
-            self.client, repos=["core"], upgrade_release=self.upgrade_release
+            self.deployment, repos=["core"], upgrade_release=self.upgrade_release
         )
         return Result(ResultType.COMPLETED)
 
@@ -54,6 +55,7 @@ class UpgradePlugins(BaseStep):
 class UpgradeCoordinator:
     def __init__(
         self,
+        deployment: Deployment,
         client: Client,
         jhelper: JujuHelper,
         manifest: Manifest,
@@ -66,6 +68,7 @@ class UpgradeCoordinator:
         :jhelper: Helper for interacting with pylibjuju
         :manifest: Manifest object
         """
+        self.deployment = deployment
         self.client = client
         self.jhelper = jhelper
         self.manifest = manifest

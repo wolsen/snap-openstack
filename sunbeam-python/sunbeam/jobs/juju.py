@@ -17,12 +17,12 @@ import asyncio
 import base64
 import json
 import logging
-from dataclasses import asdict, dataclass
+import os
 from datetime import datetime, timedelta
-from functools import wraps
 from pathlib import Path
-from typing import Awaitable, Dict, List, Optional, TypedDict, TypeVar, cast
+from typing import Awaitable, Dict, List, Optional, Sequence, TypedDict, TypeVar, cast
 
+import pydantic
 import pytz
 import yaml
 from juju import utils as juju_utils
@@ -37,6 +37,7 @@ from juju.errors import (
     JujuMachineError,
     JujuUnitError,
 )
+from juju.machine import Machine
 from juju.model import Model
 from juju.unit import Unit
 
@@ -44,8 +45,6 @@ from sunbeam.clusterd.client import Client
 
 LOG = logging.getLogger(__name__)
 CONTROLLER_MODEL = "admin/controller"
-# Note(gboutry): pylibjuju get_model does not support user/model
-MODEL = CONTROLLER_MODEL.split("/")[1]
 CONTROLLER = "sunbeam-controller"
 JUJU_CONTROLLER_KEY = "JujuController"
 ACCOUNT_FILE = "account.yaml"
@@ -153,13 +152,12 @@ class ChannelUpdate(TypedDict):
     expected_status: Dict[str, List[str]]
 
 
-@dataclass
-class JujuAccount:
+class JujuAccount(pydantic.BaseModel):
     user: str
     password: str
 
     def to_dict(self):
-        return asdict(self)
+        return self.dict()
 
     @classmethod
     def load(cls, data_location: Path) -> "JujuAccount":
@@ -182,13 +180,12 @@ class JujuAccount:
             yaml.safe_dump(self.to_dict(), file)
 
 
-@dataclass
-class JujuController:
+class JujuController(pydantic.BaseModel):
     api_endpoints: List[str]
     ca_cert: str
 
     def to_dict(self):
-        return asdict(self)
+        return self.dict()
 
     @classmethod
     def load(cls, client: Client) -> "JujuController":
@@ -198,43 +195,30 @@ class JujuController:
     def write(self, client: Client):
         client.cluster.update_config(JUJU_CONTROLLER_KEY, json.dumps(self.to_dict()))
 
-
-def controller(func):
-    """Automatically set up controller."""
-
-    @wraps(func)
-    async def wrapper(self, *args, **kwargs):
-        if self.controller is None:
-            juju_controller = JujuController.load(self.client)
-
-            account = JujuAccount.load(self.data_location)
-
-            self.controller = Controller()
-            await self.controller.connect(
-                endpoint=juju_controller.api_endpoints,
-                cacert=juju_controller.ca_cert,
-                username=account.user,
-                password=account.password,
+    def to_controller(self, juju_account: JujuAccount) -> Controller:
+        """Return connected controller."""
+        controller = Controller()
+        run_sync(
+            controller.connect(
+                endpoint=self.api_endpoints,
+                cacert=self.ca_cert,
+                username=juju_account.user,
+                password=juju_account.password,
             )
-        return await func(self, *args, **kwargs)
-
-    return wrapper
+        )
+        return controller
 
 
 class JujuHelper:
     """Helper function to manage Juju apis through pylibjuju."""
 
-    def __init__(self, client: Client, data_location: Path):
-        self.client = client
-        self.data_location = data_location
-        self.controller = None
+    def __init__(self, controller: Controller):
+        self.controller = controller
 
-    @controller
     async def get_clouds(self) -> dict:
         clouds = await self.controller.clouds()
         return clouds.clouds
 
-    @controller
     async def get_model(self, model: str) -> Model:
         """Fetch model.
 
@@ -247,21 +231,31 @@ class JujuHelper:
                 raise ModelNotFoundException(f"Model {model!r} not found")
             raise e
 
-    @controller
+    async def add_model(self, model: str) -> Model:
+        """Add a model.
+
+        :model: Name of the model
+        """
+        # TODO(gboutry): workaround until we manage public ssh keys properly
+        old_home = os.environ["HOME"]
+        os.environ["HOME"] = os.environ["SNAP_REAL_HOME"]
+        try:
+            return await self.controller.add_model(model)
+        finally:
+            os.environ["HOME"] = old_home
+
     async def get_model_name_with_owner(self, model: str) -> str:
         """Get juju model full name along with owner"""
         model_impl = await self.get_model(model)
         owner = model_impl.info.owner_tag.removeprefix(OWNER_TAG_PREFIX)
         return f"{owner}/{model_impl.info.name}"
 
-    @controller
     async def get_model_status_full(self, model: str) -> Dict:
         """Get juju status for the model"""
         model_impl = await self.get_model(model)
         status = await model_impl.get_status()
         return status
 
-    @controller
     async def get_application_names(self, model: str) -> List[str]:
         """Get Application names in the model.
 
@@ -270,7 +264,6 @@ class JujuHelper:
         model_impl = await self.get_model(model)
         return list(model_impl.applications.keys())
 
-    @controller
     async def get_application(self, name: str, model: str) -> Application:
         """Fetch application in model.
 
@@ -285,7 +278,50 @@ class JujuHelper:
             )
         return application
 
-    @controller
+    async def get_machines(self, model: str) -> dict[str, Machine]:
+        """Fetch machines in model.
+
+        :model: Name of the model where the machines are located
+        """
+        model_impl = await self.get_model(model)
+        return model_impl.machines
+
+    async def deploy(
+        self,
+        name: str,
+        charm: str,
+        model: str,
+        num_units: int = 1,
+        channel: str | None = None,
+        to: list[str] | None = None,
+        config: dict | None = None,
+    ):
+        """Deploy an application"""
+        options = {}
+        if to:
+            options["to"] = to
+        if channel:
+            options["channel"] = channel
+        if config:
+            options["config"] = config
+
+        model_impl = await self.get_model(model)
+        await model_impl.deploy(
+            charm,
+            application_name=name,
+            num_units=num_units,
+            base="ubuntu@22.04",
+            **options,
+        )
+
+    async def add_machine(self, name: str, model: str) -> Machine:
+        """Add machines to model"""
+        model_impl = await self.get_model(model)
+        machine: Machine = await model_impl.add_machine(
+            spec=model_impl.uuid + ":" + name, series="jammy"
+        )  # type: ignore
+        return machine
+
     async def get_unit(self, name: str, model: str) -> Unit:
         """Fetch an application's unit in model.
 
@@ -302,9 +338,8 @@ class JujuHelper:
             )
         return unit
 
-    @controller
     async def get_unit_from_machine(
-        self, application: str, machine_id: int, model: str
+        self, application: str, machine_id: str, model: str
     ) -> Unit:
         """Fetch a application's unit in model on a specific machine.
 
@@ -328,13 +363,12 @@ class JujuHelper:
                 "should be a valid unit of format application/id"
             )
 
-    @controller
     async def add_unit(
         self,
         name: str,
         model: str,
-        machine: Optional[str] = None,
-    ) -> Unit:
+        machine: list[str] | str | None = None,
+    ) -> list[Unit]:
         """Add unit to application, can be optionnally placed on a machine.
 
         :name: Application name
@@ -342,21 +376,17 @@ class JujuHelper:
         :machine: Machine ID to place the unit on, optional
         """
 
-        model_impl = await self.get_model(model)
-
-        application = model_impl.applications.get(name)
-
-        if application is None:
-            raise ApplicationNotFoundException(
-                f"Application {name!r} is missing from model {model!r}"
-            )
+        application = await self.get_application(name, model)
+        if machine is None or isinstance(machine, str):
+            count = 1
+        else:
+            # machine is a list
+            count = len(machine)
 
         # Note(gboutry): add_unit waits for unit to be added to model,
         # but does not check status
-        # we add only one unit, so it's ok to get the first result
-        return (await application.add_unit(1, machine))[0]
+        return await application.add_unit(count, machine)
 
-    @controller
     async def remove_unit(self, name: str, unit: str, model: str):
         """Remove unit from application.
 
@@ -376,7 +406,6 @@ class JujuHelper:
 
         await application.destroy_unit(unit)
 
-    @controller
     async def get_leader_unit(self, name: str, model: str) -> str:
         """Get leader unit.
 
@@ -395,7 +424,6 @@ class JujuHelper:
             f"Leader for application {name!r} is missing from model {model!r}"
         )
 
-    @controller
     async def run_cmd_on_unit_payload(
         self,
         name: str,
@@ -428,7 +456,6 @@ class JujuHelper:
             raise CmdFailedException(action.results["stderr"])
         return action.results
 
-    @controller
     async def run_action(
         self, name: str, model: str, action_name: str, action_params={}
     ) -> Dict:
@@ -453,7 +480,6 @@ class JujuHelper:
 
         return action_obj.results
 
-    @controller
     async def scp_from(self, name: str, model: str, source: str, destination: str):
         """scp files from unit to local
 
@@ -466,7 +492,6 @@ class JujuHelper:
         # NOTE: User, proxy, scp_options left to defaults
         await unit.scp_from(source, destination)
 
-    @controller
     async def add_k8s_cloud(
         self, cloud_name: str, credential_name: str, kubeconfig: dict
     ):
@@ -522,7 +547,6 @@ class JujuHelper:
             credential_name, credential=cred, cloud=cloud_name
         )
 
-    @controller
     async def wait_application_ready(
         self,
         name: str,
@@ -567,7 +591,6 @@ class JujuHelper:
                 f"Timed out while waiting for application {name!r} to be ready"
             ) from e
 
-    @controller
     async def wait_application_gone(
         self,
         names: List[str],
@@ -595,7 +618,6 @@ class JujuHelper:
                 f"{', '.join(name_set)} to be gone"
             ) from e
 
-    @controller
     async def wait_model_gone(
         self,
         model: str,
@@ -618,10 +640,9 @@ class JujuHelper:
                 f"Timed out while waiting for model {model} to be gone"
             ) from e
 
-    @controller
-    async def wait_unit_ready(
+    async def wait_units_ready(
         self,
-        name: str,
+        units: Sequence[Unit | str],
         model: str,
         accepted_status: Optional[Dict[str, List[str]]] = None,
         timeout: Optional[int] = None,
@@ -629,7 +650,8 @@ class JujuHelper:
         """Block execution until unit is ready
         The function early exits if the unit is missing from the model
 
-        :name: Name of the unit to wait for, name format is application/id
+        :units: Name of the units or Unit objects to wait for,
+            name format is application/id
         :model: Name of the model where the unit is located
         :accepted status: map of accepted statuses for "workload" and "agent"
         :timeout: Waiting timeout in seconds
@@ -641,26 +663,35 @@ class JujuHelper:
         agent_accepted_status = accepted_status.get("agent", ["idle"])
         workload_accepted_status = accepted_status.get("workload", ["active"])
 
-        self._validate_unit(name)
         model_impl = await self.get_model(model)
+        unit_list: list[Unit] = []
+        if isinstance(units, str):
+            units = [units]
+        for unit in units:
+            if isinstance(unit, str):
+                self._validate_unit(unit)
+                try:
+                    unit = await self.get_unit(unit, model)
+                except UnitNotFoundException as e:
+                    LOG.debug(str(e))
+                    return
+            unit_list.append(unit)
 
-        try:
-            unit = await self.get_unit(name, model)
-        except UnitNotFoundException as e:
-            LOG.debug(str(e))
-            return
-
-        LOG.debug(
-            f"Unit {name!r} is in status: "
-            f"agent={unit.agent_status!r}, workload={unit.workload_status!r}"
-        )
+        for unit in unit_list:
+            LOG.debug(
+                f"Unit {unit.name!r} is in status: "
+                f"agent={unit.agent_status!r}, workload={unit.workload_status!r}"
+            )
 
         def condition() -> bool:
             """Computes readiness for unit"""
-            unit = model_impl.units[name]
-            agent_ready = unit.agent_status in agent_accepted_status
-            workload_ready = unit.workload_status in workload_accepted_status
-            return agent_ready and workload_ready
+            for unit in unit_list:
+                unit: Unit = model_impl.units[unit.name]
+                agent_ready = unit.agent_status in agent_accepted_status
+                workload_ready = unit.workload_status in workload_accepted_status
+                if not agent_ready or not workload_ready:
+                    return False
+            return True
 
         try:
             await model_impl.block_until(
@@ -669,10 +700,28 @@ class JujuHelper:
             )
         except asyncio.TimeoutError as e:
             raise TimeoutException(
-                f"Timed out while waiting for unit {name!r} to be ready"
+                "Timed out while waiting for units "
+                f"{','.join(unit.name for unit in unit_list)} to be ready"
             ) from e
 
-    @controller
+    async def wait_unit_ready(
+        self,
+        unit: Unit | str,
+        model: str,
+        accepted_status: Optional[Dict[str, List[str]]] = None,
+        timeout: Optional[int] = None,
+    ):
+        """Block execution until unit is ready
+        The function early exits if the unit is missing from the model
+
+        :unit: Name of the unit or Unit object to wait for,
+            name format is application/id
+        :model: Name of the model where the unit is located
+        :accepted status: map of accepted statuses for "workload" and "agent"
+        :timeout: Waiting timeout in seconds
+        """
+        await self.wait_units_ready([unit], model, accepted_status, timeout)
+
     async def wait_all_units_ready(
         self,
         app: str,
@@ -690,10 +739,41 @@ class JujuHelper:
         model_impl = await self.get_model(model)
         for unit in model_impl.applications[app].units:
             await self.wait_unit_ready(
-                unit.entity_id, model, accepted_status=accepted_status
+                unit.entity_id,
+                model,
+                accepted_status=accepted_status,
+                timeout=timeout,
             )
 
-    @controller
+    async def wait_all_machines_deployed(
+        self, model: str, timeout: Optional[int] = None
+    ):
+        """Block execution until all machines in model are deployed.
+
+        :model: Name of the model to wait for readiness
+        :timeout: Waiting timeout in seconds
+        """
+
+        model_impl = await self.get_model(model)
+
+        def condition() -> bool:
+            """Computes readiness for unit"""
+            machines = model_impl.machines
+            for machine in machines.values():
+                if machine is None or machine.status_message != "Deployed":
+                    return False
+            return True
+
+        try:
+            await model_impl.block_until(
+                condition,
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError as e:
+            raise TimeoutException(
+                "Timed out while waiting for machines to be deployed"
+            ) from e
+
     async def wait_until_active(
         self,
         model: str,
@@ -721,7 +801,6 @@ class JujuHelper:
                 f"Timed out while waiting for model {model!r} to be ready"
             ) from e
 
-    @controller
     async def wait_until_desired_status(
         self,
         model: str,
@@ -806,7 +885,6 @@ class JujuHelper:
                 f"Error while waiting for model {model!r} to be ready: {str(e)}"
             ) from e
 
-    @controller
     async def set_application_config(self, model: str, app: str, config: dict):
         """Update application configuration
 
@@ -817,7 +895,6 @@ class JujuHelper:
         model_impl = await self.get_model(model)
         await model_impl.applications[app].set_config(config)
 
-    @controller
     async def update_applications_channel(
         self,
         model: str,
@@ -872,7 +949,6 @@ class JujuHelper:
                 f"Timed out while waiting for model {model!r} to be ready"
             ) from e
 
-    @controller
     async def get_charm_channel(self, application_name: str, model: str) -> str:
         """Get the charm-channel from a deployed application.
 
@@ -883,7 +959,6 @@ class JujuHelper:
         status = json.loads(_status.to_json())
         return status["applications"].get(application_name, {}).get("charm-channel")
 
-    @controller
     async def charm_refresh(self, application_name: str, model: str):
         """Update application to latest charm revision in current channel.
 
@@ -893,7 +968,6 @@ class JujuHelper:
         app = await self.get_application(application_name, model)
         await app.refresh()
 
-    @controller
     async def get_available_charm_revision(
         self, model: str, charm_name: str, channel: str
     ) -> int:
@@ -907,3 +981,36 @@ class JujuHelper:
         available_charm_data = await CharmHub(model_impl).info(charm_name, channel)
         version = available_charm_data["channel-map"][channel]["revision"]["version"]
         return int(version)
+
+    @staticmethod
+    def manual_cloud(cloud_name: str, ip_address: str) -> dict[str, dict]:
+        """Create manual cloud definition."""
+        cloud_yaml = {"clouds": {}}
+        cloud_yaml["clouds"][cloud_name] = {
+            "type": "manual",
+            "endpoint": ip_address,
+        }
+        return cloud_yaml
+
+    @staticmethod
+    def maas_cloud(cloud: str, endpoint: str) -> dict[str, dict]:
+        """Create maas cloud definition."""
+        clouds = {"clouds": {}}
+        clouds["clouds"][cloud] = {
+            "type": "maas",
+            "auth-types": ["oauth1"],
+            "endpoint": endpoint,
+        }
+        return clouds
+
+    @staticmethod
+    def maas_credential(cloud: str, credential: str, maas_apikey: str):
+        """Create maas credential definition."""
+        credentials = {"credentials": {}}
+        credentials["credentials"][cloud] = {
+            credential: {
+                "auth-type": "oauth1",
+                "maas-oauth": maas_apikey,
+            }
+        }
+        return credentials

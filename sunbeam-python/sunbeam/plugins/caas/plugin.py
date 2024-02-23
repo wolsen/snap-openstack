@@ -31,6 +31,7 @@ from sunbeam.commands.configure import retrieve_admin_credentials
 from sunbeam.commands.openstack import OPENSTACK_MODEL
 from sunbeam.commands.terraform import TerraformException, TerraformInitStep
 from sunbeam.jobs.common import BaseStep, Result, ResultType, run_plan
+from sunbeam.jobs.deployment import Deployment
 from sunbeam.jobs.juju import JujuHelper
 from sunbeam.jobs.manifest import Manifest, SoftwareConfig
 from sunbeam.plugins.interface.v1.base import PluginRequirement
@@ -64,6 +65,7 @@ class CaasConfigureStep(BaseStep):
 
     def __init__(
         self,
+        client: Client,
         manifest: Manifest,
         tfplan: str,
         tfvar_map: dict,
@@ -72,6 +74,7 @@ class CaasConfigureStep(BaseStep):
             "Configure Container as a Service",
             "Configure Cloud for Container as a Service use",
         )
+        self.client = client
         self.manifest = manifest
         self.tfplan = tfplan
         self.tfvar_map = tfvar_map
@@ -81,7 +84,7 @@ class CaasConfigureStep(BaseStep):
         try:
             override_tfvars = {}
             try:
-                manifest_caas_config = asdict(self.manifest.software.caas_config)
+                manifest_caas_config = asdict(self.manifest.software_config.caas_config)
                 for caas_config_attribute, tfvar_name in (
                     self.tfvar_map.get(self.tfplan, {}).get("caas_config", {}).items()
                 ):
@@ -95,7 +98,7 @@ class CaasConfigureStep(BaseStep):
                 pass
 
             self.manifest.update_tfvars_and_apply_tf(
-                tfplan=self.tfplan, override_tfvars=override_tfvars
+                self.client, tfplan=self.tfplan, override_tfvars=override_tfvars
             )
         except TerraformException as e:
             LOG.exception("Error configuring Container as a Service plugin.")
@@ -112,10 +115,10 @@ class CaasPlugin(OpenStackControlPlanePlugin):
         PluginRequirement("loadbalancer", optional=True),
     }
 
-    def __init__(self, client: Client) -> None:
+    def __init__(self, deployment: Deployment) -> None:
         super().__init__(
             "caas",
-            client,
+            deployment,
             tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO,
         )
         self.configure_plan = "caas-setup"
@@ -204,8 +207,7 @@ class CaasPlugin(OpenStackControlPlanePlugin):
     @click.command()
     def configure(self):
         """Configure Cloud for Container as a Service use."""
-        data_location = self.snap.paths.user_data
-        jhelper = JujuHelper(self.client, data_location)
+        jhelper = JujuHelper(self.deployment.get_connected_controller())
         admin_credentials = retrieve_admin_credentials(jhelper, OPENSTACK_MODEL)
 
         tfhelper = self.manifest.get_tfhelper(self.configure_plan)
@@ -213,7 +215,10 @@ class CaasPlugin(OpenStackControlPlanePlugin):
         plan = [
             TerraformInitStep(tfhelper),
             CaasConfigureStep(
-                self.manifest, self.configure_plan, self.manifest_attributes_tfvar_map()
+                self.deployment.get_client(),
+                self.manifest,
+                self.configure_plan,
+                self.manifest_attributes_tfvar_map(),
             ),
         ]
 

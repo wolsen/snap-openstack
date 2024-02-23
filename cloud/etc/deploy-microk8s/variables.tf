@@ -42,6 +42,11 @@ variable "machine_ids" {
   default     = []
 }
 
+variable "machine_model" {
+  description = "Model to deploy to"
+  type        = string
+}
+
 variable "addons" {
   description = "Addon configuration to enable on the deployment"
   type        = map(string)

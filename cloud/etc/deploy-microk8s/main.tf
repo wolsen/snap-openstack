@@ -26,14 +26,14 @@ terraform {
 
 provider "juju" {}
 
-data "juju_model" "controller" {
-  name = "controller"
+data "juju_model" "machine_model" {
+  name = var.machine_model
 }
 
 resource "juju_application" "microk8s" {
   name  = "microk8s"
   trust = true
-  model = data.juju_model.controller.name
+  model = data.juju_model.machine_model.name
   units = length(var.machine_ids) # need to manage the number of units
 
   charm {

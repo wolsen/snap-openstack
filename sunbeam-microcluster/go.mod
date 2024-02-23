@@ -3,8 +3,8 @@ module github.com/canonical/snap-openstack/sunbeam-microcluster
 go 1.21
 
 require (
-	github.com/canonical/lxd v0.0.0-20240115081802-6605050f32f5
-	github.com/canonical/microcluster v0.0.0-20231129081021-39c3a6d3e1b6
+	github.com/canonical/lxd v0.0.0-20231002162033-38796399c135
+	github.com/canonical/microcluster v0.0.0-20240122235408-1525f8ea8d7a
 	github.com/gorilla/mux v1.8.1
 	github.com/spf13/cobra v1.8.0
 )

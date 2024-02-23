@@ -40,3 +40,6 @@ macaroonbakery!=1.3.3
 
 # For Manifest dataclasses
 pydantic
+
+# maas
+python-libmaas

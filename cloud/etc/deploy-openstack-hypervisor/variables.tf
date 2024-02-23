@@ -48,7 +48,7 @@ variable "openstack_model" {
   type        = string
 }
 
-variable "hypervisor_model" {
+variable "machine_model" {
   description = "Name of model to deploy hypervisor into."
   type        = string
 }

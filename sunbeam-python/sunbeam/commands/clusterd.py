@@ -18,6 +18,7 @@ import logging
 import re
 from typing import List, Optional, Union
 
+import sunbeam.versions as versions
 from sunbeam import utils
 from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import (
@@ -34,21 +35,40 @@ from sunbeam.clusterd.service import (
 )
 from sunbeam.commands.juju import BOOTSTRAP_CONFIG_KEY, JujuStepHelper
 from sunbeam.jobs import questions
-from sunbeam.jobs.common import BaseStep, Result, ResultType, Status
-from sunbeam.jobs.juju import JujuController
+from sunbeam.jobs.common import (
+    BaseStep,
+    Result,
+    ResultType,
+    Status,
+    update_status_background,
+)
+from sunbeam.jobs.juju import (
+    ApplicationNotFoundException,
+    JujuController,
+    JujuHelper,
+    JujuWaitException,
+    TimeoutException,
+    run_sync,
+)
+from sunbeam.jobs.manifest import CharmsManifest, Manifest
 
-CLUSTERD_PORT = 7000
 LOG = logging.getLogger(__name__)
+APPLICATION = "sunbeam-clusterd"
+SUNBEAM_CLUSTERD_APP_TIMEOUT = (
+    1200  # 20 minutes, adding / removing units can take a long time
+)
+CLUSTERD_PORT = 7000
 
 
 class ClusterInitStep(BaseStep):
     """Bootstrap clustering on sunbeam clusterd."""
 
-    def __init__(self, client: Client, role: List[str]):
+    def __init__(self, client: Client, role: List[str], machineid: int):
         super().__init__("Bootstrap Cluster", "Bootstrapping Sunbeam cluster")
 
         self.port = CLUSTERD_PORT
         self.role = role
+        self.machineid = machineid
         self.client = client
         self.fqdn = utils.get_fqdn()
         self.ip = utils.get_local_ip_by_default_route()
@@ -77,7 +97,10 @@ class ClusterInitStep(BaseStep):
         """Bootstrap sunbeam cluster"""
         try:
             self.client.cluster.bootstrap(
-                name=self.fqdn, address=f"{self.ip}:{self.port}", role=self.role
+                name=self.fqdn,
+                address=f"{self.ip}:{self.port}",
+                role=self.role,
+                machineid=self.machineid,
             )
             return Result(ResultType.COMPLETED)
         except ClusterAlreadyBootstrappedException:
@@ -394,3 +417,87 @@ class ClusterUpdateJujuControllerStep(BaseStep, JujuStepHelper):
             return Result(ResultType.FAILED, str(e))
 
         return Result(result_type=ResultType.COMPLETED)
+
+
+class DeploySunbeamClusterdApplicationStep(BaseStep):
+    """Deploy sunbeam-clusterd application."""
+
+    def __init__(
+        self,
+        jhelper: JujuHelper,
+        manifest: Manifest,
+        model: str,
+    ):
+        super().__init__(
+            "Deploy sunbeam-clusterd",
+            "Deploying Sunbeam Clusterd",
+        )
+        self.jhelper = jhelper
+        self.manifest = manifest
+        self.model = model
+        self.app = APPLICATION
+
+    def _get_controller_machines(self) -> list[str]:
+        """Get controller machines."""
+        controller = run_sync(self.jhelper.get_application("controller", self.model))
+        machines = []
+        for unit in controller.units:
+            machines.append(str(unit.machine.id))
+        return sorted(machines)
+
+    def is_skip(self, status: Status | None = None) -> Result:
+        """Check wheter or not to deploy sunbeam-clusterd."""
+        try:
+            run_sync(self.jhelper.get_application(self.app, self.model))
+        except ApplicationNotFoundException:
+            return Result(ResultType.COMPLETED)
+        return Result(ResultType.SKIPPED)
+
+    def run(self, status: Status | None = None) -> Result:
+        """Deploy sunbeam clusterd to controller machines."""
+        self.update_status(status, "fetching controller application")
+        machines = self._get_controller_machines()
+
+        self.update_status(status, "computing number of units for sunbeam-clusterd")
+        num_machines = len(machines)
+        if num_machines == 0:
+            return Result(ResultType.FAILED, "No controller machines found")
+
+        num_units = num_machines
+        self.update_status(status, "deploying application")
+        charm_manifest: CharmsManifest = self.manifest.software_config.charms[
+            "sunbeam-clusterd"
+        ]
+        charm_config = {"snap-channel": versions.SNAP_SUNBEAM_CLUSTERD_CHANNEL}
+        if charm_manifest.config:
+            charm_config.update(charm_manifest.config)
+        run_sync(
+            self.jhelper.deploy(
+                APPLICATION,
+                "sunbeam-clusterd",
+                self.model,
+                num_units,
+                channel=charm_manifest.channel,
+                to=machines,
+                config=charm_config,
+            )
+        )
+
+        apps = run_sync(self.jhelper.get_application_names(self.model))
+        task = run_sync(update_status_background(self, apps, status))
+        try:
+            run_sync(
+                self.jhelper.wait_until_active(
+                    self.model,
+                    apps,
+                    timeout=SUNBEAM_CLUSTERD_APP_TIMEOUT,
+                )
+            )
+        except (JujuWaitException, TimeoutException) as e:
+            LOG.warning(str(e))
+            return Result(ResultType.FAILED, str(e))
+        finally:
+            if not task.done():
+                task.cancel()
+
+        return Result(ResultType.COMPLETED)
