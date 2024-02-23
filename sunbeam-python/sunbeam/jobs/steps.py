@@ -213,15 +213,13 @@ class AddMachineUnitsStep(BaseStep):
         except ConfigItemNotFoundException:
             tfvars = {}
 
-        if not self.to_deploy:
-            return
-
         machine_ids = set(tfvars.get("machine_ids", []))
 
-        if self.to_deploy.issubset(machine_ids):
+        if len(self.to_deploy) > 0 and self.to_deploy.issubset(machine_ids):
+            LOG.debug("All machine ids are already in tfvars, skipping update")
             return
 
-        machine_ids.union(self.to_deploy)
+        machine_ids.update(self.to_deploy)
         tfvars.update({"machine_ids": sorted(machine_ids)})
         update_config(self.client, self.config, tfvars)
 
