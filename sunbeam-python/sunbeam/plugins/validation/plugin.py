@@ -25,9 +25,9 @@ from croniter import croniter
 from packaging.version import Version
 from rich.console import Console
 
-from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import ClusterServiceUnavailableException
 from sunbeam.commands.openstack import OPENSTACK_MODEL
+from sunbeam.jobs.deployment import Deployment
 from sunbeam.jobs.juju import JujuHelper, run_sync
 from sunbeam.jobs.plugin import PluginManager
 from sunbeam.plugins.interface.v1.openstack import (
@@ -145,11 +145,11 @@ class ValidationPlugin(OpenStackControlPlanePlugin):
 
     version = Version(PLUGIN_VERSION)
 
-    def __init__(self, client: Client) -> None:
+    def __init__(self, deployment: Deployment) -> None:
         """Initialize the plugin class."""
         super().__init__(
             "validation",
-            client,
+            deployment,
             tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO,
         )
 
@@ -190,7 +190,7 @@ class ValidationPlugin(OpenStackControlPlanePlugin):
 
     def _get_tempest_leader_unit(self) -> str:
         """Return the leader unit of tempest application."""
-        jhelper = JujuHelper(self.client, self.snap.paths.user_data)
+        jhelper = JujuHelper(self.deployment.get_connected_controller())
         with console.status(f"Retrieving {TEMPEST_APP_NAME}'s unit name."):
             app = TEMPEST_APP_NAME
             model = OPENSTACK_MODEL
@@ -208,7 +208,7 @@ class ValidationPlugin(OpenStackControlPlanePlugin):
     ) -> Dict[str, Any]:
         """Run the charm's action."""
         unit = self._get_tempest_leader_unit()
-        jhelper = JujuHelper(self.client, self.snap.paths.user_data)
+        jhelper = JujuHelper(self.deployment.get_connected_controller())
         with console.status(progress_message):
             action_result = run_sync(
                 jhelper.run_action(
@@ -275,7 +275,7 @@ class ValidationPlugin(OpenStackControlPlanePlugin):
 
     def _configure_preflight_check(self) -> False:
         """Preflight check for configure command."""
-        enabled_plugins = PluginManager.enabled_plugins(self.client)
+        enabled_plugins = PluginManager.enabled_plugins(self.deployment)
         if "observability" not in enabled_plugins:
             return False
         return True
@@ -318,7 +318,7 @@ class ValidationPlugin(OpenStackControlPlanePlugin):
         config_changes = validated_config_args(parse_config_args(options))
 
         if config_changes.schedule is not None:
-            jhelper = JujuHelper(self.client, self.snap.paths.user_data)
+            jhelper = JujuHelper(self.deployment.get_connected_controller())
             with console.status("Configuring validation plugin ..."):
                 run_sync(
                     jhelper.set_application_config(
