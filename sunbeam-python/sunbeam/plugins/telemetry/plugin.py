@@ -23,7 +23,7 @@ from sunbeam.commands.hypervisor import ReapplyHypervisorTerraformPlanStep
 from sunbeam.commands.terraform import TerraformInitStep
 from sunbeam.jobs.common import run_plan
 from sunbeam.jobs.deployment import Deployment
-from sunbeam.jobs.juju import JujuHelper, ModelNotFoundException, run_sync
+from sunbeam.jobs.juju import JujuHelper
 from sunbeam.jobs.manifest import AddManifestStep
 from sunbeam.plugins.interface.v1.openstack import (
     DisableOpenStackApplicationStep,
@@ -130,22 +130,6 @@ class TelemetryPlugin(OpenStackControlPlanePlugin):
         run_plan(plan, console)
         click.echo(f"OpenStack {self.name} application disabled.")
 
-    def _get_observability_offer_endpoints(self) -> dict:
-        """Fetch observability offers."""
-        jhelper = JujuHelper(self.deployment.get_connected_controller())
-        try:
-            model = run_sync(jhelper.get_model("observability"))
-        except ModelNotFoundException:
-            return {}
-        offer_query = run_sync(model.list_offers())
-        offer_vars = {}
-        for offer in offer_query["results"]:
-            if offer.offer_name == "grafana-dashboards":
-                offer_vars["grafana-dashboard-offer-url"] = offer.offer_url
-            if offer.offer_name == "prometheus-metrics-endpoint":
-                offer_vars["prometheus-metrics-offer-url"] = offer.offer_url
-        return offer_vars
-
     def set_application_names(self) -> list:
         """Application names handled by the terraform plan."""
         database_topology = self.get_database_topology()
@@ -165,7 +149,6 @@ class TelemetryPlugin(OpenStackControlPlanePlugin):
         """Set terraform variables to enable the application."""
         return {
             "enable-telemetry": True,
-            **self._get_observability_offer_endpoints(),
         }
 
     def set_tfvars_on_disable(self) -> dict:
