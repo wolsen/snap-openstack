@@ -32,7 +32,8 @@ class TestValidatorFunction:
     )
     def test_valid_cron_expressions(self, input_schedule):
         """Verify valid cron expressions."""
-        assert validation_plugin.validated_schedule(input_schedule) == input_schedule
+        config = validation_plugin.Config(schedule=input_schedule)
+        assert config.schedule == input_schedule
 
     @pytest.mark.parametrize(
         "test_input,expected_msg",
@@ -46,8 +47,8 @@ class TestValidatorFunction:
     def test_invalid_cron_expressions(self, test_input, expected_msg):
         """Verify invalid cron expressions."""
         with pytest.raises(click.ClickException) as e:
-            validation_plugin.validated_schedule(test_input)
-        assert expected_msg in str(e)
+            validation_plugin.Config(schedule=test_input)
+            assert expected_msg in str(e)
 
     @pytest.mark.parametrize(
         "test_args",

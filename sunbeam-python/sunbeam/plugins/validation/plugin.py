@@ -15,12 +15,12 @@
 
 import logging
 import subprocess
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import click
+import pydantic
 from croniter import croniter
 from packaging.version import Version
 from rich.console import Console
@@ -47,61 +47,61 @@ TEMPEST_VALIDATION_RESULT = "/var/lib/tempest/workspace/tempest-validation.log"
 VALIDATION_PLUGIN_DEPLOY_TIMEOUT = (
     60 * 60
 )  # 60 minutes in seconds, tempest can take some time to initialized
+SUPPORTED_TEMPEST_CONFIG = set(["schedule"])
 
 
-def validated_schedule(schedule: str) -> str:
-    """Validate the schedule config option.
-
-    Return the valid schedule if valid,
-    otherwise Raise a click BadParameter exception.
-    """
-    # Empty schedule is fine; it means it's disabled in this context.
-    if not schedule:
-        return ""
-
-    # croniter supports second repeats, but vixie cron does not.
-    if len(schedule.split()) == 6:
-        raise click.ClickException(
-            "This cron does not support seconds in schedule (6 fields)."
-            " Exactly 5 columns must be specified for iterator expression."
-        )
-
-    # constant base time for consistency
-    base = datetime(2004, 3, 5)
-
-    try:
-        cron = croniter(schedule, base, max_years_between_matches=1)
-    except ValueError as e:
-        msg = str(e)
-        # croniter supports second repeats, but vixie cron does not,
-        # so update the error message here to suit.
-        if "Exactly 5 or 6 columns" in msg:
-            msg = "Exactly 5 columns must be specified for iterator expression."
-        raise click.ClickException(msg)
-
-    # This is a rather naive method for enforcing this,
-    # and it may be possible to craft an expression
-    # that results in some consecutive runs within 15 minutes,
-    # however this is fine, as there is process locking for tempest,
-    # and this is more of a sanity check than a security requirement.
-    t1 = cron.get_next()
-    t2 = cron.get_next()
-    if t2 - t1 < MINIMAL_PERIOD:
-        raise click.ClickException(
-            "Cannot schedule periodic check to run faster than every 15 minutes."
-        )
-
-    return schedule
-
-
-@dataclass()
-class Config:
+class Config(pydantic.BaseModel):
     """Represents config updates provided by the user.
 
     None values mean the user did not provide them.
     """
 
     schedule: Optional[str] = None
+
+    @pydantic.validator("schedule")
+    def validate_schedule(cls, schedule: str) -> str:
+        """Validate the schedule config option.
+
+        Return the valid schedule if valid,
+        otherwise Raise a click BadParameter exception.
+        """
+        # Empty schedule is fine; it means it's disabled in this context.
+        if not schedule:
+            return ""
+
+        # croniter supports second repeats, but vixie cron does not.
+        if len(schedule.split()) == 6:
+            raise click.ClickException(
+                "This cron does not support seconds in schedule (6 fields)."
+                " Exactly 5 columns must be specified for iterator expression."
+            )
+
+        # constant base time for consistency
+        base = datetime(2004, 3, 5)
+
+        try:
+            cron = croniter(schedule, base, max_years_between_matches=1)
+        except ValueError as e:
+            msg = str(e)
+            # croniter supports second repeats, but vixie cron does not,
+            # so update the error message here to suit.
+            if "Exactly 5 or 6 columns" in msg:
+                msg = "Exactly 5 columns must be specified for iterator expression."
+            raise click.ClickException(msg)
+
+        # This is a rather naive method for enforcing this,
+        # and it may be possible to craft an expression
+        # that results in some consecutive runs within 15 minutes,
+        # however this is fine, as there is process locking for tempest,
+        # and this is more of a sanity check than a security requirement.
+        t1 = cron.get_next()
+        t2 = cron.get_next()
+        if t2 - t1 < MINIMAL_PERIOD:
+            raise click.ClickException(
+                "Cannot schedule periodic check to run faster than every 15 minutes."
+            )
+
+        return schedule
 
 
 def parse_config_args(args: List[str]) -> Dict[str, str]:
@@ -129,15 +129,12 @@ def validated_config_args(args: Dict[str, str]) -> Config:
     Raise a click bad argument error if errors.
     """
 
-    config = Config()
-
-    for key, value in args.items():
-        if key == "schedule":
-            config.schedule = validated_schedule(value)
-        else:
-            raise click.ClickException(f"{key!r} is not a supported config option")
-
-    return config
+    unsupported_options = set(list(args.keys())).difference(SUPPORTED_TEMPEST_CONFIG)
+    if unsupported_options:
+        raise click.ClickException(
+            f"{', '.join(unsupported_options)!r} is not a supported config option"
+        )
+    return Config(**args)
 
 
 class ValidationPlugin(OpenStackControlPlanePlugin):
