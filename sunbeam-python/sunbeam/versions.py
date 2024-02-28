@@ -28,6 +28,7 @@ MYSQL_CHANNEL = "8.0/candidate"
 CERT_AUTH_CHANNEL = "latest/beta"
 BIND_CHANNEL = "9/edge"
 VAULT_CHANNEL = "latest/edge"
+TEMPEST_CHANNEL = "2023.2/edge"
 
 # List of charms with default channels
 OPENSTACK_CHARMS_K8S = {

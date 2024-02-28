@@ -41,6 +41,7 @@ from sunbeam.plugins.interface.v1.openstack import (
     OpenStackControlPlanePlugin,
     TerraformPlanLocation,
 )
+from sunbeam.versions import TEMPEST_CHANNEL
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -49,7 +50,6 @@ PLUGIN_VERSION = "0.0.1"
 MINIMAL_PERIOD = 15 * 60  # 15 minutes in seconds
 TEMPEST_APP_NAME = "tempest"
 TEMPEST_CONTAINER_NAME = "tempest"
-TEMPEST_CHANNEL = "2023.2/edge"
 TEMPEST_VALIDATION_RESULT = "/var/lib/tempest/workspace/tempest-validation.log"
 VALIDATION_PLUGIN_DEPLOY_TIMEOUT = (
     60 * 60
