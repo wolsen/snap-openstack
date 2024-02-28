@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import List, Optional, Type
 
 import click
+import yaml
 from click import decorators
 from juju.client.client import FullStatus
 from rich.console import Console
@@ -378,3 +379,13 @@ async def update_status_background(
                 await asyncio.sleep(20)
 
     return asyncio.create_task(_update_status_background_coro())
+
+
+def str_presenter(dumper: yaml.Dumper, data: str) -> yaml.ScalarNode:
+    """Return multiline string as '|' literal block.
+
+    Ref: https://stackoverflow.com/questions/8640959/how-can-i-control-what-scalar-form-pyyaml-uses-for-my-data # noqa E501
+    """
+    if data.count("\n") > 0:
+        return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|")
+    return dumper.represent_scalar("tag:yaml.org,2002:str", data)

@@ -86,6 +86,7 @@ from sunbeam.jobs.common import (
     FORMAT_YAML,
     run_plan,
     run_preflight_checks,
+    str_presenter,
 )
 from sunbeam.jobs.deployment import Deployment
 from sunbeam.jobs.deployments import DeploymentsConfig, deployment_path
@@ -134,7 +135,6 @@ from sunbeam.provider.maas.steps import (
     MachineRootDiskCheck,
     MachineStorageCheck,
     NetworkMappingCompleteCheck,
-    str_presenter,
 )
 from sunbeam.utils import CatchGroup
 
