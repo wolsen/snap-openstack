@@ -28,7 +28,14 @@ from rich.console import Console
 from sunbeam.clusterd.service import ClusterServiceUnavailableException
 from sunbeam.commands.openstack import OPENSTACK_MODEL
 from sunbeam.jobs.deployment import Deployment
-from sunbeam.jobs.juju import JujuHelper, run_sync
+from sunbeam.jobs.juju import (
+    ActionFailedException,
+    ApplicationNotFoundException,
+    JujuHelper,
+    LeaderNotFoundException,
+    UnitNotFoundException,
+    run_sync,
+)
 from sunbeam.jobs.plugin import PluginManager
 from sunbeam.plugins.interface.v1.openstack import (
     OpenStackControlPlanePlugin,
@@ -191,10 +198,10 @@ class ValidationPlugin(OpenStackControlPlanePlugin):
         with console.status(f"Retrieving {TEMPEST_APP_NAME}'s unit name."):
             app = TEMPEST_APP_NAME
             model = OPENSTACK_MODEL
-            unit = run_sync(jhelper.get_leader_unit(app, model))
-            if not unit:
-                message = f"Unable to get {app} leader"
-                raise click.ClickException(message)
+            try:
+                unit = run_sync(jhelper.get_leader_unit(app, model))
+            except (ApplicationNotFoundException, LeaderNotFoundException) as e:
+                raise click.ClickException(str(e))
             return unit
 
     def _run_action_on_tempest_unit(
@@ -207,14 +214,17 @@ class ValidationPlugin(OpenStackControlPlanePlugin):
         unit = self._get_tempest_leader_unit()
         jhelper = JujuHelper(self.deployment.get_connected_controller())
         with console.status(progress_message):
-            action_result = run_sync(
-                jhelper.run_action(
-                    unit,
-                    OPENSTACK_MODEL,
-                    action_name,
-                    action_params or {},
+            try:
+                action_result = run_sync(
+                    jhelper.run_action(
+                        unit,
+                        OPENSTACK_MODEL,
+                        action_name,
+                        action_params or {},
+                    )
                 )
-            )
+            except (ActionFailedException, UnitNotFoundException) as e:
+                raise click.ClickException(str(e))
 
             if action_result.get("return-code", 0) > 1:
                 message = f"Unable to run action: {action_name}"
@@ -228,20 +238,25 @@ class ValidationPlugin(OpenStackControlPlanePlugin):
         # Note: this is a workaround to run command to payload container
         # since python-libjuju does not support such feature. See related
         # bug: https://github.com/juju/python-libjuju/issues/1029
-        result = subprocess.run(
-            [
-                "juju",
-                "ssh",
-                "--container",
-                TEMPEST_CONTAINER_NAME,
-                unit,
-                "ls",
-                TEMPEST_VALIDATION_RESULT,
-            ],
-            capture_output=True,
-        )
-        if result.returncode != 0:
+        try:
+            subprocess.run(
+                [
+                    "juju",
+                    "ssh",
+                    "--container",
+                    TEMPEST_CONTAINER_NAME,
+                    unit,
+                    "ls",
+                    TEMPEST_VALIDATION_RESULT,
+                ],
+                check=True,
+                timeout=30,  # 30 seconds should be enough for `ls`
+                capture_output=True,
+            )
+        except subprocess.CalledProcessError:
             return False
+        except subprocess.TimeoutExpired:
+            raise click.ClickException(f"Timed out checking {filename}")
         return True
 
     def _copy_file_from_tempest_container(self, source: str, destination: str) -> None:
@@ -259,16 +274,21 @@ class ValidationPlugin(OpenStackControlPlanePlugin):
             if Path(destination).is_dir():
                 # juju scp does not allow directory as destination
                 destination = str(Path(destination, Path(source).name))
-            subprocess.run(
-                [
-                    "juju",
-                    "scp",
-                    "--container",
-                    TEMPEST_CONTAINER_NAME,
-                    f"{unit}:{source}",
-                    destination,
-                ],
-            )
+            try:
+                subprocess.run(
+                    [
+                        "juju",
+                        "scp",
+                        "--container",
+                        TEMPEST_CONTAINER_NAME,
+                        f"{unit}:{source}",
+                        destination,
+                    ],
+                    check=True,
+                    timeout=60,  # 60 seconds should be enough for copying a file
+                )
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+                raise click.ClickException(str(e))
 
     def _configure_preflight_check(self) -> False:
         """Preflight check for configure command."""
