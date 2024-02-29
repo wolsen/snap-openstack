@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Canonical Ltd.
+#       e Copyright (c) 2024 Canonical Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -353,7 +353,7 @@ class ValidationPlugin(OpenStackControlPlanePlugin):
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
                 raise click.ClickException(str(e))
 
-    def _configure_preflight_check(self) -> False:
+    def _configure_preflight_check(self) -> bool:
         """Preflight check for configure command."""
         enabled_plugins = PluginManager.enabled_plugins(self.deployment)
         if "observability" not in enabled_plugins:
