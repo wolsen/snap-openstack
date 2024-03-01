@@ -15,6 +15,7 @@
 
 import logging
 import subprocess
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -23,8 +24,10 @@ import click
 import pydantic
 from croniter import croniter
 from packaging.version import Version
+from rich import box
 from rich.console import Console
 from rich.status import Status
+from rich.table import Column, Table
 
 from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import ClusterServiceUnavailableException
@@ -61,6 +64,43 @@ VALIDATION_PLUGIN_DEPLOY_TIMEOUT = (
     60 * 60
 )  # 60 minutes in seconds, tempest can take some time to initialized
 SUPPORTED_TEMPEST_CONFIG = set(["schedule"])
+
+
+@dataclass
+class Profile:
+    name: str
+    help: str
+    params: dict[str, str]
+
+
+DEFAULT_PROFILE = Profile(
+    name="refstack",
+    help=(
+        "Tests that are part of the RefStack project " "https://refstack.openstack.org/"
+    ),
+    params={"test-list": "refstack-2022.11"},
+)
+PROFILES = {
+    p.name: p
+    for p in [
+        DEFAULT_PROFILE,
+        Profile(
+            name="quick",
+            help="A short list of tests for quick validation",
+            params={"test-list": "readonly-quick"},
+        ),
+        Profile(
+            name="smoke",
+            help='Tests tagged as "smoke"',
+            params={"regex": "smoke"},
+        ),
+        Profile(
+            name="all",
+            help="All tests (very large number, not usually recommended)",
+            params={},
+        ),
+    ]
+}
 
 
 class Config(pydantic.BaseModel):
@@ -413,36 +453,10 @@ class ValidationPlugin(OpenStackControlPlanePlugin):
         )
 
     @click.command()
-    @click.option(
-        "-r",
-        "--regex",
-        default="",
-        help=(
-            "A list of regexes, whitespace separated, used to select tests from"
-            " the list."
-        ),
-    )
-    @click.option(
-        "-e",
-        "--exclude-regex",
-        default="",
-        help="A single regex to exclude tests.",
-    )
-    @click.option(
-        "-t",
-        "--serial",
-        is_flag=True,
-        default=False,
-        help="Run tests serially. By default, tests run in parallel.",
-    )
-    @click.option(
-        "-l",
-        "--test-list",
-        default="",
-        help=(
-            "Use a predefined test list. See `sunbeam validation test-lists`"
-            " for available test lists."
-        ),
+    @click.argument(
+        "profile",
+        default=DEFAULT_PROFILE.name,
+        type=click.Choice(PROFILES.keys()),
     )
     @click.option(
         "-o",
@@ -457,20 +471,16 @@ class ValidationPlugin(OpenStackControlPlanePlugin):
     )
     def run_validate_action(
         self,
-        regex: str = "",
-        exclude_regex: str = "",
-        serial: bool = False,
-        test_list: str = "",
-        output: Optional[str] = None,
+        profile: str,
+        output: Optional[str],
     ) -> None:
-        """Run a set of tests on the sunbeam installation."""
+        """Run tests against the cloud ("refstack" profile by default).
+
+        PROFILE is the set of tests to run.
+        For details of available profiles, run `sunbeam validation profiles`.
+        """
         action_name = "validate"
-        action_params = {
-            "regex": regex,
-            "exclude-regex": exclude_regex,
-            "serial": serial,
-            "test-list": test_list,
-        }
+        action_params = PROFILES[profile].params
         progress_message = "Running tempest to validate the sunbeam deployment ..."
         action_result = self._run_action_on_tempest_unit(
             action_name,
@@ -488,16 +498,17 @@ class ValidationPlugin(OpenStackControlPlanePlugin):
             self._copy_file_from_tempest_container(TEMPEST_VALIDATION_RESULT, output)
 
     @click.command()
-    def run_get_lists_action(self) -> None:
-        """Get supported test lists for validation."""
-        action_name = "get-lists"
-        progress_message = "Retrieving existing test lists from tempest charm ..."
-        action_result = self._run_action_on_tempest_unit(
-            action_name,
-            action_params={},
-            progress_message=progress_message,
+    def list_profiles(self) -> None:
+        """Show details of available test profiles."""
+        table = Table(
+            Column("Name", no_wrap=True),
+            Column("Description"),
+            title="Available profiles",
+            box=box.SIMPLE,
         )
-        console.print(action_result.get("stdout").strip())
+        for profile in PROFILES.values():
+            table.add_row(profile.name, profile.help)
+        console.print(table)
 
     @click.command()
     @click.option(
@@ -552,7 +563,7 @@ class ValidationPlugin(OpenStackControlPlanePlugin):
                     # sunbeam validation run ... etc.
                     "init.validation": [
                         {"name": "run", "command": self.run_validate_action},
-                        {"name": "test-lists", "command": self.run_get_lists_action},
+                        {"name": "profiles", "command": self.list_profiles},
                         {
                             "name": "get-last-result",
                             "command": self.run_get_last_result,
