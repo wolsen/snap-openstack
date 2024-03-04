@@ -28,6 +28,7 @@ from rich.status import Status
 
 from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import ClusterServiceUnavailableException
+from sunbeam.commands.juju import JujuLoginStep
 from sunbeam.commands.openstack import OPENSTACK_MODEL
 from sunbeam.commands.terraform import TerraformException, TerraformInitStep
 from sunbeam.jobs.common import BaseStep, Result, ResultType, run_plan
@@ -480,6 +481,10 @@ class ValidationPlugin(OpenStackControlPlanePlugin):
         console.print(action_result.get("summary").strip())
 
         if output:
+            # Due to shelling out to the juju cli (rather than using libjuju),
+            # we need to ensure the juju cli is logged in.
+            run_plan([JujuLoginStep(self.deployment.juju_account)], console)
+
             self._copy_file_from_tempest_container(TEMPEST_VALIDATION_RESULT, output)
 
     @click.command()
@@ -504,6 +509,10 @@ class ValidationPlugin(OpenStackControlPlanePlugin):
     )
     def run_get_last_result(self, output: str) -> None:
         """Get last validation result."""
+        # Due to shelling out to the juju cli (rather than using libjuju),
+        # we need to ensure the juju cli is logged in.
+        run_plan([JujuLoginStep(self.deployment.juju_account)], console)
+
         if not self._check_file_exist_in_tempest_container(TEMPEST_VALIDATION_RESULT):
             raise click.ClickException(
                 (
