@@ -95,7 +95,7 @@ PROFILES = {
         Profile(
             name="all",
             help="All tests (very large number, not usually recommended)",
-            params={},
+            params={"regex": ".*"},
         ),
     ]
 }
