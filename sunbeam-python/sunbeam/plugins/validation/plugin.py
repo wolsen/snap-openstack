@@ -15,7 +15,6 @@
 
 import logging
 import subprocess
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -66,8 +65,7 @@ VALIDATION_PLUGIN_DEPLOY_TIMEOUT = (
 SUPPORTED_TEMPEST_CONFIG = set(["schedule"])
 
 
-@dataclass
-class Profile:
+class Profile(pydantic.BaseModel):
     name: str
     help: str
     params: dict[str, str]
@@ -457,6 +455,7 @@ class ValidationPlugin(OpenStackControlPlanePlugin):
         "profile",
         default=DEFAULT_PROFILE.name,
         type=click.Choice(PROFILES.keys()),
+        metavar="[PROFILE]",
     )
     @click.option(
         "-o",
@@ -474,9 +473,9 @@ class ValidationPlugin(OpenStackControlPlanePlugin):
         profile: str,
         output: Optional[str],
     ) -> None:
-        """Run tests against the cloud ("refstack" profile by default).
+        """Run validation tests (default: "refstack" profile).
 
-        PROFILE is the set of tests to run.
+        Arguments: [PROFILE] The set of tests to run (defaults to "refstack").
         For details of available profiles, run `sunbeam validation profiles`.
         """
         action_name = "validate"
