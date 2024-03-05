@@ -93,6 +93,7 @@ from sunbeam.jobs.checks import (
     LocalShareCheck,
     SshKeysConnectedCheck,
     SystemRequirementsCheck,
+    TokenCheck,
     VerifyBootstrappedCheck,
     VerifyFQDNCheck,
     VerifyHypervisorHostnameCheck,
@@ -511,6 +512,7 @@ def join(
     preflight_checks.append(SshKeysConnectedCheck())
     preflight_checks.append(DaemonGroupCheck())
     preflight_checks.append(LocalShareCheck())
+    preflight_checks.append(TokenCheck(name, token))
     if is_compute_node:
         hypervisor_hostname = utils.get_hypervisor_hostname()
         preflight_checks.append(
