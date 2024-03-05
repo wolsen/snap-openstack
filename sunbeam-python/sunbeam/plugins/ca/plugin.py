@@ -18,9 +18,11 @@ import logging
 from typing import List, Optional
 
 import click
+import yaml
 from packaging.version import Version
 from rich.console import Console
 from rich.status import Status
+from rich.table import Table
 
 from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import (
@@ -29,7 +31,16 @@ from sunbeam.clusterd.service import (
 )
 from sunbeam.commands.openstack import OPENSTACK_MODEL
 from sunbeam.jobs import questions
-from sunbeam.jobs.common import BaseStep, Result, ResultType, read_config, run_plan
+from sunbeam.jobs.common import (
+    FORMAT_TABLE,
+    FORMAT_YAML,
+    BaseStep,
+    Result,
+    ResultType,
+    read_config,
+    run_plan,
+    str_presenter,
+)
 from sunbeam.jobs.deployment import Deployment
 from sunbeam.jobs.juju import (
     ActionFailedException,
@@ -59,6 +70,20 @@ def certificate_questions(unit: str, subject: str):
             f"Base64 encoded Certificate for {unit} CSR Unique ID: {subject}",
         ),
     }
+
+
+def get_outstanding_certificate_requests(
+    app: str, model: str, jhelper: JujuHelper
+) -> dict:
+    """Get outstanding certificate requests from manual-tls-certificate operator.
+
+    Returns the result from the action get-outstanding-certificate-requests
+    Raises LeaderNotFoundException, ActionFailedException.
+    """
+    action_cmd = "get-outstanding-certificate-requests"
+    unit = run_sync(jhelper.get_leader_unit(app, model))
+    action_result = run_sync(jhelper.run_action(unit, model, action_cmd))
+    return action_result
 
 
 class ConfigureCAStep(BaseStep):
@@ -97,17 +122,14 @@ class ConfigureCAStep(BaseStep):
         """
         action_cmd = "get-outstanding-certificate-requests"
         try:
-            unit = run_sync(self.jhelper.get_leader_unit(self.app, self.model))
+            action_result = get_outstanding_certificate_requests(
+                self.app, self.model, self.jhelper
+            )
         except LeaderNotFoundException as e:
             LOG.debug(f"Unable to get {self.app} leader")
             return Result(ResultType.FAILED, str(e))
-
-        try:
-            action_result = run_sync(
-                self.jhelper.run_action(unit, self.model, action_cmd)
-            )
         except ActionFailedException as e:
-            LOG.debug(f"Running action {action_cmd} on {unit} failed")
+            LOG.debug(f"Running action {action_cmd} failed")
             return Result(ResultType.FAILED, str(e))
 
         LOG.debug(f"Result from action {action_cmd}: {action_result}")
@@ -285,7 +307,6 @@ class CaTlsPlugin(TlsPluginGroup):
         self.ca_chain = ca_chain
         self.endpoints = endpoints
         super().enable_plugin()
-        console.print("CA plugin enabled")
 
     @click.command()
     def disable_plugin(self):
@@ -329,8 +350,57 @@ class CaTlsPlugin(TlsPluginGroup):
         """Manage CA."""
 
     @click.command()
+    @click.option(
+        "--format",
+        type=click.Choice([FORMAT_TABLE, FORMAT_YAML]),
+        default=FORMAT_TABLE,
+        help="Output format",
+    )
+    def list_outstanding_csrs(self, format: str) -> None:
+        """List outstanding CSRs"""
+        app = CA_APP_NAME
+        model = OPENSTACK_MODEL
+        action_cmd = "get-outstanding-certificate-requests"
+        jhelper = JujuHelper(self.deployment.get_connected_controller())
+        try:
+            action_result = get_outstanding_certificate_requests(app, model, jhelper)
+        except LeaderNotFoundException as e:
+            LOG.debug(f"Unable to get {self.app} leader to print CSRs")
+            raise click.ClickException(str(e))
+        except ActionFailedException as e:
+            LOG.debug(f"Running action {action_cmd} failed")
+            raise click.ClickException(str(e))
+
+        LOG.debug(f"Result from action {action_cmd}: {action_result}")
+        if action_result.get("return-code", 0) > 1:
+            raise click.ClickException(
+                "Unable to get outstanding certificate requests from CA"
+            )
+
+        csrs = {}
+        certs_to_process = json.loads(action_result.get("result")) or {}
+        for record in certs_to_process:
+            unit_name = record.get("unit_name")
+            unit_csrs = record.get("unit_csrs")
+            if unit_name:
+                csrs[unit_name] = unit_csrs
+
+        if format == FORMAT_TABLE:
+            table = Table()
+            table.add_column("Unit name")
+            table.add_column("CSR")
+            for unit, csr in csrs.items():
+                certs = (key.get("certificate_signing_request", "") for key in csr)
+                certs_str = "\n".join(certs)
+                table.add_row(unit, certs_str)
+            console.print(table)
+        elif format == FORMAT_YAML:
+            yaml.add_representer(str, str_presenter)
+            console.print(yaml.dump(csrs))
+
+    @click.command()
     def configure(self) -> None:
-        """Configure CA certs."""
+        """Configure Unit certs."""
         client = self.deployment.get_client()
         try:
             config = read_config(client, CERTIFICATE_PLUGIN_KEY)
@@ -373,7 +443,13 @@ class CaTlsPlugin(TlsPluginGroup):
                 {
                     "init": [{"name": self.group, "command": self.tls_group}],
                     "init.tls": [{"name": self.name, "command": self.ca_group}],
-                    "init.tls.ca": [{"name": "configure", "command": self.configure}],
+                    "init.tls.ca": [
+                        {"name": "unit_certs", "command": self.configure},
+                        {
+                            "name": "list_outstanding_csrs",
+                            "command": self.list_outstanding_csrs,
+                        },
+                    ],
                 }
             )
 

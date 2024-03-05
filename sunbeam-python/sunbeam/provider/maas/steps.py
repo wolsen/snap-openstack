@@ -20,7 +20,6 @@ import logging
 import ssl
 import textwrap
 
-import yaml
 from maas.client import bones
 from rich.console import Console
 from rich.status import Status
@@ -503,16 +502,6 @@ class MachineRequirementsCheck(DiagnosticsCheck):
             f"{self.machine['cores']} cores, {self.machine['memory']}MB RAM",
             machine=self.machine["hostname"],
         )
-
-
-def str_presenter(dumper: yaml.Dumper, data: str) -> yaml.ScalarNode:
-    """Return multiline string as '|' literal block.
-
-    Ref: https://stackoverflow.com/questions/8640959/how-can-i-control-what-scalar-form-pyyaml-uses-for-my-data # noqa E501
-    """
-    if data.count("\n") > 0:
-        return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|")
-    return dumper.represent_scalar("tag:yaml.org,2002:str", data)
 
 
 def _run_check_list(checks: list[DiagnosticsCheck]) -> list[DiagnosticsResult]:
