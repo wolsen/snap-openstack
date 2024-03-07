@@ -58,11 +58,9 @@ dpkg -s openssh-server &> /dev/null || {{
 # of the Juju controller to the local machine via SSH.
 sudo snap connect openstack:ssh-keys
 
-# Add $USER to the snap_daemon group and adopt new permissions
-# supporting interaction with the sunbeam clustering daemon for
-# cluster operations.
+# Add $USER to the snap_daemon group supporting interaction
+# with the sunbeam clustering daemon for cluster operations.
 sudo addgroup $USER snap_daemon
-newgrp snap_daemon
 
 # Generate keypair and set-up prompt-less access to local machine
 [ -f $HOME/.ssh/id_rsa ] || ssh-keygen -b 4096 -f $HOME/.ssh/id_rsa -t rsa -N ""
