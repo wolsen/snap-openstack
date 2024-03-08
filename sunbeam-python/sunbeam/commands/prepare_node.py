@@ -22,9 +22,7 @@ console = Console()
 JUJU_CHANNEL = "3.4/stable"
 SUPPORTED_RELEASE = "jammy"
 
-PREPARE_NODE_TEMPLATE = f"""#!/bin/bash
-
-[ $(lsb_release -sc) != '{SUPPORTED_RELEASE}' ] && \
+PREPARE_NODE_TEMPLATE = f"""[ $(lsb_release -sc) != '{SUPPORTED_RELEASE}' ] && \
 {{ echo 'ERROR: Sunbeam deploy only supported on {SUPPORTED_RELEASE}'; exit 1; }}
 
 # :warning: Node Preparation for OpenStack Sunbeam :warning:
@@ -66,7 +64,9 @@ sudo addgroup $USER snap_daemon
 [ -f $HOME/.ssh/id_rsa ] || ssh-keygen -b 4096 -f $HOME/.ssh/id_rsa -t rsa -N ""
 cat $HOME/.ssh/id_rsa.pub >> $HOME/.ssh/authorized_keys
 ssh-keyscan -H $(hostname --all-ip-addresses) >> $HOME/.ssh/known_hosts
+"""
 
+COMMON_TEMPLATE = f"""
 # Install the Juju snap
 sudo snap install --channel {JUJU_CHANNEL} juju
 
@@ -77,6 +77,17 @@ mkdir -p $HOME/.config/openstack
 
 
 @click.command()
-def prepare_node_script() -> None:
+@click.option(
+    "--client",
+    "-c",
+    is_flag=True,
+    help="Prepare the node for use as a client.",
+    default=False,
+)
+def prepare_node_script(client: bool = False) -> None:
     """Generate script to prepare a node for Sunbeam use."""
-    console.print(PREPARE_NODE_TEMPLATE, soft_wrap=True)
+    script = "#!/bin/bash\n"
+    if not client:
+        script += PREPARE_NODE_TEMPLATE
+    script += COMMON_TEMPLATE
+    console.print(script, soft_wrap=True)
