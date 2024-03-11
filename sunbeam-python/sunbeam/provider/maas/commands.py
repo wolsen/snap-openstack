@@ -36,7 +36,6 @@ from sunbeam.commands.configure import (
     SetHypervisorCharmConfigStep,
     TerraformDemoInitStep,
     UserOpenRCStep,
-    UserQuestions,
     retrieve_admin_credentials,
 )
 from sunbeam.commands.hypervisor import (
@@ -128,6 +127,7 @@ from sunbeam.provider.maas.steps import (
     MaasSaveControllerStep,
     MaasScaleJujuStep,
     MaasSetHypervisorUnitsOptionsStep,
+    MaasUserQuestions,
     MachineComputeNicCheck,
     MachineNetworkCheck,
     MachineRequirementsCheck,
@@ -621,9 +621,9 @@ def configure_cmd(
     )
     plan = [
         JujuLoginStep(deployment.juju_account),
-        UserQuestions(
+        MaasUserQuestions(
             client,
-            answer_file=answer_file,
+            maas_client,
             deployment_preseed=preseed,
             accept_defaults=accept_defaults,
         ),

@@ -17,6 +17,7 @@ import logging
 
 import pydantic
 import snaphelpers
+from rich.console import Console
 
 from sunbeam import utils
 from sunbeam.clusterd.client import Client
@@ -25,8 +26,22 @@ from sunbeam.clusterd.service import (
     ConfigItemNotFoundException,
 )
 from sunbeam.commands.clusterd import CLUSTERD_PORT
+from sunbeam.commands.configure import (
+    CLOUD_CONFIG_SECTION,
+    ext_net_questions,
+    ext_net_questions_local_only,
+    user_questions,
+)
+from sunbeam.commands.juju import BOOTSTRAP_CONFIG_KEY, bootstrap_questions
+from sunbeam.commands.microceph import microceph_questions
+from sunbeam.commands.microk8s import (
+    MICROK8S_ADDONS_CONFIG_KEY,
+    microk8s_addons_questions,
+)
 from sunbeam.jobs.deployment import Deployment
 from sunbeam.jobs.juju import JujuAccount, JujuAccountNotFound, JujuController
+from sunbeam.jobs.plugin import PluginManager
+from sunbeam.jobs.questions import QuestionBank, load_answers, show_questions
 
 LOG = logging.getLogger(__name__)
 LOCAL_TYPE = "local"
@@ -84,3 +99,90 @@ class LocalDeployment(Deployment):
         local_ip = utils.get_local_ip_by_default_route()
         address = f"https://{local_ip}:{CLUSTERD_PORT}"
         return address
+
+    def generate_preseed(self, console: Console) -> str:
+        """Generate preseed for deployment."""
+        fqdn = utils.get_fqdn()
+        client = self.get_client()
+        preseed_content = ["deployment:"]
+        try:
+            variables = load_answers(client, BOOTSTRAP_CONFIG_KEY)
+        except ClusterServiceUnavailableException:
+            variables = {}
+        bootstrap_bank = QuestionBank(
+            questions=bootstrap_questions(),
+            console=console,
+            previous_answers=variables.get("bootstrap", {}),
+        )
+        preseed_content.extend(show_questions(bootstrap_bank, section="bootstrap"))
+        try:
+            variables = load_answers(client, MICROK8S_ADDONS_CONFIG_KEY)
+        except ClusterServiceUnavailableException:
+            variables = {}
+        microk8s_addons_bank = QuestionBank(
+            questions=microk8s_addons_questions(),
+            console=console,
+            previous_answers=variables.get("addons", {}),
+        )
+        preseed_content.extend(show_questions(microk8s_addons_bank, section="addons"))
+
+        try:
+            variables = load_answers(client, CLOUD_CONFIG_SECTION)
+        except ClusterServiceUnavailableException:
+            variables = {}
+        user_bank = QuestionBank(
+            questions=user_questions(),
+            console=console,
+            previous_answers=variables.get("user"),
+        )
+        preseed_content.extend(show_questions(user_bank, section="user"))
+        ext_net_bank_local = QuestionBank(
+            questions=ext_net_questions_local_only(),
+            console=console,
+            previous_answers=variables.get("external_network"),
+        )
+        preseed_content.extend(
+            show_questions(
+                ext_net_bank_local,
+                section="external_network",
+                section_description="Local Access",
+            )
+        )
+        ext_net_bank_remote = QuestionBank(
+            questions=ext_net_questions(),
+            console=console,
+            previous_answers=variables.get("external_network"),
+        )
+        preseed_content.extend(
+            show_questions(
+                ext_net_bank_remote,
+                section="external_network",
+                section_description="Remote Access",
+                comment_out=True,
+            )
+        )
+        microceph_content = []
+        for name, disks in variables.get("microceph_config", {fqdn: ""}).items():
+            microceph_config_bank = QuestionBank(
+                questions=microceph_questions(),
+                console=console,
+                previous_answers=disks,
+            )
+            lines = show_questions(
+                microceph_config_bank,
+                section="microceph_config",
+                subsection=name,
+                section_description="MicroCeph config",
+            )
+            # if there's more than one microceph,
+            # don't rewrite the section and section description
+            if len(microceph_content) < 2:
+                microceph_content.extend(lines)
+            else:
+                microceph_content.extend(lines[2:])
+        preseed_content.extend(microceph_content)
+
+        preseed_content.extend(PluginManager().get_preseed_questions_content(self))
+
+        preseed_content_final = "\n".join(preseed_content)
+        return preseed_content_final
