@@ -38,6 +38,7 @@ from sunbeam.jobs.deployment import Deployment
 from sunbeam.jobs.juju import (
     ActionFailedException,
     ApplicationNotFoundException,
+    CONTROLLER,
     JujuHelper,
     LeaderNotFoundException,
     UnitNotFoundException,
@@ -345,6 +346,8 @@ class ValidationPlugin(OpenStackControlPlanePlugin):
                 [
                     "juju",
                     "ssh",
+                    "--model",
+                    f"{CONTROLLER}:{OPENSTACK_MODEL}",
                     "--container",
                     TEMPEST_CONTAINER_NAME,
                     unit,
@@ -381,6 +384,8 @@ class ValidationPlugin(OpenStackControlPlanePlugin):
                     [
                         "juju",
                         "scp",
+                        "--model",
+                        f"{CONTROLLER}:{OPENSTACK_MODEL}",
                         "--container",
                         TEMPEST_CONTAINER_NAME,
                         f"{unit}:{source}",
