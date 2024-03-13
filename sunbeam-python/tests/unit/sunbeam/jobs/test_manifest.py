@@ -231,6 +231,7 @@ class TestManifest:
         mocker.patch.object(terraform, "Snap", return_value=snap)
         client = Mock()
         client.cluster.get_latest_manifest.return_value = {"data": test_manifest}
+        client.cluster.get_config.return_value = "{}"
         deployment.get_client.return_value = client
         manifest_obj = manifest.Manifest.load_latest_from_clusterdb(
             deployment, include_defaults=True
@@ -252,6 +253,7 @@ class TestManifest:
         mocker.patch.object(terraform, "Snap", return_value=snap)
         client = Mock()
         client.cluster.get_latest_manifest.return_value = {"data": test_manifest}
+        client.cluster.get_config.return_value = "{}"
         deployment.get_client.return_value = client
         manifest_obj = manifest.Manifest.load_latest_from_clusterdb(
             deployment, include_defaults=True
@@ -279,6 +281,7 @@ class TestManifest:
         mocker.patch.object(terraform, "Snap", return_value=snap)
         client = Mock()
         client.cluster.get_latest_manifest.return_value = {"data": test_manifest}
+        client.cluster.get_config.return_value = "{}"
         deployment.get_client.return_value = client
         manifest_obj = manifest.Manifest.load_latest_from_clusterdb(
             deployment, include_defaults=True
@@ -298,6 +301,7 @@ class TestManifest:
         mocker.patch.object(terraform, "Snap", return_value=snap)
         client = Mock()
         client.cluster.get_latest_manifest.return_value = {"data": test_manifest}
+        client.cluster.get_config.return_value = "{}"
         deployment.get_client.return_value = client
         manifest_obj = manifest.Manifest.load_latest_from_clusterdb(
             deployment, include_defaults=False
@@ -332,6 +336,7 @@ class TestManifest:
         mocker.patch.object(terraform, "Snap", return_value=snap)
         client = Mock()
         client.cluster.get_latest_manifest.return_value = {"data": test_manifest}
+        client.cluster.get_config.return_value = "{}"
         deployment.get_client.return_value = client
         manifest_obj = manifest.Manifest.load_latest_from_clusterdb(
             deployment, include_defaults=True

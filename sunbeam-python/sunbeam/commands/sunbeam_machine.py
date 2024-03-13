@@ -43,6 +43,7 @@ class DeploySunbeamMachineApplicationStep(DeployMachineApplicationStep):
         jhelper: JujuHelper,
         model: str,
         refresh: bool = False,
+        proxy_settings: dict = {},
     ):
         super().__init__(
             client,
@@ -56,9 +57,19 @@ class DeploySunbeamMachineApplicationStep(DeployMachineApplicationStep):
             "Deploying Sunbeam Machine",
             refresh,
         )
+        self.proxy_settings = proxy_settings
 
     def get_application_timeout(self) -> int:
         return SUNBEAM_MACHINE_APP_TIMEOUT
+
+    def extra_tfvars(self) -> dict:
+        return {
+            "charm_config": {
+                "http_proxy": self.proxy_settings.get("HTTP_PROXY", ""),
+                "https_proxy": self.proxy_settings.get("HTTPS_PROXY", ""),
+                "no_proxy": self.proxy_settings.get("NO_PROXY", ""),
+            }
+        }
 
 
 class AddSunbeamMachineUnitsStep(AddMachineUnitsStep):

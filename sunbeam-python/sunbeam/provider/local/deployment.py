@@ -38,10 +38,11 @@ from sunbeam.commands.microk8s import (
     MICROK8S_ADDONS_CONFIG_KEY,
     microk8s_addons_questions,
 )
-from sunbeam.jobs.deployment import Deployment
+from sunbeam.jobs.deployment import PROXY_CONFIG_KEY, Deployment
 from sunbeam.jobs.juju import JujuAccount, JujuAccountNotFound, JujuController
 from sunbeam.jobs.plugin import PluginManager
 from sunbeam.jobs.questions import QuestionBank, load_answers, show_questions
+from sunbeam.jobs.steps import proxy_questions
 
 LOG = logging.getLogger(__name__)
 LOCAL_TYPE = "local"
@@ -105,6 +106,25 @@ class LocalDeployment(Deployment):
         fqdn = utils.get_fqdn()
         client = self.get_client()
         preseed_content = ["deployment:"]
+        try:
+            variables = load_answers(client, PROXY_CONFIG_KEY)
+        except ClusterServiceUnavailableException:
+            default_proxy_settings = self.get_default_proxy_settings()
+            default_proxy_settings = {
+                k.lower(): v for k, v in default_proxy_settings.items() if v
+            }
+            variables = {"proxy": {}}
+
+            variables["proxy"]["proxy_required"] = (
+                True if default_proxy_settings else False
+            )
+            variables["proxy"].update(default_proxy_settings)
+        proxy_bank = QuestionBank(
+            questions=proxy_questions(),
+            console=console,
+            previous_answers=variables.get("proxy", {}),
+        )
+        preseed_content.extend(show_questions(proxy_bank, section="proxy"))
         try:
             variables = load_answers(client, BOOTSTRAP_CONFIG_KEY)
         except ClusterServiceUnavailableException:
@@ -186,3 +206,14 @@ class LocalDeployment(Deployment):
 
         preseed_content_final = "\n".join(preseed_content)
         return preseed_content_final
+
+    def get_default_proxy_settings(self) -> dict:
+        """Return default proxy settings"""
+        with open("/etc/environment", mode="r", encoding="utf-8") as file:
+            current_env = dict(
+                line.strip().split("=", 1) for line in file if "=" in line
+            )
+
+        proxy_configs = ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"]
+        proxy = {p: v for p in proxy_configs if (v := current_env.get(p))}
+        return proxy

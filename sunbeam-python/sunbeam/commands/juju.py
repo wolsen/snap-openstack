@@ -425,6 +425,7 @@ class BootstrapJujuStep(BaseStep, JujuStepHelper):
         controller: str,
         bootstrap_args: list[str] | None = None,
         deployment_preseed: dict | None = None,
+        proxy_settings: dict = {},
         accept_defaults: bool = False,
     ):
         super().__init__("Bootstrap Juju", "Bootstrapping Juju onto machine")
@@ -435,6 +436,7 @@ class BootstrapJujuStep(BaseStep, JujuStepHelper):
         self.controller = controller
         self.bootstrap_args = bootstrap_args or []
         self.preseed = deployment_preseed or {}
+        self.proxy_settings = proxy_settings
         self.accept_defaults = accept_defaults
         self.juju_clouds = []
 
@@ -515,6 +517,25 @@ class BootstrapJujuStep(BaseStep, JujuStepHelper):
             ]
             cmd.extend(self.bootstrap_args)
             cmd.extend([self.cloud, self.controller])
+            if "HTTP_PROXY" in self.proxy_settings:
+                cmd.extend(
+                    [
+                        "--config",
+                        f"juju-http-proxy={self.proxy_settings.get('HTTP_PROXY')}",
+                    ]
+                )
+            if "HTTPS_PROXY" in self.proxy_settings:
+                cmd.extend(
+                    [
+                        "--config",
+                        f"juju-https-proxy={self.proxy_settings.get('HTTPS_PROXY')}",
+                    ]
+                )
+            if "NO_PROXY" in self.proxy_settings:
+                cmd.extend(
+                    ["--config", f"juju-no-proxy={self.proxy_settings.get('NO_PROXY')}"]
+                )
+
             hidden_cmd = []
             for arg in cmd:
                 if "admin-secret" in arg:
@@ -522,7 +543,11 @@ class BootstrapJujuStep(BaseStep, JujuStepHelper):
                     arg = "=".join((option, "********"))
                 hidden_cmd.append(arg)
             LOG.debug(f'Running command {" ".join(hidden_cmd)}')
-            process = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            env = os.environ.copy()
+            env.update(self.proxy_settings)
+            process = subprocess.run(
+                cmd, capture_output=True, text=True, check=True, env=env
+            )
             LOG.debug(
                 f"Command finished. stdout={process.stdout}, stderr={process.stderr}"
             )
