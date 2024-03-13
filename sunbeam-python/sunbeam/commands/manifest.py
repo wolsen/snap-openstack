@@ -23,113 +23,18 @@ import yaml
 from rich.console import Console
 from rich.table import Table
 
-from sunbeam import utils
-from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import (
     ClusterServiceUnavailableException,
     ManifestItemNotFoundException,
-)
-from sunbeam.commands.configure import (
-    CLOUD_CONFIG_SECTION,
-    ext_net_questions,
-    ext_net_questions_local_only,
-    user_questions,
-)
-from sunbeam.commands.juju import BOOTSTRAP_CONFIG_KEY, bootstrap_questions
-from sunbeam.commands.microceph import microceph_questions
-from sunbeam.commands.microk8s import (
-    MICROK8S_ADDONS_CONFIG_KEY,
-    microk8s_addons_questions,
 )
 from sunbeam.jobs.checks import DaemonGroupCheck, VerifyBootstrappedCheck
 from sunbeam.jobs.common import FORMAT_TABLE, FORMAT_YAML, run_preflight_checks
 from sunbeam.jobs.deployment import Deployment
 from sunbeam.jobs.manifest import Manifest
-from sunbeam.jobs.plugin import PluginManager
-from sunbeam.jobs.questions import QuestionBank, load_answers, show_questions
 from sunbeam.utils import asdict_with_extra_fields
 
 LOG = logging.getLogger(__name__)
 console = Console()
-
-
-def generate_deployment_preseed(client: Client) -> str:
-    """Generate deployment preseed section."""
-    name = utils.get_fqdn()
-    preseed_content = ["deployment:"]
-    try:
-        variables = load_answers(client, BOOTSTRAP_CONFIG_KEY)
-    except ClusterServiceUnavailableException:
-        variables = {}
-    bootstrap_bank = QuestionBank(
-        questions=bootstrap_questions(),
-        console=console,
-        previous_answers=variables.get("bootstrap", {}),
-    )
-    preseed_content.extend(show_questions(bootstrap_bank, section="bootstrap"))
-    try:
-        variables = load_answers(client, MICROK8S_ADDONS_CONFIG_KEY)
-    except ClusterServiceUnavailableException:
-        variables = {}
-    microk8s_addons_bank = QuestionBank(
-        questions=microk8s_addons_questions(),
-        console=console,
-        previous_answers=variables.get("addons", {}),
-    )
-    preseed_content.extend(show_questions(microk8s_addons_bank, section="addons"))
-    user_bank = QuestionBank(
-        questions=user_questions(),
-        console=console,
-        previous_answers=variables.get("user"),
-    )
-    try:
-        variables = load_answers(client, CLOUD_CONFIG_SECTION)
-    except ClusterServiceUnavailableException:
-        variables = {}
-    preseed_content.extend(show_questions(user_bank, section="user"))
-    ext_net_bank_local = QuestionBank(
-        questions=ext_net_questions_local_only(),
-        console=console,
-        previous_answers=variables.get("external_network"),
-    )
-    preseed_content.extend(
-        show_questions(
-            ext_net_bank_local,
-            section="external_network",
-            section_description="Local Access",
-        )
-    )
-    ext_net_bank_remote = QuestionBank(
-        questions=ext_net_questions(),
-        console=console,
-        previous_answers=variables.get("external_network"),
-    )
-    preseed_content.extend(
-        show_questions(
-            ext_net_bank_remote,
-            section="external_network",
-            section_description="Remote Access",
-            comment_out=True,
-        )
-    )
-    microceph_config_bank = QuestionBank(
-        questions=microceph_questions(),
-        console=console,
-        previous_answers=variables.get("microceph_config", {}).get(name),
-    )
-    preseed_content.extend(
-        show_questions(
-            microceph_config_bank,
-            section="microceph_config",
-            subsection=name,
-            section_description="MicroCeph config",
-        )
-    )
-
-    preseed_content.extend(PluginManager().get_preseed_questions_content(client))
-
-    preseed_content_final = "\n".join(preseed_content)
-    return preseed_content_final
 
 
 def generate_software_manifest(manifest: Manifest) -> str:
@@ -245,7 +150,6 @@ def generate(
     configuration.
     """
     deployment: Deployment = ctx.obj
-    client = deployment.get_client()
 
     if not manifest_file:
         home = os.environ.get("SNAP_REAL_HOME")
@@ -255,17 +159,17 @@ def generate(
     manifest_file.parent.mkdir(mode=0o775, parents=True, exist_ok=True)
 
     try:
+        client = deployment.get_client()
         preflight_checks = [DaemonGroupCheck(), VerifyBootstrappedCheck(client)]
         run_preflight_checks(preflight_checks, console)
         manifest_obj = Manifest.load_latest_from_clusterdb(
             deployment, include_defaults=True
         )
-    except (click.ClickException, ClusterServiceUnavailableException) as e:
-        LOG.debug(e)
-        LOG.debug("Fallback to generating manifest with defaults")
+    except (click.ClickException, ClusterServiceUnavailableException, ValueError):
+        LOG.debug("Fallback to generating manifest with defaults", exc_info=True)
         manifest_obj = Manifest.get_default_manifest(deployment)
 
-    preseed_content = generate_deployment_preseed(client)
+    preseed_content = deployment.generate_preseed(console)
     software_content = generate_software_manifest(manifest_obj)
 
     try:

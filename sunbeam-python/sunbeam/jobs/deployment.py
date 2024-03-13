@@ -84,3 +84,7 @@ class Deployment(pydantic.BaseModel):
                 f"No juju controller configured for deployment {self.name}."
             )
         return self.juju_controller.to_controller(self.juju_account)
+
+    def generate_preseed(self, console) -> str:
+        """Generate preseed for deployment."""
+        return NotImplemented

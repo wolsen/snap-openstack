@@ -19,7 +19,15 @@ from typing import Type, TypeGuard
 import pydantic
 
 from sunbeam.clusterd.client import Client
+from sunbeam.clusterd.service import ClusterServiceUnavailableException
+from sunbeam.commands.configure import (
+    CLOUD_CONFIG_SECTION,
+    ext_net_questions,
+    user_questions,
+)
 from sunbeam.jobs.deployment import Deployment
+from sunbeam.jobs.plugin import PluginManager
+from sunbeam.jobs.questions import Question, QuestionBank, load_answers, show_questions
 
 MAAS_TYPE = "maas"
 MAAS_PUBLIC_IP_RANGE = "sunbeam-public-api"
@@ -146,7 +154,64 @@ class MaasDeployment(Deployment):
             raise ValueError("Clusterd address not set.")
         return self.clusterd_address
 
+    def generate_preseed(self, console) -> str:
+        """Generate preseed for deployment."""
+        try:
+            client = self.get_client()
+        except ValueError:
+            client = None
+
+        # to avoid circular import
+        from sunbeam.provider.maas.client import MaasClient
+
+        maas_client = MaasClient.from_deployment(self)
+
+        preseed_content = ["deployment:"]
+
+        variables = {}
+        try:
+            if client is not None:
+                variables = load_answers(client, CLOUD_CONFIG_SECTION)
+        except ClusterServiceUnavailableException:
+            pass
+        user_bank = QuestionBank(
+            questions=maas_user_questions(maas_client),
+            console=console,
+            previous_answers=variables.get("user"),
+        )
+        preseed_content.extend(show_questions(user_bank, section="user"))
+        ext_net_bank_remote = QuestionBank(
+            questions=ext_net_questions(),
+            console=console,
+            previous_answers=variables.get("external_network"),
+        )
+        preseed_content.extend(
+            show_questions(
+                ext_net_bank_remote,
+                section="external_network",
+                section_description="Remote Access",
+                comment_out=True,
+            )
+        )
+
+        preseed_content.extend(PluginManager().get_preseed_questions_content(self))
+
+        preseed_content_final = "\n".join(preseed_content)
+        return preseed_content_final
+
 
 def is_maas_deployment(deployment: Deployment) -> TypeGuard[MaasDeployment]:
     """Check if deployment is a MAAS deployment."""
     return isinstance(deployment, MaasDeployment)
+
+
+def maas_user_questions(
+    maas_client: "sunbeam.provider.maas.client.MaasClient",
+) -> dict[str, Question]:
+    questions = user_questions()
+    questions["nameservers"].default_function = lambda: " ".join(
+        maas_client.get_dns_servers()
+    )
+    # On MAAS, access is always remote
+    questions.pop("remote_access_location", None)
+    return questions

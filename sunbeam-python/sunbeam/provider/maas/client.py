@@ -110,6 +110,10 @@ class MaasClient:
                 ip_ranges.append(ip_range._data)
         return ip_ranges
 
+    def get_dns_servers(self) -> list[str]:
+        """Get configured upstream dns"""
+        return self._client.maas.get_upstream_dns()  # type: ignore
+
     @classmethod
     def from_deployment(cls, deployment: Deployment) -> "MaasClient":
         """Return client connected to active deployment."""

@@ -16,6 +16,7 @@
 import ast
 import builtins
 import copy
+import ipaddress
 import logging
 import ssl
 import textwrap
@@ -26,11 +27,17 @@ from rich.status import Status
 
 import sunbeam.commands.microceph as microceph
 import sunbeam.commands.microk8s as microk8s
+import sunbeam.jobs.questions
 import sunbeam.provider.maas.client as maas_client
 import sunbeam.provider.maas.deployment as maas_deployment
 from sunbeam.clusterd.client import Client
 from sunbeam.commands.clusterd import APPLICATION as CLUSTERD_APPLICATION
-from sunbeam.commands.configure import SetHypervisorUnitsOptionsStep
+from sunbeam.commands.configure import (
+    CLOUD_CONFIG_SECTION,
+    VARIABLE_DEFAULTS,
+    SetHypervisorUnitsOptionsStep,
+    ext_net_questions,
+)
 from sunbeam.commands.juju import (
     BootstrapJujuStep,
     ControllerNotFoundException,
@@ -1652,4 +1659,118 @@ class MaasSetHypervisorUnitsOptionsStep(SetHypervisorUnitsOptionsStep):
                 )
 
         self.nics = nics
+        return Result(ResultType.COMPLETED)
+
+
+class MaasUserQuestions(BaseStep):
+    """Ask user configuration questions."""
+
+    def __init__(
+        self,
+        client: Client,
+        maas_client: maas_client.MaasClient,
+        deployment_preseed: dict | None = None,
+        accept_defaults: bool = False,
+    ):
+        super().__init__(
+            "Collect cloud configuration", "Collecting cloud configuration"
+        )
+        self.client = client
+        self.maas_client = maas_client
+        self.accept_defaults = accept_defaults
+        self.preseed = deployment_preseed or {}
+
+    def has_prompts(self) -> bool:
+        return True
+
+    def prompt(self, console: Console | None = None) -> None:
+        """Prompt the user for basic cloud configuration.
+
+        Prompts the user for required information for cloud configuration.
+
+        :param console: the console to prompt on
+        :type console: rich.console.Console (Optional)
+        """
+        self.variables = sunbeam.jobs.questions.load_answers(
+            self.client, CLOUD_CONFIG_SECTION
+        )
+        for section in ["user", "external_network"]:
+            if not self.variables.get(section):
+                self.variables[section] = {}
+
+        user_bank = sunbeam.jobs.questions.QuestionBank(
+            questions=maas_deployment.maas_user_questions(self.maas_client),
+            console=console,
+            preseed=self.preseed.get("user"),
+            previous_answers=self.variables.get("user"),
+            accept_defaults=self.accept_defaults,
+        )
+        self.variables["user"][
+            "remote_access_location"
+        ] = user_bank.remote_access_location.ask()
+        # External Network Configuration
+        ext_net_bank = sunbeam.jobs.questions.QuestionBank(
+            questions=ext_net_questions(),
+            console=console,
+            preseed=self.preseed.get("external_network"),
+            previous_answers=self.variables.get("external_network"),
+            accept_defaults=self.accept_defaults,
+        )
+        self.variables["external_network"]["cidr"] = ext_net_bank.cidr.ask()
+        external_network = ipaddress.ip_network(
+            self.variables["external_network"]["cidr"]
+        )
+        external_network_hosts = list(external_network.hosts())
+        default_gateway = self.variables["external_network"].get("gateway") or str(
+            external_network_hosts[0]
+        )
+        self.variables["external_network"]["gateway"] = ext_net_bank.gateway.ask(
+            new_default=default_gateway
+        )
+
+        default_allocation_range_start = self.variables["external_network"].get(
+            "start"
+        ) or str(external_network_hosts[1])
+        self.variables["external_network"]["start"] = ext_net_bank.start.ask(
+            new_default=default_allocation_range_start
+        )
+        default_allocation_range_end = self.variables["external_network"].get(
+            "end"
+        ) or str(external_network_hosts[-1])
+        self.variables["external_network"]["end"] = ext_net_bank.end.ask(
+            new_default=default_allocation_range_end
+        )
+
+        self.variables["external_network"]["physical_network"] = VARIABLE_DEFAULTS[
+            "external_network"
+        ]["physical_network"]
+
+        self.variables["external_network"][
+            "network_type"
+        ] = ext_net_bank.network_type.ask()
+        if self.variables["external_network"]["network_type"] == "vlan":
+            self.variables["external_network"][
+                "segmentation_id"
+            ] = ext_net_bank.segmentation_id.ask()
+        else:
+            self.variables["external_network"]["segmentation_id"] = 0
+
+        self.variables["user"]["run_demo_setup"] = user_bank.run_demo_setup.ask()
+        if self.variables["user"]["run_demo_setup"]:
+            # User configuration
+            self.variables["user"]["username"] = user_bank.username.ask()
+            self.variables["user"]["password"] = user_bank.password.ask()
+            self.variables["user"]["cidr"] = user_bank.cidr.ask()
+            self.variables["user"][
+                "dns_nameservers"
+            ] = user_bank.nameservers.ask().split()
+            self.variables["user"][
+                "security_group_rules"
+            ] = user_bank.security_group_rules.ask()
+
+        sunbeam.jobs.questions.write_answers(
+            self.client, CLOUD_CONFIG_SECTION, self.variables
+        )
+
+    def run(self, status: Status | None = None) -> Result:
         return Result(ResultType.COMPLETED)
