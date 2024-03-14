@@ -36,9 +36,9 @@ from sunbeam.commands.terraform import TerraformException, TerraformInitStep
 from sunbeam.jobs.common import BaseStep, Result, ResultType, run_plan
 from sunbeam.jobs.deployment import Deployment
 from sunbeam.jobs.juju import (
+    CONTROLLER,
     ActionFailedException,
     ApplicationNotFoundException,
-    CONTROLLER,
     JujuHelper,
     LeaderNotFoundException,
     UnitNotFoundException,

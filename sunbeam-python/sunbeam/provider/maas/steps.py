@@ -754,10 +754,10 @@ class IpRangesCheck(DiagnosticsCheck):
         )
 
         public_ip_ranges = self._get_ranges_for_label(
-            public_subnet_ranges, maas_deployment.MAAS_PUBLIC_IP_RANGE
+            public_subnet_ranges, self.deployment.public_api_label
         )
         internal_ip_ranges = self._get_ranges_for_label(
-            internal_subnet_ranges, maas_deployment.MAAS_INTERNAL_IP_RANGE
+            internal_subnet_ranges, self.deployment.internal_api_label
         )
         if len(public_ip_ranges) == 0:
             return DiagnosticsResult.fail(
@@ -766,7 +766,7 @@ class IpRangesCheck(DiagnosticsCheck):
                 self._missing_range_diagnostic.format(
                     space=public_space,
                     network=maas_deployment.Networks.PUBLIC.value,
-                    label=maas_deployment.MAAS_PUBLIC_IP_RANGE,
+                    label=self.deployment.public_api_label,
                 ),
             )
 
@@ -777,7 +777,7 @@ class IpRangesCheck(DiagnosticsCheck):
                 self._missing_range_diagnostic.format(
                     space=internal_space,
                     network=maas_deployment.Networks.INTERNAL.value,
-                    label=maas_deployment.MAAS_INTERNAL_IP_RANGE,
+                    label=self.deployment.internal_api_label,
                 ),
             )
 
@@ -1490,7 +1490,9 @@ class MaasDeployMicrok8sApplicationStep(microk8s.DeployMicrok8sApplicationStep):
         manifest: Manifest,
         jhelper: JujuHelper,
         public_space: str,
+        public_label: str,
         internal_space: str,
+        internal_label: str,
         model: str,
         deployment_preseed: dict | None = None,
         accept_defaults: bool = False,
@@ -1505,7 +1507,9 @@ class MaasDeployMicrok8sApplicationStep(microk8s.DeployMicrok8sApplicationStep):
         )
         self.maas_client = maas_client
         self.public_space = public_space
+        self.public_label = public_label
         self.internal_space = internal_space
+        self.internal_label = internal_label
         self.ranges = None
 
     def extra_tfvars(self) -> dict:
@@ -1557,12 +1561,12 @@ class MaasDeployMicrok8sApplicationStep(microk8s.DeployMicrok8sApplicationStep):
             return Result(ResultType.FAILED, str(e))
         try:
             public_metallb_range = self._to_joined_range(
-                public_ranges, maas_deployment.MAAS_PUBLIC_IP_RANGE
+                public_ranges, self.public_label
             )
         except ValueError:
             LOG.debug(
                 "No iprange with label %r found",
-                maas_deployment.MAAS_PUBLIC_IP_RANGE,
+                self.public_label,
                 exc_info=True,
             )
             return Result(ResultType.FAILED, "No public ip range found")
@@ -1582,12 +1586,12 @@ class MaasDeployMicrok8sApplicationStep(microk8s.DeployMicrok8sApplicationStep):
             # TODO(gboutry): use this range when cni (or sunbeam) easily supports
             # using different ip pools
             internal_metallb_range = self._to_joined_range(  # noqa
-                internal_ranges, maas_deployment.MAAS_INTERNAL_IP_RANGE
+                internal_ranges, self.internal_label
             )
         except ValueError:
             LOG.debug(
                 "No iprange with label %r found",
-                maas_deployment.MAAS_PUBLIC_IP_RANGE,
+                self.internal_label,
                 exc_info=True,
             )
             return Result(ResultType.FAILED, "No internal ip range found")
