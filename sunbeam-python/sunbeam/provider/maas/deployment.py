@@ -30,8 +30,6 @@ from sunbeam.jobs.plugin import PluginManager
 from sunbeam.jobs.questions import Question, QuestionBank, load_answers, show_questions
 
 MAAS_TYPE = "maas"
-MAAS_PUBLIC_IP_RANGE = "sunbeam-public-api"
-MAAS_INTERNAL_IP_RANGE = "sunbeam-internal-api"
 
 
 class Networks(enum.Enum):
@@ -116,6 +114,16 @@ class MaasDeployment(Deployment):
     def controller(self) -> str:
         """Return controller name."""
         return self.name + "-controller"
+
+    @property
+    def public_api_label(self) -> str:
+        """Return public API label."""
+        return self.resource_pool + "-public-api"
+
+    @property
+    def internal_api_label(self) -> str:
+        """Return internal API label."""
+        return self.resource_pool + "-internal-api"
 
     @pydantic.validator("type")
     def type_validator(cls, v: str, values: dict) -> str:

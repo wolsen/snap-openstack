@@ -22,8 +22,6 @@ from maas.client.bones import CallError
 from sunbeam.jobs.deployments import DeploymentsConfig
 from sunbeam.jobs.juju import ControllerNotFoundException
 from sunbeam.provider.maas.deployment import (
-    MAAS_INTERNAL_IP_RANGE,
-    MAAS_PUBLIC_IP_RANGE,
     MaasDeployment,
     Networks,
     NicTags,
@@ -509,13 +507,14 @@ class TestIpRangesCheck:
             },
             **{Networks.PUBLIC.value: "public_space"},
         }
+        deployment.public_api_label = "public_api"
         get_ip_ranges_from_space_mock = mocker.patch(
             "sunbeam.provider.maas.client.get_ip_ranges_from_space", return_value={}
         )
         check = IpRangesCheck(client, deployment)
         result = check.run()
         assert result.passed is False
-        assert result.diagnostics and MAAS_PUBLIC_IP_RANGE in result.diagnostics
+        assert result.diagnostics and deployment.public_api_label in result.diagnostics
         get_ip_ranges_from_space_mock.assert_any_call(client, "public_space")
 
     def test_run_with_missing_internal_ip_ranges(self, mocker):
@@ -529,13 +528,15 @@ class TestIpRangesCheck:
             },
             **{Networks.INTERNAL.value: "internal_space"},
         }
+        deployment.public_api_label = "public_api"
+        deployment.internal_api_label = "internal_api"
 
         public_ip_ranges = {
             "any_cidr": [
                 {
                     "start": "192.168.0.1",
                     "end": "192.168.0.10",
-                    "label": MAAS_PUBLIC_IP_RANGE,
+                    "label": "public_api",
                 },
             ]
         }
@@ -547,7 +548,9 @@ class TestIpRangesCheck:
         check = IpRangesCheck(client, deployment)
         result = check.run()
         assert result.passed is False
-        assert result.diagnostics and MAAS_INTERNAL_IP_RANGE in result.diagnostics
+        assert (
+            result.diagnostics and deployment.internal_api_label in result.diagnostics
+        )
         get_ip_ranges_from_space_mock.assert_any_call(client, "internal_space")
 
     def test_run_with_successful_check(self, mocker):
@@ -562,13 +565,15 @@ class TestIpRangesCheck:
                 if network not in (Networks.PUBLIC, Networks.INTERNAL)
             },
         }
+        deployment.public_api_label = "public_api"
+        deployment.internal_api_label = "internal_api"
 
         public_ip_ranges = {
             "192.168.0.0/24": [
                 {
                     "start": "192.168.0.1",
                     "end": "192.168.0.10",
-                    "label": MAAS_PUBLIC_IP_RANGE,
+                    "label": "public_api",
                 }
             ]
         }
@@ -577,7 +582,7 @@ class TestIpRangesCheck:
                 {
                     "start": "10.0.0.1",
                     "end": "10.0.0.10",
-                    "label": MAAS_INTERNAL_IP_RANGE,
+                    "label": "internal_api",
                 }
             ]
         }
@@ -1099,7 +1104,9 @@ class TestMaasDeployMicrok8sApplicationStep:
             MagicMock(),
             MagicMock(),
             "public_space",
+            "public_api",
             "internal_space",
+            "internal_api",
             "test-model",
         )
         with pytest.raises(ValueError):
@@ -1112,7 +1119,9 @@ class TestMaasDeployMicrok8sApplicationStep:
             MagicMock(),
             MagicMock(),
             "public_space",
+            "public_api",
             "internal_space",
+            "internal_api",
             "test-model",
         )
         step.ranges = "10.0.0.1-10.0.0.10,10.0.0.20-10.0.0.30"
@@ -1136,7 +1145,9 @@ class TestMaasDeployMicrok8sApplicationStep:
             MagicMock(),
             MagicMock(),
             "public_space",
+            "public_api",
             "internal_space",
+            "internal_api",
             "test-model",
         )
         result = step.is_skip()
@@ -1154,7 +1165,9 @@ class TestMaasDeployMicrok8sApplicationStep:
             MagicMock(),
             MagicMock(),
             "public_space",
+            "public_api",
             "internal_space",
+            "internal_api",
             "test-model",
         )
         result = step.is_skip()
@@ -1170,7 +1183,7 @@ class TestMaasDeployMicrok8sApplicationStep:
                         {
                             "start": "10.0.0.10",
                             "end": "10.0.0.20",
-                            "label": MAAS_PUBLIC_IP_RANGE,
+                            "label": "public_api",
                         }
                     ]
                 },
@@ -1183,7 +1196,9 @@ class TestMaasDeployMicrok8sApplicationStep:
             MagicMock(),
             MagicMock(),
             "public_space",
+            "public_api",
             "internal_space",
+            "internal_api",
             "test-model",
         )
         result = step.is_skip()
@@ -1199,7 +1214,7 @@ class TestMaasDeployMicrok8sApplicationStep:
                         {
                             "start": "10.0.0.10",
                             "end": "10.0.0.20",
-                            "label": MAAS_PUBLIC_IP_RANGE,
+                            "label": "public_api",
                         }
                     ]
                 },
@@ -1212,7 +1227,9 @@ class TestMaasDeployMicrok8sApplicationStep:
             MagicMock(),
             MagicMock(),
             "public_space",
+            "public_api",
             "internal_space",
+            "internal_api",
             "test-model",
         )
         result = step.is_skip()
