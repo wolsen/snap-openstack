@@ -30,6 +30,7 @@ import sunbeam.commands.microk8s as microk8s
 import sunbeam.jobs.questions
 import sunbeam.provider.maas.client as maas_client
 import sunbeam.provider.maas.deployment as maas_deployment
+import sunbeam.utils as sunbeam_utils
 from sunbeam.clusterd.client import Client
 from sunbeam.commands.clusterd import APPLICATION as CLUSTERD_APPLICATION
 from sunbeam.commands.configure import (
@@ -1709,9 +1710,7 @@ class MaasUserQuestions(BaseStep):
             previous_answers=self.variables.get("user"),
             accept_defaults=self.accept_defaults,
         )
-        self.variables["user"][
-            "remote_access_location"
-        ] = user_bank.remote_access_location.ask()
+        self.variables["user"]["remote_access_location"] = sunbeam_utils.REMOTE_ACCESS
         # External Network Configuration
         ext_net_bank = sunbeam.jobs.questions.QuestionBank(
             questions=ext_net_questions(),
