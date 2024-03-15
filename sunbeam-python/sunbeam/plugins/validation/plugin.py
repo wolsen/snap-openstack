@@ -199,6 +199,7 @@ class ConfigureValidationStep(BaseStep):
         manifest: Manifest,
         tfplan: str,
         tfvar_map: dict,
+        tfvar_config: str,
     ):
         super().__init__(
             "Configure validation plugin",
@@ -209,6 +210,7 @@ class ConfigureValidationStep(BaseStep):
         self.manifest = manifest
         self.tfplan = tfplan
         self.tfvar_map = tfvar_map
+        self.tfvar_config = tfvar_config
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Execute step using terraform."""
@@ -223,7 +225,10 @@ class ConfigureValidationStep(BaseStep):
                     tempest_k8s_config_var: {"schedule": self.config_changes.schedule}
                 }
             self.manifest.update_tfvars_and_apply_tf(
-                self.client, tfplan=self.tfplan, override_tfvars=override_tfvars
+                self.client,
+                tfplan=self.tfplan,
+                tfvar_config=self.tfvar_config,
+                override_tfvars=override_tfvars,
             )
         except TerraformException as e:
             LOG.exception("Error configuring validation pluging.")
@@ -450,6 +455,7 @@ class ValidationPlugin(OpenStackControlPlanePlugin):
                     self.manifest,
                     self.tfplan,
                     self.manifest_attributes_tfvar_map(),
+                    self.get_tfvar_config_key(),
                 ),
             ],
             console,
