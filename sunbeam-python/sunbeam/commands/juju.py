@@ -1399,3 +1399,28 @@ class AddInfrastructureModelStep(BaseStep):
             return Result(ResultType.COMPLETED)
         except Exception as e:
             return Result(ResultType.FAILED, str(e))
+
+
+class UpdateJujuModelConfigStep(BaseStep):
+    """Update Model Config for the given models"""
+
+    def __init__(self, jhelper: JujuHelper, model: str, model_configs: dict):
+        super().__init__("Update Model Config", f"Updating model config for {model}")
+        self.jhelper = jhelper
+        self.model = model
+        self.model_configs = model_configs
+
+    def run(self, status: Optional["Status"] = None) -> Result:
+        """Run the step to completion.
+
+        Invoked when the step is run and returns a ResultType to indicate
+
+        :return:
+        """
+        try:
+            run_sync(self.jhelper.set_model_config(self.model, self.model_configs))
+        except ModelNotFoundException as e:
+            message = f"Update Model config on controller failed: {str(e)}"
+            return Result(ResultType.FAILED, message)
+
+        return Result(ResultType.COMPLETED)

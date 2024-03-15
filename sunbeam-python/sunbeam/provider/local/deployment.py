@@ -38,11 +38,11 @@ from sunbeam.commands.microk8s import (
     MICROK8S_ADDONS_CONFIG_KEY,
     microk8s_addons_questions,
 )
+from sunbeam.commands.proxy import proxy_questions
 from sunbeam.jobs.deployment import PROXY_CONFIG_KEY, Deployment
 from sunbeam.jobs.juju import JujuAccount, JujuAccountNotFound, JujuController
 from sunbeam.jobs.plugin import PluginManager
 from sunbeam.jobs.questions import QuestionBank, load_answers, show_questions
-from sunbeam.jobs.steps import proxy_questions
 
 LOG = logging.getLogger(__name__)
 LOCAL_TYPE = "local"

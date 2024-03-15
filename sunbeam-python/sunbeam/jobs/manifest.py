@@ -336,6 +336,7 @@ class Manifest:
         charms: List[str],
         tfplan: str,
         tfvar_config: Optional[str] = None,
+        tf_apply_extra_args: list | None = None,
     ) -> None:
         """Updates tfvars for specific charms and apply the plan."""
         current_tfvars = {}
@@ -359,7 +360,7 @@ class Manifest:
         tfhelper = self.get_tfhelper(tfplan)
         tfhelper.write_tfvars(updated_tfvars)
         LOG.debug(f"Applying plan {tfplan} with tfvars {updated_tfvars}")
-        tfhelper.apply()
+        tfhelper.apply(tf_apply_extra_args)
 
     def update_tfvars_and_apply_tf(
         self,
@@ -367,6 +368,7 @@ class Manifest:
         tfplan: str,
         tfvar_config: Optional[str] = None,
         override_tfvars: dict = {},
+        tf_apply_extra_args: list | None = None,
     ) -> None:
         """Updates terraform vars and Apply the terraform.
 
@@ -382,6 +384,8 @@ class Manifest:
         :type tfvar_config: str or None
         :param override_tfvars: Terraform vars to override
         :type override_tfvars: dict
+        :param tf_apply_extra_args: Extra args to terraform apply command
+        :type tf_apply_extra_args: list or None
         """
         current_tfvars = None
         updated_tfvars = {}
@@ -408,7 +412,7 @@ class Manifest:
         tfhelper = self.get_tfhelper(tfplan)
         tfhelper.write_tfvars(updated_tfvars)
         LOG.debug(f"Applying plan {tfplan} with tfvars {updated_tfvars}")
-        tfhelper.apply()
+        tfhelper.apply(tf_apply_extra_args)
 
     def _get_tfvars(self, tfplan: str, charms: Optional[list] = None) -> dict:
         """Get tfvars from the manifest.

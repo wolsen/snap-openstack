@@ -40,6 +40,8 @@ from sunbeam.jobs.common import (
     BaseStep,
     Result,
     ResultType,
+    convert_proxy_to_model_configs,
+    get_proxy_settings,
     run_plan,
     update_status_background,
 )
@@ -90,11 +92,14 @@ class DeployObservabilityStackStep(BaseStep, JujuStepHelper):
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Execute configuration using terraform."""
+        proxy_settings = get_proxy_settings(self.plugin.deployment)
+        model_config = convert_proxy_to_model_configs(proxy_settings)
+        model_config.update({"workload-storage": MICROK8S_DEFAULT_STORAGECLASS})
         extra_tfvars = {
             "model": self.model,
             "cloud": self.cloud,
             "credential": f"{self.cloud}{CREDENTIAL_SUFFIX}",
-            "config": {"workload-storage": MICROK8S_DEFAULT_STORAGECLASS},
+            "config": model_config,
         }
 
         try:
@@ -128,6 +133,51 @@ class DeployObservabilityStackStep(BaseStep, JujuStepHelper):
                 task.cancel()
 
         return Result(ResultType.COMPLETED)
+
+
+class UpdateObservabilityModelConfigStep(BaseStep, JujuStepHelper):
+    """Update Observability Model config  using Terraform"""
+
+    _CONFIG = COS_CONFIG_KEY
+
+    def __init__(
+        self,
+        plugin: "ObservabilityPlugin",
+    ):
+        super().__init__(
+            "Update Observability Model Config",
+            "Updating Observability proxy related model config",
+        )
+        self.plugin = plugin
+        self.manifest = self.plugin.manifest
+        self.client = self.plugin.deployment.get_client()
+        self.tfplan = self.plugin.tfplan_cos
+        self.model = OBSERVABILITY_MODEL
+        self.cloud = MICROK8S_CLOUD
+
+    def run(self, status: Optional[Status] = None) -> Result:
+        """Execute configuration using terraform."""
+        proxy_settings = get_proxy_settings(self.plugin.deployment)
+        model_config = convert_proxy_to_model_configs(proxy_settings)
+        model_config.update({"workload-storage": MICROK8S_DEFAULT_STORAGECLASS})
+        extra_tfvars = {
+            "model": self.model,
+            "cloud": self.cloud,
+            "credential": f"{self.cloud}{CREDENTIAL_SUFFIX}",
+            "config": model_config,
+        }
+
+        try:
+            self.manifest.update_tfvars_and_apply_tf(
+                self.client,
+                tfplan=self.tfplan,
+                tfvar_config=self._CONFIG,
+                override_tfvars=extra_tfvars,
+                tf_apply_extra_args=["-target=juju_model.cos"],
+            )
+        except TerraformException as e:
+            LOG.exception("Error updating Observability Model config")
+            return Result(ResultType.FAILED, str(e))
 
 
 class DeployGrafanaAgentStep(BaseStep, JujuStepHelper):
@@ -379,6 +429,24 @@ class ObservabilityPlugin(OpenStackControlPlanePlugin):
                 }
             },
         }
+
+    def update_proxy_model_configs(self) -> None:
+        try:
+            if not self.enabled:
+                LOG.debug("Observability plugin is not enabled, nothing to do")
+                return
+        except ClusterServiceUnavailableException:
+            LOG.debug(
+                "Failed to query for plugin status, is cloud bootstrapped ?",
+                exc_info=True,
+            )
+            return
+
+        plan = [
+            TerraformInitStep(self.manifest.get_tfhelper(self.tfplan_cos)),
+            UpdateObservabilityModelConfigStep(self),
+        ]
+        run_plan(plan, console)
 
     def set_application_names(self) -> list:
         """Application names handled by the main terraform plan."""

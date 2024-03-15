@@ -219,6 +219,11 @@ class JujuHelper:
         clouds = await self.controller.clouds()
         return clouds.clouds
 
+    async def list_models(self) -> list:
+        """List models."""
+        models = await self.controller.list_models()
+        return models
+
     async def get_model(self, model: str) -> Model:
         """Fetch model.
 
@@ -227,7 +232,7 @@ class JujuHelper:
         try:
             return await self.controller.get_model(model)
         except Exception as e:
-            if "HTTP 400" in str(e):
+            if "HTTP 400" in str(e) or "HTTP 404" in str(e):
                 raise ModelNotFoundException(f"Model {model!r} not found")
             raise e
 
@@ -285,6 +290,11 @@ class JujuHelper:
         """
         model_impl = await self.get_model(model)
         return model_impl.machines
+
+    async def set_model_config(self, model: str, config: dict) -> None:
+        """Set model config for the given model."""
+        model_impl = await self.get_model(model)
+        await model_impl.set_config(config)
 
     async def deploy(
         self,

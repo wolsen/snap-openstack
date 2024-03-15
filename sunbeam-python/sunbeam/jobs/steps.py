@@ -16,7 +16,6 @@
 import logging
 from typing import Optional
 
-from rich.console import Console
 from rich.status import Status
 
 from sunbeam.clusterd.client import Client
@@ -26,7 +25,6 @@ from sunbeam.clusterd.service import (
 )
 from sunbeam.commands.terraform import TerraformException
 from sunbeam.jobs.common import BaseStep, Result, ResultType, read_config, update_config
-from sunbeam.jobs.deployment import PROXY_CONFIG_KEY, Deployment
 from sunbeam.jobs.juju import (
     ApplicationNotFoundException,
     JujuHelper,
@@ -34,13 +32,6 @@ from sunbeam.jobs.juju import (
     run_sync,
 )
 from sunbeam.jobs.manifest import Manifest
-from sunbeam.jobs.questions import (
-    ConfirmQuestion,
-    PromptQuestion,
-    QuestionBank,
-    load_answers,
-    write_answers,
-)
 
 LOG = logging.getLogger(__name__)
 
@@ -330,101 +321,4 @@ class RemoveMachineUnitStep(BaseStep):
             LOG.warning(str(e))
             return Result(ResultType.FAILED, str(e))
 
-        return Result(ResultType.COMPLETED)
-
-
-def proxy_questions():
-    return {
-        "proxy_required": ConfirmQuestion(
-            "Configure proxy for access to external network resources?",
-            default_value=False,
-        ),
-        "http_proxy": PromptQuestion(
-            "Enter value for http_proxy:",
-        ),
-        "https_proxy": PromptQuestion(
-            "Enter value for https_proxy:",
-        ),
-        "no_proxy": PromptQuestion(
-            "Enter value for no_proxy:",
-        ),
-    }
-
-
-class PromptForProxyStep(BaseStep):
-    def __init__(
-        self,
-        deployment: Deployment,
-        deployment_preseed: dict | None = None,
-        accept_defaults: bool = False,
-    ):
-        super().__init__("Proxy Settings", "Query user for proxy settings")
-        self.deployment = deployment
-        self.preseed = deployment_preseed or {}
-        self.accept_defaults = accept_defaults
-        self.client = deployment.get_client()
-
-    def prompt(self, console: Optional[Console] = None) -> None:
-        """Determines if the step can take input from the user.
-
-        Prompts are used by Steps to gather the necessary input prior to
-        running the step. Steps should not expect that the prompt will be
-        available and should provide a reasonable default where possible.
-        """
-        self.variables = load_answers(self.client, PROXY_CONFIG_KEY)
-        self.variables.setdefault("proxy", {})
-
-        previous_answers = self.variables.get("proxy", {})
-        LOG.debug(f"Previos anders: {previous_answers}")
-        if not (
-            previous_answers.get("http_proxy")
-            and previous_answers.get("https_proxy")  # noqa: W503
-            and previous_answers.get("no_proxy")  # noqa: W503
-        ):
-            # Fill with defaults coming from deployment default_proxy_settings
-            default_proxy_settings = self.deployment.get_default_proxy_settings()
-            default_proxy_settings = {
-                k.lower(): v for k, v in default_proxy_settings.items() if v
-            }
-
-            # If proxies are coming from defaults, change the default for
-            # proxy_required to True. For example in local provider deployment,
-            # default for proxy_required will be "y" if proxies exists in
-            # /etc/environment
-            if default_proxy_settings:
-                previous_answers["proxy_required"] = True
-
-            previous_answers.update(default_proxy_settings)
-
-        proxy_bank = QuestionBank(
-            questions=proxy_questions(),
-            console=console,
-            preseed=self.preseed.get("proxy"),
-            previous_answers=previous_answers,
-            accept_defaults=self.accept_defaults,
-        )
-
-        self.variables["proxy"]["proxy_required"] = proxy_bank.proxy_required.ask()
-        if self.variables["proxy"]["proxy_required"]:
-            self.variables["proxy"]["http_proxy"] = proxy_bank.http_proxy.ask()
-            self.variables["proxy"]["https_proxy"] = proxy_bank.https_proxy.ask()
-            self.variables["proxy"]["no_proxy"] = proxy_bank.no_proxy.ask()
-
-        write_answers(self.client, PROXY_CONFIG_KEY, self.variables)
-
-    def has_prompts(self) -> bool:
-        """Returns true if the step has prompts that it can ask the user.
-
-        :return: True if the step can ask the user for prompts,
-                 False otherwise
-        """
-        return True
-
-    def run(self, status: Optional[Status]) -> Result:
-        """Run the step to completion.
-
-        Invoked when the step is run and returns a ResultType to indicate
-
-        :return:
-        """
         return Result(ResultType.COMPLETED)
