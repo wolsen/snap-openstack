@@ -38,6 +38,7 @@ from sunbeam.jobs.common import (
     Result,
     ResultType,
     Status,
+    get_proxy_settings,
     read_config,
     update_config,
 )
@@ -317,6 +318,7 @@ class Manifest:
                     JUJU_CA_CERT=self.deployment.juju_controller.ca_cert,
                 )
             )
+        env.update(get_proxy_settings(self.deployment))
 
         self.tf_helpers[tfplan] = TerraformHelper(
             path=dst,

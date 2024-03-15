@@ -107,6 +107,7 @@ from sunbeam.jobs.common import (
     ResultType,
     Role,
     click_option_topology,
+    get_proxy_settings,
     get_step_message,
     roles_to_str_list,
     run_plan,
@@ -116,6 +117,7 @@ from sunbeam.jobs.common import (
 from sunbeam.jobs.deployment import Deployment
 from sunbeam.jobs.juju import CONTROLLER, JujuHelper, ModelNotFoundException, run_sync
 from sunbeam.jobs.manifest import AddManifestStep, Manifest
+from sunbeam.jobs.steps import PromptForProxyStep
 from sunbeam.provider.base import ProviderBase
 from sunbeam.provider.local.deployment import LOCAL_TYPE, LocalDeployment
 from sunbeam.provider.local.steps import LocalSetHypervisorUnitsOptionsStep
@@ -278,8 +280,19 @@ def bootstrap(
     plan.append(ClusterInitStep(client, roles_to_str_list(roles), 0))
     if manifest:
         plan.append(AddManifestStep(client, manifest))
-    plan.append(AddCloudJujuStep(cloud_name, cloud_definition))
     plan.append(
+        PromptForProxyStep(
+            deployment, accept_defaults=accept_defaults, deployment_preseed=preseed
+        )
+    )
+    run_plan(plan, console)
+
+    proxy_settings = get_proxy_settings(deployment)
+    LOG.debug(f"Proxy settings: {proxy_settings}")
+
+    plan1 = []
+    plan1.append(AddCloudJujuStep(cloud_name, cloud_definition))
+    plan1.append(
         BootstrapJujuStep(
             client,
             cloud_name,
@@ -288,9 +301,10 @@ def bootstrap(
             bootstrap_args=juju_bootstrap_args,
             accept_defaults=accept_defaults,
             deployment_preseed=preseed,
+            proxy_settings=proxy_settings,
         )
     )
-    run_plan(plan, console)
+    run_plan(plan1, console)
 
     plan2 = []
     plan2.append(CreateJujuUserStep(fqdn))
@@ -315,7 +329,12 @@ def bootstrap(
     plan4.append(TerraformInitStep(manifest_obj.get_tfhelper("sunbeam-machine-plan")))
     plan4.append(
         DeploySunbeamMachineApplicationStep(
-            client, manifest_obj, jhelper, deployment.infrastructure_model
+            client,
+            manifest_obj,
+            jhelper,
+            deployment.infrastructure_model,
+            refresh=True,
+            proxy_settings=proxy_settings,
         )
     )
     plan4.append(

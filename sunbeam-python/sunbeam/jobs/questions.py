@@ -120,15 +120,15 @@ class Question:
         :param new_default: The new default for the question.
         """
         default = None
-        if self.previous_answer:
+        if self.previous_answer is not None:
             default = self.previous_answer
-        elif new_default:
+        elif new_default is not None:
             default = new_default
         elif self.default_function:
             default = self.default_function()
             if not self.password:
                 LOG.debug("Value from default function {}".format(default))
-        elif self.default_value:
+        elif self.default_value is not None:
             default = self.default_value
         return default
 
@@ -318,7 +318,9 @@ def show_questions(
     # Example: To generate preseed with microceph_config for multiple nodes if values
     # are available in cluster db.
     for key, question in question_bank.questions.items():
-        default = question.calculate_default() or ""
+        default = question.calculate_default()
+        if default is None:
+            default = ""
         lines.append(f"{outer_indent}{comment}{indent}# {question.question}")
         lines.append(f"{outer_indent}{comment}{indent}{key}: {default}")
 

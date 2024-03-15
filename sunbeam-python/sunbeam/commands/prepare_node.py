@@ -64,6 +64,15 @@ sudo addgroup $USER snap_daemon
 [ -f $HOME/.ssh/id_rsa ] || ssh-keygen -b 4096 -f $HOME/.ssh/id_rsa -t rsa -N ""
 cat $HOME/.ssh/id_rsa.pub >> $HOME/.ssh/authorized_keys
 ssh-keyscan -H $(hostname --all-ip-addresses) >> $HOME/.ssh/known_hosts
+
+if ! grep -E 'HTTPS?_PROXY' /etc/environment &> /dev/null && \
+! curl -s -m 10 -x "" api.charmhub.io &> /dev/null; then
+    cat << EOF
+ERROR: No external connectivity. Set HTTP_PROXY, HTTPS_PROXY, NO_PROXY
+       in /etc/environment and re-run this command.
+EOF
+    exit 1
+fi
 """
 
 COMMON_TEMPLATE = f"""

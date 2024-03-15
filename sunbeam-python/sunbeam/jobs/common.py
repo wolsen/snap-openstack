@@ -29,6 +29,12 @@ from rich.console import Console
 from rich.status import Status
 
 from sunbeam.clusterd.client import Client
+from sunbeam.clusterd.service import (
+    ClusterServiceUnavailableException,
+    ConfigItemNotFoundException,
+)
+from sunbeam.jobs.deployment import PROXY_CONFIG_KEY, Deployment
+from sunbeam.versions import K8S_CLUSTER_POD_CIDR, K8S_CLUSTER_SERVICE_CIDR
 
 LOG = logging.getLogger(__name__)
 RAM_16_GB_IN_KB = 16 * 1000 * 1000
@@ -389,3 +395,37 @@ def str_presenter(dumper: yaml.Dumper, data: str) -> yaml.ScalarNode:
     if data.count("\n") > 0:
         return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|")
     return dumper.represent_scalar("tag:yaml.org,2002:str", data)
+
+
+def _get_default_no_proxy_settings() -> set:
+    """Return default no proxy settings"""
+    return {
+        "127.0.0.1",
+        "localhost",
+        K8S_CLUSTER_SERVICE_CIDR,
+        K8S_CLUSTER_POD_CIDR,
+        ".svc",
+    }
+
+
+def get_proxy_settings(deployment: Deployment) -> dict:
+    proxy = {}
+    client = deployment.get_client()
+    try:
+        proxy_from_db = read_config(client, PROXY_CONFIG_KEY).get("proxy", {})
+        if proxy_from_db.get("proxy_required"):
+            proxy = {
+                p.upper(): v
+                for p in ("http_proxy", "https_proxy", "no_proxy")
+                if (v := proxy_from_db.get(p))
+            }
+    except (ClusterServiceUnavailableException, ConfigItemNotFoundException) as e:
+        LOG.debug(f"Using default Proxy settings from provider due to {str(e)}")
+        proxy = deployment.get_default_proxy_settings()
+
+    if "NO_PROXY" in proxy:
+        no_proxy_list = set(proxy.get("NO_PROXY").split(","))
+        default_no_proxy_list = _get_default_no_proxy_settings()
+        proxy["NO_PROXY"] = ",".join(no_proxy_list.union(default_no_proxy_list))
+
+    return proxy

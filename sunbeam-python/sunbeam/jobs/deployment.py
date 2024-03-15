@@ -23,7 +23,7 @@ from sunbeam.clusterd.client import Client
 from sunbeam.jobs.juju import JujuAccount, JujuController
 
 LOG = logging.getLogger(__name__)
-
+PROXY_CONFIG_KEY = "ProxySettings"
 
 _cls_registry: dict[str, Type["Deployment"]] = {}
 
@@ -88,3 +88,7 @@ class Deployment(pydantic.BaseModel):
     def generate_preseed(self, console) -> str:
         """Generate preseed for deployment."""
         return NotImplemented
+
+    def get_default_proxy_settings(self) -> dict:
+        """Return default proxy settings."""
+        return {}
