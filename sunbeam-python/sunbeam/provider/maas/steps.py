@@ -918,9 +918,9 @@ class MaasBootstrapJujuStep(BootstrapJujuStep):
             cloud,
             cloud_type,
             controller,
-            bootstrap_args,
-            deployment_preseed,
-            accept_defaults,
+            bootstrap_args=bootstrap_args,
+            deployment_preseed=deployment_preseed,
+            accept_defaults=accept_defaults,
         )
         self.maas_client = maas_client
 
