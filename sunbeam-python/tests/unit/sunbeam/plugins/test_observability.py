@@ -49,8 +49,15 @@ def observabilityplugin():
         yield p
 
 
+@pytest.fixture()
+def proxy_settings():
+    with patch("sunbeam.plugins.observability.plugin.get_proxy_settings") as p:
+        yield p
+
+
 class TestDeployObservabilityStackStep:
-    def test_run(self, jhelper, observabilityplugin):
+    def test_run(self, jhelper, observabilityplugin, proxy_settings):
+        proxy_settings.return_value = {}
         step = observability_plugin.DeployObservabilityStackStep(
             observabilityplugin, jhelper
         )
@@ -60,7 +67,8 @@ class TestDeployObservabilityStackStep:
         jhelper.wait_until_active.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
 
-    def test_run_tf_apply_failed(self, jhelper, observabilityplugin):
+    def test_run_tf_apply_failed(self, jhelper, observabilityplugin, proxy_settings):
+        proxy_settings.return_value = {}
         observabilityplugin.manifest.update_tfvars_and_apply_tf.side_effect = (
             TerraformException("apply failed...")
         )
@@ -75,7 +83,8 @@ class TestDeployObservabilityStackStep:
         assert result.result_type == ResultType.FAILED
         assert result.message == "apply failed..."
 
-    def test_run_waiting_timed_out(self, jhelper, observabilityplugin):
+    def test_run_waiting_timed_out(self, jhelper, observabilityplugin, proxy_settings):
+        proxy_settings.return_value = {}
         jhelper.wait_until_active.side_effect = TimeoutException("timed out")
 
         step = observability_plugin.DeployObservabilityStackStep(

@@ -260,6 +260,15 @@ class BasePlugin(ABC):
         """
         return []
 
+    def update_proxy_model_configs(self) -> None:
+        """Update proxy model configs.
+
+        Plugins that creates a new model should override this function
+        to update model-configs for the model.
+        Plugin can get proxies using get_proxy_settings(self.plugin.deployment)
+        """
+        pass
+
     def get_terraform_plans_base_path(self) -> Path:
         """Return Terraform plan base location."""
         return Snap().paths.user_common

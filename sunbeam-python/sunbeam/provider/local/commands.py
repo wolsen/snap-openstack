@@ -81,6 +81,7 @@ from sunbeam.commands.openstack import (
     DeployControlPlaneStep,
     PatchLoadBalancerServicesStep,
 )
+from sunbeam.commands.proxy import PromptForProxyStep
 from sunbeam.commands.sunbeam_machine import (
     AddSunbeamMachineUnitsStep,
     DeploySunbeamMachineApplicationStep,
@@ -117,7 +118,6 @@ from sunbeam.jobs.common import (
 from sunbeam.jobs.deployment import Deployment
 from sunbeam.jobs.juju import CONTROLLER, JujuHelper, ModelNotFoundException, run_sync
 from sunbeam.jobs.manifest import AddManifestStep, Manifest
-from sunbeam.jobs.steps import PromptForProxyStep
 from sunbeam.provider.base import ProviderBase
 from sunbeam.provider.local.deployment import LOCAL_TYPE, LocalDeployment
 from sunbeam.provider.local.steps import LocalSetHypervisorUnitsOptionsStep

@@ -313,6 +313,13 @@ class PluginManager:
         return charms
 
     @classmethod
+    def update_proxy_model_configs(cls, deployment: Deployment) -> None:
+        plugins = cls.get_all_plugin_classes()
+        for klass in plugins:
+            plugin = klass(deployment)
+            plugin.update_proxy_model_configs()
+
+    @classmethod
     def register(
         cls,
         deployment: Deployment,

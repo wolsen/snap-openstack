@@ -168,7 +168,7 @@ class TerraformHelper:
             LOG.warning(e.stderr)
             raise TerraformException(str(e))
 
-    def apply(self):
+    def apply(self, extra_args: list | None = None):
         """terraform apply"""
         os_env = os.environ.copy()
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
@@ -179,7 +179,10 @@ class TerraformHelper:
             os_env.update(self.env)
 
         try:
-            cmd = [self.terraform, "apply", "-auto-approve", "-no-color"]
+            cmd = [self.terraform, "apply"]
+            if extra_args:
+                cmd.extend(extra_args)
+            cmd.extend(["-auto-approve", "-no-color"])
             if self.parallelism is not None:
                 cmd.append(f"-parallelism={self.parallelism}")
             LOG.debug(f'Running command {" ".join(cmd)}')

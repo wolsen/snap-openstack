@@ -34,7 +34,6 @@ from sunbeam.clusterd.service import (
     ConfigItemNotFoundException,
 )
 from sunbeam.jobs.deployment import PROXY_CONFIG_KEY, Deployment
-from sunbeam.versions import K8S_CLUSTER_POD_CIDR, K8S_CLUSTER_SERVICE_CIDR
 
 LOG = logging.getLogger(__name__)
 RAM_16_GB_IN_KB = 16 * 1000 * 1000
@@ -53,6 +52,10 @@ SHARE_PATH = Path(".local/share/openstack/")
 
 CLICK_OK = "[green]OK[/green]"
 CLICK_FAIL = "[red]FAIL[/red]"
+
+DEFAULT_JUJU_NO_PROXY_SETTINGS = "127.0.0.1,localhost,::1"
+K8S_CLUSTER_SERVICE_CIDR = "10.152.183.0/24"
+K8S_CLUSTER_POD_CIDR = "10.1.0.0/16"
 
 
 class Role(enum.Enum):
@@ -429,3 +432,12 @@ def get_proxy_settings(deployment: Deployment) -> dict:
         proxy["NO_PROXY"] = ",".join(no_proxy_list.union(default_no_proxy_list))
 
     return proxy
+
+
+def convert_proxy_to_model_configs(proxy_settings: dict) -> dict:
+    """Convert proxies to juju model configs."""
+    return {
+        "juju-http-proxy": proxy_settings.get("HTTP_PROXY", ""),
+        "juju-https-proxy": proxy_settings.get("HTTPS_PROXY", ""),
+        "juju-no-proxy": proxy_settings.get("NO_PROXY", DEFAULT_JUJU_NO_PROXY_SETTINGS),
+    }

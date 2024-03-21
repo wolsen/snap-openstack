@@ -38,6 +38,7 @@ from sunbeam.jobs.common import (
     BaseStep,
     Result,
     ResultType,
+    convert_proxy_to_model_configs,
     get_host_total_ram,
     read_config,
     update_config,
@@ -121,6 +122,7 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         topology: str,
         database: str,
         machine_model: str,
+        proxy_settings: dict = {},
         force: bool = False,
     ):
         super().__init__(
@@ -133,6 +135,7 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         self.topology = topology
         self.database = database
         self.machine_model = machine_model
+        self.proxy_settings = proxy_settings
         self.force = force
         self.model = OPENSTACK_MODEL
         self.cloud = MICROK8S_CLOUD
@@ -213,13 +216,15 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         storage_nodes = self.client.cluster.list_nodes_by_role("storage")
 
         self.update_status(status, "computing deployment sizing")
+        model_config = convert_proxy_to_model_configs(self.proxy_settings)
+        model_config.update({"workload-storage": MICROK8S_DEFAULT_STORAGECLASS})
         extra_tfvars = self.get_storage_tfvars(storage_nodes)
         extra_tfvars.update(
             {
                 "model": self.model,
                 "cloud": self.cloud,
                 "credential": f"{self.cloud}{CREDENTIAL_SUFFIX}",
-                "config": {"workload-storage": MICROK8S_DEFAULT_STORAGECLASS},
+                "config": model_config,
                 "many-mysql": self.database == "multi",
                 "ha-scale": compute_ha_scale(self.topology, len(control_nodes)),
                 "os-api-scale": compute_os_api_scale(self.topology, len(control_nodes)),
@@ -376,3 +381,43 @@ class ReapplyOpenStackTerraformPlanStep(BaseStep, JujuStepHelper):
                 task.cancel()
 
         return Result(ResultType.COMPLETED)
+
+
+class UpdateOpenStackModelConfigStep(BaseStep):
+    """Update OpenStack ModelConfig via Terraform plan"""
+
+    _CONFIG = CONFIG_KEY
+
+    def __init__(
+        self,
+        client: Client,
+        manifest: Manifest,
+        model_config: dict,
+    ):
+        super().__init__(
+            "Update OpenStack model config",
+            "Updating OpenStack model config related to proxy",
+        )
+        self.client = client
+        self.manifest = manifest
+        self.model_config = model_config
+        self.tfplan = "openstack-plan"
+
+    def run(self, status: Status | None = None) -> Result:
+        """Apply model configs to openstack terraform plan."""
+        try:
+            self.model_config.update(
+                {"workload-storage": MICROK8S_DEFAULT_STORAGECLASS}
+            )
+            override_tfvars = {"config": self.model_config}
+            self.manifest.update_tfvars_and_apply_tf(
+                self.client,
+                tfplan=self.tfplan,
+                tfvar_config=self._CONFIG,
+                override_tfvars=override_tfvars,
+                tf_apply_extra_args=["-target=juju_model.sunbeam"],
+            )
+            return Result(ResultType.COMPLETED)
+        except TerraformException as e:
+            LOG.exception("Error updating modelconfigs for openstack plan")
+            return Result(ResultType.FAILED, str(e))

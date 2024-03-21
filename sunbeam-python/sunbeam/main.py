@@ -25,9 +25,10 @@ from sunbeam.commands import dashboard_url as dasboard_url_cmds
 from sunbeam.commands import generate_cloud_config as generate_cloud_config_cmds
 from sunbeam.commands import inspect as inspect_cmds
 from sunbeam.commands import launch as launch_cmds
-from sunbeam.commands import manifest as manifest_commands
+from sunbeam.commands import manifest as manifest_cmds
 from sunbeam.commands import openrc as openrc_cmds
 from sunbeam.commands import prepare_node as prepare_node_cmds
+from sunbeam.commands import proxy as proxy_cmds
 from sunbeam.commands import utils as utils_cmds
 from sunbeam.jobs import deployments as deployments_jobs
 from sunbeam.jobs.plugin import PluginManager
@@ -61,6 +62,12 @@ def cli(ctx, quiet, verbose):
 @click.pass_context
 def manifest(ctx):
     """Manage manifests (read-only commands)"""
+
+
+@click.group("proxy", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
+@click.pass_context
+def proxy(ctx):
+    """Manage proxy configuration"""
 
 
 @click.group("enable", context_settings=CONTEXT_SETTINGS, cls=CatchGroup)
@@ -106,11 +113,17 @@ def main():
     )
     provider_cmds.register_cli(cli, configure_cmds.configure, deployment)
 
-    # Manifst management
+    # Manifest management
     cli.add_command(manifest)
-    manifest.add_command(manifest_commands.list)
-    manifest.add_command(manifest_commands.show)
-    manifest.add_command(manifest_commands.generate)
+    manifest.add_command(manifest_cmds.list)
+    manifest.add_command(manifest_cmds.show)
+    manifest.add_command(manifest_cmds.generate)
+
+    # Proxy management
+    cli.add_command(proxy)
+    proxy.add_command(proxy_cmds.show)
+    proxy.add_command(proxy_cmds.set)
+    proxy.add_command(proxy_cmds.clear)
 
     cli.add_command(enable)
     cli.add_command(disable)
