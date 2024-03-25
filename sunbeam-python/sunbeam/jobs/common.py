@@ -19,7 +19,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import List, Optional, Type
+from typing import Any, List, Optional, Type
 
 import click
 import yaml
@@ -120,7 +120,7 @@ class ResultType(enum.Enum):
 class Result:
     """The result of running a step"""
 
-    def __init__(self, result_type: ResultType, message: Optional[str] = ""):
+    def __init__(self, result_type: ResultType, message: Any = ""):
         """Creates a new result
 
         :param result_type:
@@ -288,7 +288,7 @@ def run_plan(plan: List[BaseStep], console: Console) -> dict:
     return results
 
 
-def get_step_message(plan_results: dict, step: Type[BaseStep]) -> Optional[str]:
+def get_step_message(plan_results: dict, step: Type[BaseStep]) -> Any:
     """Utility to get a step result's message."""
     result = plan_results.get(step.__name__)
     if result:
@@ -413,8 +413,9 @@ def _get_default_no_proxy_settings() -> set:
 
 def get_proxy_settings(deployment: Deployment) -> dict:
     proxy = {}
-    client = deployment.get_client()
     try:
+        # If client does not exist, use detaults
+        client = deployment.get_client()
         proxy_from_db = read_config(client, PROXY_CONFIG_KEY).get("proxy", {})
         if proxy_from_db.get("proxy_required"):
             proxy = {
@@ -422,7 +423,11 @@ def get_proxy_settings(deployment: Deployment) -> dict:
                 for p in ("http_proxy", "https_proxy", "no_proxy")
                 if (v := proxy_from_db.get(p))
             }
-    except (ClusterServiceUnavailableException, ConfigItemNotFoundException) as e:
+    except (
+        ClusterServiceUnavailableException,
+        ConfigItemNotFoundException,
+        ValueError,
+    ) as e:
         LOG.debug(f"Using default Proxy settings from provider due to {str(e)}")
         proxy = deployment.get_default_proxy_settings()
 
@@ -440,4 +445,6 @@ def convert_proxy_to_model_configs(proxy_settings: dict) -> dict:
         "juju-http-proxy": proxy_settings.get("HTTP_PROXY", ""),
         "juju-https-proxy": proxy_settings.get("HTTPS_PROXY", ""),
         "juju-no-proxy": proxy_settings.get("NO_PROXY", DEFAULT_JUJU_NO_PROXY_SETTINGS),
+        "snap-http-proxy": proxy_settings.get("HTTP_PROXY", ""),
+        "snap-https-proxy": proxy_settings.get("HTTPS_PROXY", ""),
     }

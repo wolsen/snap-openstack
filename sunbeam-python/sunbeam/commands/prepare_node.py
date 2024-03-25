@@ -16,11 +16,10 @@
 import click
 from rich.console import Console
 
+from sunbeam.versions import JUJU_CHANNEL, SUPPORTED_RELEASE
+
 console = Console()
 
-
-JUJU_CHANNEL = "3.4/stable"
-SUPPORTED_RELEASE = "jammy"
 
 PREPARE_NODE_TEMPLATE = f"""[ $(lsb_release -sc) != '{SUPPORTED_RELEASE}' ] && \
 {{ echo 'ERROR: Sunbeam deploy only supported on {SUPPORTED_RELEASE}'; exit 1; }}

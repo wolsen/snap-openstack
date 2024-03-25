@@ -19,6 +19,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 import pytest
 from maas.client.bones import CallError
 
+import sunbeam.provider.maas.steps as maas_steps
 from sunbeam.jobs.deployments import DeploymentsConfig
 from sunbeam.jobs.juju import ControllerNotFoundException
 from sunbeam.provider.maas.deployment import (
@@ -599,12 +600,13 @@ class TestIpRangesCheck:
 
 
 class TestMaasBootstrapJujuStep:
-    def test_is_skip_with_no_machines(self, mocker):
+    def test_is_skip_with_no_machines(self, snap, mocker):
         maas_client = Mock()
         mocker.patch(
             "sunbeam.provider.maas.client.list_machines",
             return_value=[],
         )
+        mocker.patch.object(maas_steps, "Snap", return_value=snap)
         step = MaasBootstrapJujuStep(
             maas_client=maas_client,
             cloud="test_cloud",
@@ -616,7 +618,7 @@ class TestMaasBootstrapJujuStep:
         assert result.result_type == ResultType.FAILED
         assert result.message and "No machines with tag" in result.message
 
-    def test_is_skip_with_multiple_machines(self, mocker):
+    def test_is_skip_with_multiple_machines(self, snap, mocker):
         maas_client = Mock()
         mocker.patch(
             "sunbeam.provider.maas.client.list_machines",
@@ -629,6 +631,7 @@ class TestMaasBootstrapJujuStep:
             "sunbeam.commands.juju.BootstrapJujuStep.is_skip",
             return_value=Result(ResultType.COMPLETED),
         )
+        mocker.patch.object(maas_steps, "Snap", return_value=snap)
         step = MaasBootstrapJujuStep(
             maas_client=maas_client,
             cloud="test_cloud",
@@ -641,7 +644,7 @@ class TestMaasBootstrapJujuStep:
         assert "--to" in step.bootstrap_args
         assert step.bootstrap_args[-1].endswith("1st")
 
-    def test_is_skip_with_single_machine(self, mocker):
+    def test_is_skip_with_single_machine(self, snap, mocker):
         maas_client = Mock()
         mocker.patch(
             "sunbeam.provider.maas.client.list_machines",
@@ -653,6 +656,7 @@ class TestMaasBootstrapJujuStep:
             "sunbeam.commands.juju.BootstrapJujuStep.is_skip",
             return_value=Result(ResultType.COMPLETED),
         )
+        mocker.patch.object(maas_steps, "Snap", return_value=snap)
         step = MaasBootstrapJujuStep(
             maas_client=maas_client,
             cloud="test_cloud",
