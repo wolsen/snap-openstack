@@ -114,6 +114,10 @@ class MaasClient:
         """Get configured upstream dns"""
         return self._client.maas.get_upstream_dns()  # type: ignore
 
+    def get_http_proxy(self) -> str | None:
+        """Get configured http proxy"""
+        return self._client.maas.get_http_proxy()  # type: ignore
+
     @classmethod
     def from_deployment(cls, deployment: Deployment) -> "MaasClient":
         """Return client connected to active deployment."""

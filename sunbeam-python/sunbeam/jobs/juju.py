@@ -42,6 +42,7 @@ from juju.model import Model
 from juju.unit import Unit
 
 from sunbeam.clusterd.client import Client
+from sunbeam.versions import JUJU_BASE
 
 LOG = logging.getLogger(__name__)
 CONTROLLER_MODEL = "admin/controller"
@@ -236,16 +237,17 @@ class JujuHelper:
                 raise ModelNotFoundException(f"Model {model!r} not found")
             raise e
 
-    async def add_model(self, model: str) -> Model:
+    async def add_model(self, model: str, config: dict | None = None) -> Model:
         """Add a model.
 
         :model: Name of the model
+        :config: model configuration
         """
         # TODO(gboutry): workaround until we manage public ssh keys properly
         old_home = os.environ["HOME"]
         os.environ["HOME"] = os.environ["SNAP_REAL_HOME"]
         try:
-            return await self.controller.add_model(model)
+            return await self.controller.add_model(model, config=config)
         finally:
             os.environ["HOME"] = old_home
 
@@ -320,7 +322,7 @@ class JujuHelper:
             charm,
             application_name=name,
             num_units=num_units,
-            base="ubuntu@22.04",
+            base=JUJU_BASE,
             **options,
         )
 

@@ -59,11 +59,30 @@ LOG = logging.getLogger(__name__)
 console = Console()
 
 
-def _update_proxy(proxy: dict, deployment: Deployment):
-    client = deployment.get_client()
+def _preflight_checks(deployment: Deployment):
+    from sunbeam.provider.maas.deployment import MAAS_TYPE  # to avoid circular import
 
-    preflight_checks = [DaemonGroupCheck(), VerifyBootstrappedCheck(client)]
+    client = deployment.get_client()
+    if deployment.type == MAAS_TYPE:
+        if client is None:
+            message = (
+                "Deployment not bootstrapped or bootstrap process has not "
+                "completed succesfully. Please run `sunbeam cluster bootstrap`"
+            )
+            raise click.ClickException(message)
+        else:
+            preflight_checks = [VerifyBootstrappedCheck(client)]
+    else:
+        preflight_checks = [DaemonGroupCheck(), VerifyBootstrappedCheck(client)]
+
     run_preflight_checks(preflight_checks, console)
+
+
+def _update_proxy(proxy: dict, deployment: Deployment):
+    from sunbeam.provider.maas.deployment import MAAS_TYPE  # to avoid circular import
+
+    _preflight_checks(depoyment)
+    client = deployment.get_client()
 
     # Update proxy in clusterdb
     update_config(client, PROXY_CONFIG_KEY, proxy)
@@ -91,8 +110,15 @@ def _update_proxy(proxy: dict, deployment: Deployment):
             jhelper, CONTROLLER_MODEL.split("/")[-1], model_config
         )
     )
-    plan.append(TerraformInitStep(manifest_obj.get_tfhelper("openstack-plan")))
-    plan.append(UpdateOpenStackModelConfigStep(client, manifest_obj, model_config))
+    if deployment.type == MAAS_TYPE:
+        plan.append(
+            UpdateJujuModelConfigStep(
+                jhelper, deployment.infrastructure_model, model_config
+            )
+        )
+    else:
+        plan.append(TerraformInitStep(manifest_obj.get_tfhelper("openstack-plan")))
+        plan.append(UpdateOpenStackModelConfigStep(client, manifest_obj, model_config))
     run_plan(plan, console)
 
     PluginManager.update_proxy_model_configs(deployment)
@@ -110,10 +136,7 @@ def _update_proxy(proxy: dict, deployment: Deployment):
 def show(ctx: click.Context, format: str) -> None:
     """Show proxy configuration"""
     deployment: Deployment = ctx.obj
-    client = deployment.get_client()
-
-    preflight_checks = [DaemonGroupCheck(), VerifyBootstrappedCheck(client)]
-    run_preflight_checks(preflight_checks, console)
+    _preflight_checks(deployment)
 
     proxy = get_proxy_settings(deployment)
     if format == FORMAT_TABLE:
@@ -204,7 +227,12 @@ class PromptForProxyStep(BaseStep):
         self.deployment = deployment
         self.preseed = deployment_preseed or {}
         self.accept_defaults = accept_defaults
-        self.client = deployment.get_client()
+        try:
+            self.client = deployment.get_client()
+        except ValueError:
+            # For MAAS deployment, client is not set at this point
+            self.client = None
+        self.variables = {}
 
     def prompt(self, console: Console | None = None) -> None:
         """Determines if the step can take input from the user.
@@ -213,7 +241,8 @@ class PromptForProxyStep(BaseStep):
         running the step. Steps should not expect that the prompt will be
         available and should provide a reasonable default where possible.
         """
-        self.variables = load_answers(self.client, PROXY_CONFIG_KEY)
+        if self.client:
+            self.variables = load_answers(self.client, PROXY_CONFIG_KEY)
         self.variables.setdefault("proxy", {})
 
         previous_answers = self.variables.get("proxy", {})
@@ -252,7 +281,8 @@ class PromptForProxyStep(BaseStep):
             self.variables["proxy"]["https_proxy"] = proxy_bank.https_proxy.ask()
             self.variables["proxy"]["no_proxy"] = proxy_bank.no_proxy.ask()
 
-        write_answers(self.client, PROXY_CONFIG_KEY, self.variables)
+        if self.client:
+            write_answers(self.client, PROXY_CONFIG_KEY, self.variables)
 
     def has_prompts(self) -> bool:
         """Returns true if the step has prompts that it can ask the user.
@@ -268,4 +298,4 @@ class PromptForProxyStep(BaseStep):
         Invoked when the step is run and returns a ResultType to indicate
         :return:
         """
-        return Result(ResultType.COMPLETED)
+        return Result(ResultType.COMPLETED, self.variables)

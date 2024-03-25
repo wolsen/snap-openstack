@@ -25,6 +25,7 @@ from sunbeam.commands.configure import (
     ext_net_questions,
     user_questions,
 )
+from sunbeam.commands.proxy import proxy_questions
 from sunbeam.jobs.deployment import Deployment
 from sunbeam.jobs.plugin import PluginManager
 from sunbeam.jobs.questions import Question, QuestionBank, load_answers, show_questions
@@ -179,6 +180,31 @@ class MaasDeployment(Deployment):
         variables = {}
         try:
             if client is not None:
+                variables = load_answers(client, PROXY_CONFIG_KEY)
+        except ClusterServiceUnavailableException:
+            pass
+
+        if not variables:
+            default_proxy_settings = self.get_default_proxy_settings()
+            default_proxy_settings = {
+                k.lower(): v for k, v in default_proxy_settings.items() if v
+            }
+            variables = {"proxy": {}}
+
+            variables["proxy"]["proxy_required"] = (
+                True if default_proxy_settings else False
+            )
+            variables["proxy"].update(default_proxy_settings)
+        proxy_bank = QuestionBank(
+            questions=proxy_questions(),
+            console=console,
+            previous_answers=variables.get("proxy", {}),
+        )
+        preseed_content.extend(show_questions(proxy_bank, section="proxy"))
+
+        variables = {}
+        try:
+            if client is not None:
                 variables = load_answers(client, CLOUD_CONFIG_SECTION)
         except ClusterServiceUnavailableException:
             pass
@@ -206,6 +232,21 @@ class MaasDeployment(Deployment):
 
         preseed_content_final = "\n".join(preseed_content)
         return preseed_content_final
+
+    def get_default_proxy_settings(self) -> dict:
+        """Return default proxy settings"""
+        # to avoid circular import
+        from sunbeam.provider.maas.client import MaasClient
+
+        maas_client = MaasClient.from_deployment(self)
+        proxy = maas_client.get_http_proxy()
+        if proxy is None:
+            return {}
+
+        subnets = maas_client.get_subnets()
+        subnets_cidr = (subnet.get("cidr") for subnet in subnets if subnet.get("cidr"))
+        no_proxy = ",".join(subnets_cidr)
+        return {"HTTP_PROXY": proxy, "HTTPS_PROXY": proxy, "NO_PROXY": no_proxy}
 
 
 def is_maas_deployment(deployment: Deployment) -> TypeGuard[MaasDeployment]:

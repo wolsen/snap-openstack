@@ -24,6 +24,7 @@ import textwrap
 from maas.client import bones
 from rich.console import Console
 from rich.status import Status
+from snaphelpers import Snap
 
 import sunbeam.commands.microceph as microceph
 import sunbeam.commands.microk8s as microk8s
@@ -40,6 +41,7 @@ from sunbeam.commands.configure import (
     ext_net_questions,
 )
 from sunbeam.commands.juju import (
+    JUJU_CONTROLLER_CHARM,
     BootstrapJujuStep,
     ControllerNotFoundException,
     JujuStepHelper,
@@ -64,6 +66,7 @@ from sunbeam.jobs.juju import (
     run_sync,
 )
 from sunbeam.jobs.manifest import Manifest
+from sunbeam.versions import JUJU_BASE
 
 LOG = logging.getLogger(__name__)
 console = Console()
@@ -898,15 +901,22 @@ class MaasBootstrapJujuStep(BootstrapJujuStep):
         password: str,
         bootstrap_args: list[str] | None = None,
         deployment_preseed: dict | None = None,
+        proxy_settings: dict | None = None,
         accept_defaults: bool = False,
     ):
+        snap = Snap()
+        controller_charm = str(
+            snap.paths.user_common / "downloads" / JUJU_CONTROLLER_CHARM
+        )
         bootstrap_args = bootstrap_args or []
         bootstrap_args.extend(
             (
                 "--bootstrap-constraints",
                 f"tags={maas_deployment.RoleTags.JUJU_CONTROLLER.value}",
                 "--bootstrap-base",
-                "ubuntu@22.04",
+                JUJU_BASE,
+                "--controller-charm-path",
+                controller_charm,
                 "--config",
                 f"admin-secret={password}",
             )
@@ -920,6 +930,7 @@ class MaasBootstrapJujuStep(BootstrapJujuStep):
             controller,
             bootstrap_args=bootstrap_args,
             deployment_preseed=deployment_preseed,
+            proxy_settings=proxy_settings,
             accept_defaults=accept_defaults,
         )
         self.maas_client = maas_client

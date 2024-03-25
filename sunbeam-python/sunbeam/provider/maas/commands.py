@@ -14,6 +14,7 @@
 # limitations under the License.
 
 
+import json
 import logging
 import sys
 from collections import Counter
@@ -46,6 +47,7 @@ from sunbeam.commands.juju import (
     AddCloudJujuStep,
     AddCredentialsJujuStep,
     AddInfrastructureModelStep,
+    DownloadJujuControllerCharmStep,
     JujuLoginStep,
 )
 from sunbeam.commands.microceph import (
@@ -63,6 +65,7 @@ from sunbeam.commands.openstack import (
     DeployControlPlaneStep,
     PatchLoadBalancerServicesStep,
 )
+from sunbeam.commands.proxy import PromptForProxyStep
 from sunbeam.commands.sunbeam_machine import (
     AddSunbeamMachineUnitsStep,
     DeploySunbeamMachineApplicationStep,
@@ -83,11 +86,13 @@ from sunbeam.jobs.common import (
     CONTEXT_SETTINGS,
     FORMAT_TABLE,
     FORMAT_YAML,
+    get_proxy_settings,
+    get_step_message,
     run_plan,
     run_preflight_checks,
     str_presenter,
 )
-from sunbeam.jobs.deployment import Deployment
+from sunbeam.jobs.deployment import PROXY_CONFIG_KEY, Deployment
 from sunbeam.jobs.deployments import DeploymentsConfig, deployment_path
 from sunbeam.jobs.juju import (
     CONTROLLER_MODEL,
@@ -277,6 +282,28 @@ def bootstrap(
         deployments.update_deployment(deployment)
         deployments.write()
 
+    # Handle proxy settings
+    plan = []
+    plan.append(
+        PromptForProxyStep(
+            deployment, accept_defaults=accept_defaults, deployment_preseed=preseed
+        )
+    )
+    plan_results = run_plan(plan, console)
+    proxy_from_user = get_step_message(plan_results, PromptForProxyStep)
+    if (
+        isinstance(proxy_from_user, dict)
+        and (proxy := proxy_from_user.get("proxy", {}))  # noqa: W503
+        and proxy.get("proxy_required")  # noqa: W503
+    ):
+        proxy_settings = {
+            p.upper(): v
+            for p in ("http_proxy", "https_proxy", "no_proxy")
+            if (v := proxy.get(p))
+        }
+    else:
+        proxy_settings = {}
+
     plan = []
     plan.append(AddCloudJujuStep(deployment.name, cloud_definition))
     plan.append(
@@ -286,6 +313,10 @@ def bootstrap(
             definition=credentials_definition,
         )
     )
+    # Workaround for bug https://bugs.launchpad.net/juju/+bug/2044481
+    # Remove the below step and dont pass controller charm as bootstrap
+    # arguments once the above bug is fixed
+    plan.append(DownloadJujuControllerCharmStep(proxy_settings))
     plan.append(
         MaasBootstrapJujuStep(
             maas_client,
@@ -296,6 +327,7 @@ def bootstrap(
             manifest_obj.software_config.juju.bootstrap_args,
             deployment_preseed=preseed,
             accept_defaults=accept_defaults,
+            proxy_settings=proxy_settings,
         )
     )
     plan.append(
@@ -336,10 +368,15 @@ def bootstrap(
         console.print("Clusterd address should have been saved in previous step.")
         sys.exit(1)
 
+    client = deployment.get_client()
     if manifest:
         plan3 = []
-        plan3.append(AddManifestStep(deployment.get_client()))
+        plan3.append(AddManifestStep(client))
         run_plan(plan3, console)
+
+    if proxy_from_user and isinstance(proxy_from_user, dict):
+        LOG.debug(f"Writing proxy information to clusterdb: {proxy_from_user}")
+        client.cluster.update_config(PROXY_CONFIG_KEY, json.dumps(proxy_from_user))
 
     console.print("Bootstrap controller components complete.")
 
@@ -423,6 +460,7 @@ def deploy(
     LOG.debug(f"Manifest used for deployment - preseed: {manifest.deployment_config}")
     LOG.debug(f"Manifest used for deployment - software: {manifest.software_config}")
     preseed = manifest.deployment_config
+    proxy_settings = get_proxy_settings(deployment)
 
     tfhelper_sunbeam_machine = manifest.get_tfhelper("sunbeam-machine-plan")
     tfhelper_microk8s = manifest.get_tfhelper("microk8s-plan")
@@ -431,7 +469,11 @@ def deploy(
     tfhelper_hypervisor_deploy = manifest.get_tfhelper("hypervisor-plan")
 
     plan = []
-    plan.append(AddInfrastructureModelStep(jhelper, deployment.infrastructure_model))
+    plan.append(
+        AddInfrastructureModelStep(
+            jhelper, deployment.infrastructure_model, proxy_settings
+        )
+    )
     plan.append(MaasAddMachinesToClusterdStep(client, maas_client))
     plan.append(
         MaasDeployMachinesStep(client, jhelper, deployment.infrastructure_model)
@@ -469,6 +511,8 @@ def deploy(
             manifest,
             jhelper,
             deployment.infrastructure_model,
+            refresh=True,
+            proxy_settings=proxy_settings,
         )
     )
     plan2.append(

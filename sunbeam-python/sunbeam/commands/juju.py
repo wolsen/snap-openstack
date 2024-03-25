@@ -36,7 +36,12 @@ from sunbeam import utils
 from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import NodeNotExistInClusterException
 from sunbeam.jobs import questions
-from sunbeam.jobs.common import BaseStep, Result, ResultType
+from sunbeam.jobs.common import (
+    BaseStep,
+    Result,
+    ResultType,
+    convert_proxy_to_model_configs,
+)
 from sunbeam.jobs.juju import (
     CONTROLLER_MODEL,
     ControllerNotFoundException,
@@ -46,10 +51,12 @@ from sunbeam.jobs.juju import (
     ModelNotFoundException,
     run_sync,
 )
+from sunbeam.versions import JUJU_BASE, JUJU_CHANNEL
 
 LOG = logging.getLogger(__name__)
 PEXPECT_TIMEOUT = 60
 BOOTSTRAP_CONFIG_KEY = "BootstrapAnswers"
+JUJU_CONTROLLER_CHARM = "juju-controller.charm"
 
 
 class JujuStepHelper:
@@ -425,7 +432,7 @@ class BootstrapJujuStep(BaseStep, JujuStepHelper):
         controller: str,
         bootstrap_args: list[str] | None = None,
         deployment_preseed: dict | None = None,
-        proxy_settings: dict = {},
+        proxy_settings: dict | None = None,
         accept_defaults: bool = False,
     ):
         super().__init__("Bootstrap Juju", "Bootstrapping Juju onto machine")
@@ -436,7 +443,7 @@ class BootstrapJujuStep(BaseStep, JujuStepHelper):
         self.controller = controller
         self.bootstrap_args = bootstrap_args or []
         self.preseed = deployment_preseed or {}
-        self.proxy_settings = proxy_settings
+        self.proxy_settings = proxy_settings or {}
         self.accept_defaults = accept_defaults
         self.juju_clouds = []
 
@@ -522,6 +529,8 @@ class BootstrapJujuStep(BaseStep, JujuStepHelper):
                     [
                         "--config",
                         f"juju-http-proxy={self.proxy_settings.get('HTTP_PROXY')}",
+                        "--config",
+                        f"snap-http-proxy={self.proxy_settings.get('HTTP_PROXY')}",
                     ]
                 )
             if "HTTPS_PROXY" in self.proxy_settings:
@@ -529,6 +538,8 @@ class BootstrapJujuStep(BaseStep, JujuStepHelper):
                     [
                         "--config",
                         f"juju-https-proxy={self.proxy_settings.get('HTTPS_PROXY')}",
+                        "--config",
+                        f"snap-https-proxy={self.proxy_settings.get('HTTPS_PROXY')}",
                     ]
                 )
             if "NO_PROXY" in self.proxy_settings:
@@ -1378,10 +1389,13 @@ class JujuLoginStep(BaseStep, JujuStepHelper):
 class AddInfrastructureModelStep(BaseStep):
     """Add infrastructure model."""
 
-    def __init__(self, jhelper: JujuHelper, model: str):
+    def __init__(
+        self, jhelper: JujuHelper, model: str, proxy_settings: dict | None = None
+    ):
         super().__init__("Add infrastructure model", "Adding infrastructure model")
         self.jhelper = jhelper
         self.model = model
+        self.proxy_settings = proxy_settings or {}
 
     def is_skip(self, status: Optional["Status"] = None) -> Result:
         """Determines if the step should be skipped or not."""
@@ -1395,7 +1409,8 @@ class AddInfrastructureModelStep(BaseStep):
     def run(self, status: Optional["Status"] = None) -> Result:
         """Add infrastructure model."""
         try:
-            run_sync(self.jhelper.add_model(self.model))
+            model_config = convert_proxy_to_model_configs(self.proxy_settings)
+            run_sync(self.jhelper.add_model(self.model, config=model_config))
             return Result(ResultType.COMPLETED)
         except Exception as e:
             return Result(ResultType.FAILED, str(e))
@@ -1424,3 +1439,67 @@ class UpdateJujuModelConfigStep(BaseStep):
             return Result(ResultType.FAILED, message)
 
         return Result(ResultType.COMPLETED)
+
+
+class DownloadJujuControllerCharmStep(BaseStep, JujuStepHelper):
+    """Download Juju Controller Charm"""
+
+    def __init__(self, proxy_settings: dict | None = None):
+        super().__init__(
+            "Download Controller Charm", "Downloading Juju Controller Charm"
+        )
+        self.proxy_settings = proxy_settings
+
+    def is_skip(self, status: Optional["Status"] = None) -> Result:
+        """Determines if the step should be skipped or not."""
+        if not self.proxy_settings:
+            return Result(ResultType.SKIPPED)
+
+        return Result(ResultType.COMPLETED)
+
+    def run(self, status: Optional["Status"] = None) -> Result:
+        """Run the step to completion.
+
+        Invoked when the step is run and returns a ResultType to indicate
+
+        :return:
+        """
+        try:
+            snap = Snap()
+            download_dir = snap.paths.user_common / "downloads"
+            download_dir.mkdir(parents=True, exist_ok=True)
+            rename_file = download_dir / JUJU_CONTROLLER_CHARM
+            for charm_file in download_dir.glob("juju-controller*.charm"):
+                charm_file.unlink()
+
+            cmd = [
+                self._get_juju_binary(),
+                "download",
+                "juju-controller",
+                "--channel",
+                JUJU_CHANNEL,
+                "--base",
+                JUJU_BASE,
+            ]
+            LOG.debug(f'Running command {" ".join(cmd)}')
+            env = os.environ.copy()
+            env.update(self.proxy_settings)
+            process = subprocess.run(
+                cmd,
+                capture_output=True,
+                cwd=download_dir,
+                text=True,
+                check=True,
+                env=env,
+            )
+            LOG.debug(
+                f"Command finished. stdout={process.stdout}, stderr={process.stderr}"
+            )
+
+            for charm_file in download_dir.glob("juju-controller*.charm"):
+                charm_file.rename(rename_file)
+
+            return Result(ResultType.COMPLETED)
+        except subprocess.CalledProcessError as e:
+            LOG.exception("Error downloading Juju Controller charm")
+            return Result(ResultType.FAILED, str(e))
