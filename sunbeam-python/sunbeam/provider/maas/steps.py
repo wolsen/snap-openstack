@@ -26,8 +26,8 @@ from rich.console import Console
 from rich.status import Status
 from snaphelpers import Snap
 
+import sunbeam.commands.k8s as k8s
 import sunbeam.commands.microceph as microceph
-import sunbeam.commands.microk8s as microk8s
 import sunbeam.jobs.questions
 import sunbeam.provider.maas.client as maas_client
 import sunbeam.provider.maas.deployment as maas_deployment
@@ -1501,8 +1501,8 @@ class MaasConfigureMicrocephOSDStep(BaseStep):
         return Result(ResultType.COMPLETED)
 
 
-class MaasDeployMicrok8sApplicationStep(microk8s.DeployMicrok8sApplicationStep):
-    """Deploy Microk8s application using Terraform"""
+class MaasDeployK8SApplicationStep(k8s.DeployK8SApplicationStep):
+    """Deploy K8S application using Terraform"""
 
     def __init__(
         self,
@@ -1534,9 +1534,12 @@ class MaasDeployMicrok8sApplicationStep(microk8s.DeployMicrok8sApplicationStep):
         self.ranges = None
 
     def extra_tfvars(self) -> dict:
+        return {}
+        """
         if self.ranges is None:
             raise ValueError("No ip ranges found")
         return {"addons": {"dns": "", "hostpath-storage": "", "metallb": self.ranges}}
+        """
 
     def prompt(self, console: Console | None = None) -> None:
         """Determines if the step can take input from the user.

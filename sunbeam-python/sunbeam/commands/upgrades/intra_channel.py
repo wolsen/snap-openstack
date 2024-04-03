@@ -21,8 +21,8 @@ from rich.status import Status
 
 from sunbeam.commands.hypervisor import ReapplyHypervisorTerraformPlanStep
 from sunbeam.commands.juju import JujuStepHelper
+from sunbeam.commands.k8s import DeployK8SApplicationStep
 from sunbeam.commands.microceph import DeployMicrocephApplicationStep
-from sunbeam.commands.microk8s import DeployMicrok8sApplicationStep
 from sunbeam.commands.openstack import ReapplyOpenStackTerraformPlanStep
 from sunbeam.commands.sunbeam_machine import DeploySunbeamMachineApplicationStep
 from sunbeam.commands.terraform import TerraformInitStep
@@ -133,8 +133,8 @@ class LatestInChannelCoordinator(UpgradeCoordinator):
                 self.deployment.infrastructure_model,
                 refresh=True,
             ),
-            TerraformInitStep(self.manifest.get_tfhelper("microk8s-plan")),
-            DeployMicrok8sApplicationStep(
+            TerraformInitStep(self.manifest.get_tfhelper("k8s-plan")),
+            DeployK8SApplicationStep(
                 self.client,
                 self.manifest,
                 self.jhelper,

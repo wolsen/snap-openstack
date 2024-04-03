@@ -50,14 +50,14 @@ from sunbeam.commands.juju import (
     DownloadJujuControllerCharmStep,
     JujuLoginStep,
 )
+from sunbeam.commands.k8s import (
+    AddK8SCloudStep,
+    AddK8SUnitsStep,
+    StoreK8SKubeConfigStep,
+)
 from sunbeam.commands.microceph import (
     AddMicrocephUnitsStep,
     DeployMicrocephApplicationStep,
-)
-from sunbeam.commands.microk8s import (
-    AddMicrok8sCloudStep,
-    AddMicrok8sUnitsStep,
-    StoreMicrok8sConfigStep,
 )
 from sunbeam.commands.mysql import ConfigureMySQLStep
 from sunbeam.commands.openstack import (
@@ -126,8 +126,8 @@ from sunbeam.provider.maas.steps import (
     MaasAddMachinesToClusterdStep,
     MaasBootstrapJujuStep,
     MaasConfigureMicrocephOSDStep,
+    MaasDeployK8SApplicationStep,
     MaasDeployMachinesStep,
-    MaasDeployMicrok8sApplicationStep,
     MaasSaveClusterdAddressStep,
     MaasSaveControllerStep,
     MaasScaleJujuStep,
@@ -464,7 +464,7 @@ def deploy(
     proxy_settings = get_proxy_settings(deployment)
 
     tfhelper_sunbeam_machine = manifest.get_tfhelper("sunbeam-machine-plan")
-    tfhelper_microk8s = manifest.get_tfhelper("microk8s-plan")
+    tfhelper_k8s = manifest.get_tfhelper("k8s-plan")
     tfhelper_microceph = manifest.get_tfhelper("microceph-plan")
     tfhelper_openstack_deploy = manifest.get_tfhelper("openstack-plan")
     tfhelper_hypervisor_deploy = manifest.get_tfhelper("hypervisor-plan")
@@ -521,9 +521,9 @@ def deploy(
             client, workers, jhelper, deployment.infrastructure_model
         )
     )
-    plan2.append(TerraformInitStep(tfhelper_microk8s))
+    plan2.append(TerraformInitStep(tfhelper_k8s))
     plan2.append(
-        MaasDeployMicrok8sApplicationStep(
+        MaasDeployK8SApplicationStep(
             client,
             maas_client,
             manifest,
@@ -538,12 +538,12 @@ def deploy(
         )
     )
     plan2.append(
-        AddMicrok8sUnitsStep(client, control, jhelper, deployment.infrastructure_model)
+        AddK8SUnitsStep(client, control, jhelper, deployment.infrastructure_model)
     )
     plan2.append(
-        StoreMicrok8sConfigStep(client, jhelper, deployment.infrastructure_model)
+        StoreK8SKubeConfigStep(client, jhelper, deployment.infrastructure_model)
     )
-    plan2.append(AddMicrok8sCloudStep(client, jhelper))
+    plan2.append(AddK8SCloudStep(client, jhelper))
     plan2.append(TerraformInitStep(tfhelper_microceph))
     plan2.append(
         DeployMicrocephApplicationStep(

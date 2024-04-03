@@ -26,11 +26,12 @@ import sunbeam.commands.microceph as microceph
 from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import ConfigItemNotFoundException
 from sunbeam.commands.juju import JujuStepHelper
-from sunbeam.commands.microk8s import (
+from sunbeam.commands.k8s import (
     CREDENTIAL_SUFFIX,
-    MICROK8S_CLOUD,
-    MICROK8S_DEFAULT_STORAGECLASS,
-    MICROK8S_KUBECONFIG_KEY,
+    K8S_CLOUD,
+    K8S_DEFAULT_STORAGECLASS,
+    K8S_KUBECONFIG_KEY,
+    SERVICE_LB_ANNOTATION,
 )
 from sunbeam.commands.terraform import TerraformException
 from sunbeam.jobs.common import (
@@ -50,7 +51,6 @@ from sunbeam.jobs.manifest import Manifest
 LOG = logging.getLogger(__name__)
 OPENSTACK_MODEL = "openstack"
 OPENSTACK_DEPLOY_TIMEOUT = 5400  # 90 minutes
-METALLB_ANNOTATION = "metallb.universe.tf/loadBalancerIPs"
 
 CONFIG_KEY = "TerraformVarsOpenstack"
 TOPOLOGY_KEY = "Topology"
@@ -138,7 +138,7 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         self.proxy_settings = proxy_settings or {}
         self.force = force
         self.model = OPENSTACK_MODEL
-        self.cloud = MICROK8S_CLOUD
+        self.cloud = K8S_CLOUD
         self.tfplan = "openstack-plan"
 
     def get_storage_tfvars(self, storage_nodes: list[dict]) -> dict:
@@ -217,7 +217,7 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
 
         self.update_status(status, "computing deployment sizing")
         model_config = convert_proxy_to_model_configs(self.proxy_settings)
-        model_config.update({"workload-storage": MICROK8S_DEFAULT_STORAGECLASS})
+        model_config.update({"workload-storage": K8S_DEFAULT_STORAGECLASS})
         extra_tfvars = self.get_storage_tfvars(storage_nodes)
         extra_tfvars.update(
             {
@@ -290,10 +290,10 @@ class PatchLoadBalancerServicesStep(BaseStep):
                 ResultType.COMPLETED or ResultType.FAILED otherwise
         """
         try:
-            self.kubeconfig = read_config(self.client, MICROK8S_KUBECONFIG_KEY)
+            self.kubeconfig = read_config(self.client, K8S_KUBECONFIG_KEY)
         except ConfigItemNotFoundException:
-            LOG.debug("MicroK8S config not found", exc_info=True)
-            return Result(ResultType.FAILED, "MicroK8S config not found")
+            LOG.debug("K8S kubeconfig not found", exc_info=True)
+            return Result(ResultType.FAILED, "K8S kubeconfig not found")
 
         kubeconfig = KubeConfig.from_dict(self.kubeconfig)
         try:
@@ -305,19 +305,19 @@ class PatchLoadBalancerServicesStep(BaseStep):
         for service_name in self.SERVICES:
             service = self.kube.get(Service, service_name)
             service_annotations = service.metadata.annotations
-            if METALLB_ANNOTATION not in service_annotations:
+            if SERVICE_LB_ANNOTATION not in service_annotations:
                 return Result(ResultType.COMPLETED)
 
         return Result(ResultType.SKIPPED)
 
     def run(self, status: Optional[Status] = None) -> Result:
-        """Patch LoadBalancer services annotations with MetalLB IP."""
+        """Patch LoadBalancer services annotations with LB IP."""
         for service_name in self.SERVICES:
             service = self.kube.get(Service, service_name)
             service_annotations = service.metadata.annotations
-            if METALLB_ANNOTATION not in service_annotations:
+            if SERVICE_LB_ANNOTATION not in service_annotations:
                 loadbalancer_ip = service.status.loadBalancer.ingress[0].ip
-                service_annotations[METALLB_ANNOTATION] = loadbalancer_ip
+                service_annotations[SERVICE_LB_ANNOTATION] = loadbalancer_ip
                 LOG.debug(f"Patching {service_name!r} to use IP {loadbalancer_ip!r}")
                 self.kube.patch(Service, service_name, obj=service)
 
@@ -406,9 +406,7 @@ class UpdateOpenStackModelConfigStep(BaseStep):
     def run(self, status: Status | None = None) -> Result:
         """Apply model configs to openstack terraform plan."""
         try:
-            self.model_config.update(
-                {"workload-storage": MICROK8S_DEFAULT_STORAGECLASS}
-            )
+            self.model_config.update({"workload-storage": K8S_DEFAULT_STORAGECLASS})
             override_tfvars = {"config": self.model_config}
             self.manifest.update_tfvars_and_apply_tf(
                 self.client,

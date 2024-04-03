@@ -19,8 +19,8 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from sunbeam.clusterd.service import ConfigItemNotFoundException
+from sunbeam.commands.k8s import SERVICE_LB_ANNOTATION
 from sunbeam.commands.openstack import (
-    METALLB_ANNOTATION,
     DeployControlPlaneStep,
     PatchLoadBalancerServicesStep,
     ReapplyOpenStackTerraformPlanStep,
@@ -261,7 +261,9 @@ class PatchLoadBalancerServicesStepTest(unittest.TestCase):
                 return_value=Mock(
                     get=Mock(
                         return_value=Mock(
-                            metadata=Mock(annotations={METALLB_ANNOTATION: "fake-ip"})
+                            metadata=Mock(
+                                annotations={SERVICE_LB_ANNOTATION: "fake-ip"}
+                            )
                         )
                     )
                 )
@@ -314,7 +316,7 @@ class PatchLoadBalancerServicesStepTest(unittest.TestCase):
             result = step.run()
         assert result.result_type == ResultType.COMPLETED
         annotation = step.kube.patch.mock_calls[0][2]["obj"].metadata.annotations[
-            METALLB_ANNOTATION
+            SERVICE_LB_ANNOTATION
         ]
         assert annotation == "fake-ip"
 

@@ -62,18 +62,18 @@ from sunbeam.commands.juju import (
     RemoveJujuMachineStep,
     SaveJujuUserLocallyStep,
 )
+from sunbeam.commands.k8s import (
+    AddK8SCloudStep,
+    AddK8SUnitsStep,
+    DeployK8SApplicationStep,
+    RemoveK8SUnitStep,
+    StoreK8SKubeConfigStep,
+)
 from sunbeam.commands.microceph import (
     AddMicrocephUnitsStep,
     ConfigureMicrocephOSDStep,
     DeployMicrocephApplicationStep,
     RemoveMicrocephUnitStep,
-)
-from sunbeam.commands.microk8s import (
-    AddMicrok8sCloudStep,
-    AddMicrok8sUnitsStep,
-    DeployMicrok8sApplicationStep,
-    RemoveMicrok8sUnitStep,
-    StoreMicrok8sConfigStep,
 )
 from sunbeam.commands.mysql import ConfigureMySQLStep
 from sunbeam.commands.openstack import (
@@ -342,10 +342,10 @@ def bootstrap(
             client, fqdn, jhelper, deployment.infrastructure_model
         )
     )
-    # Deploy Microk8s application during bootstrap irrespective of node role.
-    plan4.append(TerraformInitStep(manifest_obj.get_tfhelper("microk8s-plan")))
+
+    plan4.append(TerraformInitStep(manifest_obj.get_tfhelper("k8s-plan")))
     plan4.append(
-        DeployMicrok8sApplicationStep(
+        DeployK8SApplicationStep(
             client,
             manifest_obj,
             jhelper,
@@ -355,12 +355,13 @@ def bootstrap(
         )
     )
     plan4.append(
-        AddMicrok8sUnitsStep(client, fqdn, jhelper, deployment.infrastructure_model)
+        AddK8SUnitsStep(client, fqdn, jhelper, deployment.infrastructure_model)
     )
     plan4.append(
-        StoreMicrok8sConfigStep(client, jhelper, deployment.infrastructure_model)
+        StoreK8SKubeConfigStep(client, jhelper, deployment.infrastructure_model)
     )
-    plan4.append(AddMicrok8sCloudStep(client, jhelper))
+    plan4.append(AddK8SCloudStep(client, jhelper))
+
     # Deploy Microceph application during bootstrap irrespective of node role.
     plan4.append(TerraformInitStep(manifest_obj.get_tfhelper("microceph-plan")))
     plan4.append(
@@ -579,7 +580,7 @@ def join(
 
     if is_control_node:
         plan2.append(
-            AddMicrok8sUnitsStep(client, name, jhelper, deployment.infrastructure_model)
+            AddK8SUnitsStep(client, name, jhelper, deployment.infrastructure_model)
         )
 
     if is_storage_node:
@@ -693,7 +694,7 @@ def remove(ctx: click.Context, name: str, force: bool) -> None:
         RemoveSunbeamMachineStep(
             client, name, jhelper, deployment.infrastructure_model
         ),
-        RemoveMicrok8sUnitStep(client, name, jhelper, deployment.infrastructure_model),
+        RemoveK8SUnitStep(client, name, jhelper, deployment.infrastructure_model),
         RemoveMicrocephUnitStep(client, name, jhelper, deployment.infrastructure_model),
         RemoveHypervisorUnitStep(
             client, name, jhelper, deployment.infrastructure_model, force

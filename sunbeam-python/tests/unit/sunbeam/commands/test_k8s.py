@@ -1,4 +1,4 @@
-# Copyright 2023 Canonical Ltd.
+# Copyright 2024 Canonical Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,11 +19,11 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from sunbeam.clusterd.service import ConfigItemNotFoundException
-from sunbeam.commands.microk8s import (
+from sunbeam.commands.k8s import (
     CREDENTIAL_SUFFIX,
-    MICROK8S_CLOUD,
-    AddMicrok8sCloudStep,
-    StoreMicrok8sConfigStep,
+    K8S_CLOUD,
+    AddK8SCloudStep,
+    StoreK8SKubeConfigStep,
 )
 from sunbeam.jobs.common import ResultType
 from sunbeam.jobs.juju import (
@@ -43,12 +43,12 @@ def mock_run_sync(mocker):
     def run_sync(coro):
         return loop.run_until_complete(coro)
 
-    mocker.patch("sunbeam.commands.microk8s.run_sync", run_sync)
+    mocker.patch("sunbeam.commands.k8s.run_sync", run_sync)
     yield
     loop.close()
 
 
-class TestAddMicrok8sCloudStep(unittest.TestCase):
+class TestAddK8SCloudStep(unittest.TestCase):
     def __init__(self, methodName: str = "runTest") -> None:
         super().__init__(methodName)
 
@@ -60,34 +60,34 @@ class TestAddMicrok8sCloudStep(unittest.TestCase):
         clouds = {}
         self.jhelper.get_clouds.return_value = clouds
 
-        step = AddMicrok8sCloudStep(self.client, self.jhelper)
+        step = AddK8SCloudStep(self.client, self.jhelper)
         result = step.is_skip()
 
         assert result.result_type == ResultType.COMPLETED
 
     def test_is_skip_cloud_already_deployed(self):
-        clouds = {"cloud-sunbeam-microk8s": {"endpoint": "10.0.10.1"}}
+        clouds = {"cloud-sunbeam-k8s": {"endpoint": "10.0.10.1"}}
         self.jhelper.get_clouds.return_value = clouds
 
-        step = AddMicrok8sCloudStep(self.client, self.jhelper)
+        step = AddK8SCloudStep(self.client, self.jhelper)
         result = step.is_skip()
 
         assert result.result_type == ResultType.SKIPPED
 
     def test_run(self):
-        with patch("sunbeam.commands.microk8s.read_config", Mock(return_value={})):
-            step = AddMicrok8sCloudStep(self.client, self.jhelper)
+        with patch("sunbeam.commands.k8s.read_config", Mock(return_value={})):
+            step = AddK8SCloudStep(self.client, self.jhelper)
             result = step.run()
 
         self.jhelper.add_k8s_cloud.assert_called_with(
-            MICROK8S_CLOUD,
-            f"{MICROK8S_CLOUD}{CREDENTIAL_SUFFIX}",
+            K8S_CLOUD,
+            f"{K8S_CLOUD}{CREDENTIAL_SUFFIX}",
             {},
         )
         assert result.result_type == ResultType.COMPLETED
 
 
-class TestStoreMicrok8sConfigStep(unittest.TestCase):
+class TestStoreK8SKubeConfigStep(unittest.TestCase):
     def __init__(self, methodName: str = "runTest") -> None:
         super().__init__(methodName)
 
@@ -96,17 +96,17 @@ class TestStoreMicrok8sConfigStep(unittest.TestCase):
         self.jhelper = AsyncMock()
 
     def test_is_skip(self):
-        step = StoreMicrok8sConfigStep(self.client, self.jhelper, "test-model")
+        step = StoreK8SKubeConfigStep(self.client, self.jhelper, "test-model")
         result = step.is_skip()
 
         assert result.result_type == ResultType.SKIPPED
 
     def test_is_skip_config_missing(self):
         with patch(
-            "sunbeam.commands.microk8s.read_config",
+            "sunbeam.commands.k8s.read_config",
             Mock(side_effect=ConfigItemNotFoundException),
         ):
-            step = StoreMicrok8sConfigStep(self.client, self.jhelper, "test-model")
+            step = StoreK8SKubeConfigStep(self.client, self.jhelper, "test-model")
             result = step.is_skip()
 
         assert result.result_type == ResultType.COMPLETED
@@ -117,13 +117,13 @@ clusters:
 - cluster:
     certificate-authority-data: fakecert
     server: https://127.0.0.1:16443
-  name: microk8s-cluster
+  name: k8s-cluster
 contexts:
 - context:
-    cluster: microk8s-cluster
+    cluster: k8s-cluster
     user: admin
-  name: microk8s
-current-context: microk8s
+  name: k8s
+current-context: k8s
 kind: Config
 preferences: {}
 users:
@@ -132,12 +132,11 @@ users:
     token: faketoken"""
 
         action_result = {
-            "kubeconfig": "/home/ubuntu/config",
-            "content": kubeconfig_content,
+            "kubeconfig": kubeconfig_content,
         }
         self.jhelper.run_action.return_value = action_result
 
-        step = StoreMicrok8sConfigStep(self.client, self.jhelper, "test-model")
+        step = StoreK8SKubeConfigStep(self.client, self.jhelper, "test-model")
         result = step.run()
 
         self.jhelper.get_leader_unit.assert_called_once()
@@ -149,7 +148,7 @@ users:
             "Application missing..."
         )
 
-        step = StoreMicrok8sConfigStep(self.client, self.jhelper, "test-model")
+        step = StoreK8SKubeConfigStep(self.client, self.jhelper, "test-model")
         result = step.run()
 
         self.jhelper.get_leader_unit.assert_called_once()
@@ -161,7 +160,7 @@ users:
             "Leader missing..."
         )
 
-        step = StoreMicrok8sConfigStep(self.client, self.jhelper, "test-model")
+        step = StoreK8SKubeConfigStep(self.client, self.jhelper, "test-model")
         result = step.run()
 
         self.jhelper.get_leader_unit.assert_called_once()
@@ -171,7 +170,7 @@ users:
     def test_run_action_failed(self):
         self.jhelper.run_action.side_effect = ActionFailedException("Action failed...")
 
-        step = StoreMicrok8sConfigStep(self.client, self.jhelper, "test-model")
+        step = StoreK8SKubeConfigStep(self.client, self.jhelper, "test-model")
         result = step.run()
 
         self.jhelper.get_leader_unit.assert_called_once()

@@ -523,7 +523,7 @@ class JujuHelper:
                 auth_types=["oauth2", "clientcertificate"],
                 ca_certificates=[caCert],
                 endpoint=ep,
-                host_cloud_region="microk8s/localhost",
+                host_cloud_region="k8s/localhost",
                 regions=[jujuClient.CloudRegion(endpoint=ep, name="localhost")],
                 type_="kubernetes",
             )
