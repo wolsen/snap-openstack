@@ -36,13 +36,13 @@ variable "k8s-snap-channel" {
   default     = "latest/edge"
 }
 
-variable "machine_ids" {
+variable "machine-ids" {
   description = "List of machine ids to include"
   type        = list(string)
   default     = []
 }
 
-variable "machine_model" {
+variable "machine-model" {
   description = "Model to deploy to"
   type        = string
 }

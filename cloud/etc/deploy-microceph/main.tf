@@ -27,25 +27,25 @@ terraform {
 provider "juju" {}
 
 data "juju_model" "machine_model" {
-  name = var.machine_model
+  name = var.machine-model
 }
 
 resource "juju_application" "microceph" {
   name  = "microceph"
   trust = true
   model = data.juju_model.machine_model.name
-  units = length(var.machine_ids) # need to manage the number of units
+  units = length(var.machine-ids) # need to manage the number of units
 
   charm {
     name     = "microceph"
-    channel  = var.charm_microceph_channel
-    revision = var.charm_microceph_revision
+    channel  = var.charm-microceph-channel
+    revision = var.charm-microceph-revision
     base    = "ubuntu@22.04"
   }
 
   config = merge({
-    snap-channel = var.microceph_channel
-  }, var.charm_microceph_config)
+    snap-channel = var.microceph-channel
+  }, var.charm-microceph-config)
 }
 
 # juju_offer.microceph_offer will be created

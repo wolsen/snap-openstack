@@ -147,7 +147,7 @@ VARIABLE_DEFAULTS = {
         "cidr": "192.168.122.0/24",
         "security_group_rules": True,
     },
-    "external_network": {
+    "external-network": {
         "cidr": "10.20.20.0/24",
         "gateway": None,
         "start": None,
@@ -269,14 +269,14 @@ class SetHypervisorCharmConfigStep(BaseStep):
         self.variables = sunbeam.jobs.questions.load_answers(
             self.client, CLOUD_CONFIG_SECTION
         )
-        self.ext_network = self.variables.get("external_network", {})
+        self.ext_network = self.variables.get("external-network", {})
         self.charm_config["enable-gateway"] = str(
             self.variables["user"]["remote_access_location"] == utils.REMOTE_ACCESS
         )
         self.charm_config["external-bridge"] = "br-ex"
         if self.variables["user"]["remote_access_location"] == utils.LOCAL_ACCESS:
             external_network = ipaddress.ip_network(
-                self.variables["external_network"].get("cidr")
+                self.variables["external-network"].get("cidr")
             )
             bridge_interface = (
                 f"{self.ext_network.get('gateway')}/{external_network.prefixlen}"
@@ -285,7 +285,7 @@ class SetHypervisorCharmConfigStep(BaseStep):
         else:
             self.charm_config["external-bridge-address"] = self.IPVANYNETWORK_UNSET
 
-        self.charm_config["physnet-name"] = self.variables["external_network"].get(
+        self.charm_config["physnet-name"] = self.variables["external-network"].get(
             "physical_network"
         )
         try:
@@ -411,7 +411,7 @@ class UserQuestions(BaseStep):
         self.variables = sunbeam.jobs.questions.load_answers(
             self.client, CLOUD_CONFIG_SECTION
         )
-        for section in ["user", "external_network"]:
+        for section in ["user", "external-network"]:
             if not self.variables.get(section):
                 self.variables[section] = {}
 
@@ -430,59 +430,59 @@ class UserQuestions(BaseStep):
             ext_net_bank = sunbeam.jobs.questions.QuestionBank(
                 questions=ext_net_questions_local_only(),
                 console=console,
-                preseed=self.preseed.get("external_network"),
-                previous_answers=self.variables.get("external_network"),
+                preseed=self.preseed.get("external-network"),
+                previous_answers=self.variables.get("external-network"),
                 accept_defaults=self.accept_defaults,
             )
         else:
             ext_net_bank = sunbeam.jobs.questions.QuestionBank(
                 questions=ext_net_questions(),
                 console=console,
-                preseed=self.preseed.get("external_network"),
-                previous_answers=self.variables.get("external_network"),
+                preseed=self.preseed.get("external-network"),
+                previous_answers=self.variables.get("external-network"),
                 accept_defaults=self.accept_defaults,
             )
-        self.variables["external_network"]["cidr"] = ext_net_bank.cidr.ask()
+        self.variables["external-network"]["cidr"] = ext_net_bank.cidr.ask()
         external_network = ipaddress.ip_network(
-            self.variables["external_network"]["cidr"]
+            self.variables["external-network"]["cidr"]
         )
         external_network_hosts = list(external_network.hosts())
-        default_gateway = self.variables["external_network"].get("gateway") or str(
+        default_gateway = self.variables["external-network"].get("gateway") or str(
             external_network_hosts[0]
         )
         if self.variables["user"]["remote_access_location"] == utils.LOCAL_ACCESS:
-            self.variables["external_network"]["gateway"] = default_gateway
+            self.variables["external-network"]["gateway"] = default_gateway
         else:
-            self.variables["external_network"]["gateway"] = ext_net_bank.gateway.ask(
+            self.variables["external-network"]["gateway"] = ext_net_bank.gateway.ask(
                 new_default=default_gateway
             )
 
-        default_allocation_range_start = self.variables["external_network"].get(
+        default_allocation_range_start = self.variables["external-network"].get(
             "start"
         ) or str(external_network_hosts[1])
-        self.variables["external_network"]["start"] = ext_net_bank.start.ask(
+        self.variables["external-network"]["start"] = ext_net_bank.start.ask(
             new_default=default_allocation_range_start
         )
-        default_allocation_range_end = self.variables["external_network"].get(
+        default_allocation_range_end = self.variables["external-network"].get(
             "end"
         ) or str(external_network_hosts[-1])
-        self.variables["external_network"]["end"] = ext_net_bank.end.ask(
+        self.variables["external-network"]["end"] = ext_net_bank.end.ask(
             new_default=default_allocation_range_end
         )
 
-        self.variables["external_network"]["physical_network"] = VARIABLE_DEFAULTS[
-            "external_network"
+        self.variables["external-network"]["physical_network"] = VARIABLE_DEFAULTS[
+            "external-network"
         ]["physical_network"]
 
-        self.variables["external_network"][
+        self.variables["external-network"][
             "network_type"
         ] = ext_net_bank.network_type.ask()
-        if self.variables["external_network"]["network_type"] == "vlan":
-            self.variables["external_network"][
+        if self.variables["external-network"]["network_type"] == "vlan":
+            self.variables["external-network"][
                 "segmentation_id"
             ] = ext_net_bank.segmentation_id.ask()
         else:
-            self.variables["external_network"]["segmentation_id"] = 0
+            self.variables["external-network"]["segmentation_id"] = 0
 
         self.variables["user"]["run_demo_setup"] = user_bank.run_demo_setup.ask()
         if self.variables["user"]["run_demo_setup"]:

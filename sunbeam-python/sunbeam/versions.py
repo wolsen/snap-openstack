@@ -164,27 +164,27 @@ DEPLOY_K8S_TFVAR_MAP = {
 DEPLOY_MICROCEPH_TFVAR_MAP = {
     "charms": {
         "microceph": {
-            "channel": "charm_microceph_channel",
-            "revision": "charm_microceph_revision",
-            "config": "charm_microceph_config",
+            "channel": "charm-microceph-channel",
+            "revision": "charm-microceph-revision",
+            "config": "charm-microceph-config",
         }
     }
 }
 DEPLOY_OPENSTACK_HYPERVISOR_TFVAR_MAP = {
     "charms": {
         "openstack-hypervisor": {
-            "channel": "charm_channel",
-            "revision": "charm_revision",
-            "config": "charm_config",
+            "channel": "charm-channel",
+            "revision": "charm-revision",
+            "config": "charm-config",
         }
     }
 }
 DEPLOY_SUNBEAM_MACHINE_TFVAR_MAP = {
     "charms": {
         "sunbeam-machine": {
-            "channel": "charm_channel",
-            "revision": "charm_revision",
-            "config": "charm_config",
+            "channel": "charm-channel",
+            "revision": "charm-revision",
+            "config": "charm-config",
         }
     }
 }

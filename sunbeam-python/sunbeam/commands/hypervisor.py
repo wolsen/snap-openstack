@@ -77,7 +77,7 @@ class DeployHypervisorApplicationStep(DeployMachineApplicationStep):
         tfhelper_openstack = self.manifest.get_tfhelper("openstack-plan")
         openstack_backend_config = tfhelper_openstack.backend_config()
         return {
-            "openstack_model": self.openstack_model,
+            "openstack-model": self.openstack_model,
             "openstack-state-backend": tfhelper_openstack.backend,
             "openstack-state-config": openstack_backend_config,
         }
@@ -168,10 +168,10 @@ class RemoveHypervisorUnitStep(BaseStep, JujuStepHelper):
         except ConfigItemNotFoundException:
             tfvars = {}
 
-        machine_ids = tfvars.get("machine_ids", [])
+        machine_ids = tfvars.get("machine-ids", [])
         if self.machine_id in machine_ids:
             machine_ids.remove(self.machine_id)
-            tfvars.update({"machine_ids": machine_ids})
+            tfvars.update({"machine-ids": machine_ids})
             update_config(self.client, CONFIG_KEY, tfvars)
 
     def run(self, status: Optional[Status] = None) -> Result:

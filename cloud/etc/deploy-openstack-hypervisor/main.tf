@@ -34,24 +34,24 @@ data "terraform_remote_state" "openstack" {
 resource "juju_application" "openstack-hypervisor" {
   name  = "openstack-hypervisor"
   trust = false
-  model = var.machine_model
-  units = length(var.machine_ids) # need to manage the number of units
+  model = var.machine-model
+  units = length(var.machine-ids) # need to manage the number of units
 
   charm {
     name     = "openstack-hypervisor"
-    channel  = var.charm_channel
-    revision = var.charm_revision
+    channel  = var.charm-channel
+    revision = var.charm-revision
     base    = "ubuntu@22.04"
   }
 
   config = merge({
-    snap-channel = var.snap_channel
-  }, var.charm_config)
+    snap-channel = var.snap-channel
+  }, var.charm-config)
 
 }
 
 resource "juju_integration" "hypervisor-amqp" {
-  model = var.machine_model
+  model = var.machine-model
 
   application {
     name     = juju_application.openstack-hypervisor.name
@@ -64,7 +64,7 @@ resource "juju_integration" "hypervisor-amqp" {
 }
 
 resource "juju_integration" "hypervisor-identity" {
-  model = var.machine_model
+  model = var.machine-model
 
   application {
     name     = juju_application.openstack-hypervisor.name
@@ -77,7 +77,7 @@ resource "juju_integration" "hypervisor-identity" {
 }
 
 resource "juju_integration" "hypervisor-cert-distributor" {
-  model = var.machine_model
+  model = var.machine-model
 
   application {
     name     = juju_application.openstack-hypervisor.name
@@ -90,7 +90,7 @@ resource "juju_integration" "hypervisor-cert-distributor" {
 }
 
 resource "juju_integration" "hypervisor-certs" {
-  model = var.machine_model
+  model = var.machine-model
 
   application {
     name     = juju_application.openstack-hypervisor.name
@@ -103,7 +103,7 @@ resource "juju_integration" "hypervisor-certs" {
 }
 
 resource "juju_integration" "hypervisor-ovn" {
-  model = var.machine_model
+  model = var.machine-model
 
   application {
     name     = juju_application.openstack-hypervisor.name
@@ -117,7 +117,7 @@ resource "juju_integration" "hypervisor-ovn" {
 
 resource "juju_integration" "hypervisor-ceilometer" {
   count = try(data.terraform_remote_state.openstack.outputs.ceilometer-offer-url, null) != null ? 1 : 0
-  model = var.machine_model
+  model = var.machine-model
 
   application {
     name     = juju_application.openstack-hypervisor.name
@@ -130,7 +130,7 @@ resource "juju_integration" "hypervisor-ceilometer" {
 }
 
 resource "juju_integration" "hypervisor-cinder-ceph" {
-  model = var.machine_model
+  model = var.machine-model
 
   application {
     name     = juju_application.openstack-hypervisor.name

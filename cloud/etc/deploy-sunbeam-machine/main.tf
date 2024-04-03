@@ -29,16 +29,16 @@ provider "juju" {}
 resource "juju_application" "sunbeam-machine" {
   name  = "sunbeam-machine"
   trust = false
-  model = var.machine_model
-  units = length(var.machine_ids) # need to manage the number of units
+  model = var.machine-model
+  units = length(var.machine-ids) # need to manage the number of units
 
   charm {
     name     = "sunbeam-machine"
-    channel  = var.charm_channel
-    revision = var.charm_revision
+    channel  = var.charm-channel
+    revision = var.charm-revision
     base    = "ubuntu@22.04"
   }
 
-  config = var.charm_config
+  config = var.charm-config
 
 }

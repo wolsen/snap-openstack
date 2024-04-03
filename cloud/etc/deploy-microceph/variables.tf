@@ -13,36 +13,36 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-variable "charm_microceph_channel" {
+variable "charm-microceph-channel" {
   description = "Operator channel for microceph deployment"
   type        = string
   default     = "reef/candidate"
 }
 
-variable "charm_microceph_revision" {
+variable "charm-microceph-revision" {
   description = "Operator channel revision for microceph deployment"
   type        = number
   default     = null
 }
 
-variable "charm_microceph_config" {
+variable "charm-microceph-config" {
   description = "Operator config for microceph deployment"
   type        = map(string)
   default     = {}
 }
 
-variable "microceph_channel" {
+variable "microceph-channel" {
   description = "K8S channel to deploy, not the operator channel"
   default     = "reef/stable"
 }
 
-variable "machine_ids" {
+variable "machine-ids" {
   description = "List of machine ids to include"
   type        = list(string)
   default     = []
 }
 
-variable "machine_model" {
+variable "machine-model" {
   description = "Model to deploy to"
   type        = string
 }

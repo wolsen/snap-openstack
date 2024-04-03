@@ -1,5 +1,5 @@
 # External networking
-variable "external_network" {
+variable "external-network" {
   type = object({
     cidr             = string
     gateway          = string

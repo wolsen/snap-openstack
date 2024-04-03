@@ -27,13 +27,13 @@ terraform {
 provider "juju" {}
 
 data "juju_model" "machine_model" {
-  name = var.machine_model
+  name = var.machine-model
 }
 
 resource "juju_application" "k8s" {
   name  = "k8s"
   model = data.juju_model.machine_model.name
-  units = length(var.machine_ids) # need to manage the number of units
+  units = length(var.machine-ids) # need to manage the number of units
 
   charm {
     name     = "k8s"
