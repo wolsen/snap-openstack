@@ -30,7 +30,7 @@ jobs:
   functional-test:
     needs: build
     name: Functional test
-    runs-on: [self-hosted, xlarge]
+    runs-on: [self-hosted, xlarge, jammy, x64]
     steps:
       - name: Checkout
         uses: actions/checkout@v3
