@@ -571,6 +571,7 @@ def deploy(
             # maas deployment always deploys multiple databases
             "large",
             deployment.infrastructure_model,
+            proxy_settings=proxy_settings,
         )
     )
     plan2.append(ConfigureMySQLStep(jhelper))
