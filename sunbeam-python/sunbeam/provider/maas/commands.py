@@ -316,7 +316,8 @@ def bootstrap(
     # Workaround for bug https://bugs.launchpad.net/juju/+bug/2044481
     # Remove the below step and dont pass controller charm as bootstrap
     # arguments once the above bug is fixed
-    plan.append(DownloadJujuControllerCharmStep(proxy_settings))
+    if proxy_settings:
+        plan.append(DownloadJujuControllerCharmStep(proxy_settings))
     plan.append(
         MaasBootstrapJujuStep(
             maas_client,
