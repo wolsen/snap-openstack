@@ -168,11 +168,12 @@ class ConfigureMicrocephOSDStep(BaseStep):
         self.variables = {}
         self.machine_id = ""
         self.disks = ""
+        self.unpartitioned_disks = []
+        self.osd_disks = []
 
     def microceph_config_questions(self):
-        disks = self.get_unpartitioned_disks()
         disks_str = None
-        if len(disks) > 0:
+        if len(self.unpartitioned_disks) > 0:
             disks_str = ",".join(disks)
 
         questions = microceph_questions()
@@ -180,9 +181,7 @@ class ConfigureMicrocephOSDStep(BaseStep):
         questions["osd_devices"].default_value = disks_str
         return questions
 
-    def get_unpartitioned_disks(self) -> list:
-        unpartitioned_disks = []
-
+    def get_all_disks(self) -> None:
         try:
             node = self.client.cluster.get_node_info(self.name)
             self.machine_id = str(node.get("machineid"))
@@ -191,21 +190,25 @@ class ConfigureMicrocephOSDStep(BaseStep):
                     APPLICATION, self.machine_id, self.model
                 )
             )
-            _, unpartitioned_disks = run_sync(
+            self.osd_disks, self.unpartitioned_disks = run_sync(
                 list_disks(self.jhelper, self.model, unit.entity_id)
             )
-            unpartitioned_disks = [disk.get("path") for disk in unpartitioned_disks]
+            self.unpartitioned_disks = [
+                disk.get("path") for disk in self.unpartitioned_disks
+            ]
             # Remove duplicates if any
-            unpartitioned_disks = list(set(unpartitioned_disks))
-            if OSD_PATH_PREFIX in unpartitioned_disks:
-                unpartitioned_disks.remove(OSD_PATH_PREFIX)
+            self.unpartitioned_disks = list(set(self.unpartitioned_disks))
+            if OSD_PATH_PREFIX in self.unpartitioned_disks:
+                self.unpartitioned_disks.remove(OSD_PATH_PREFIX)
+
+            self.osd_disks = [disk.get("path") for disk in self.osd_disks]
+            self.osd_disks = list(set(self.osd_disks))
+            LOG.debug(f"Unpartitioned disks: {self.unpartitioned_disks}")
+            LOG.debug(f"OSD disks: {self.osd_disks}")
 
         except (UnitNotFoundException, ActionFailedException) as e:
             LOG.debug(str(e))
             raise click.ClickException("Unable to list disks")
-
-        LOG.debug(f"Unpartitioned disks: {unpartitioned_disks}")
-        return unpartitioned_disks
 
     def prompt(self, console: Optional[Console] = None) -> None:
         """Determines if the step can take input from the user.
@@ -214,6 +217,7 @@ class ConfigureMicrocephOSDStep(BaseStep):
         running the step. Steps should not expect that the prompt will be
         available and should provide a reasonable default where possible.
         """
+        self.get_all_disks()
         self.variables = questions.load_answers(self.client, self._CONFIG)
         self.variables.setdefault("microceph_config", {})
         self.variables["microceph_config"].setdefault(self.name, {"osd_devices": None})
@@ -262,6 +266,14 @@ class ConfigureMicrocephOSDStep(BaseStep):
             LOG.debug(
                 "Skipping ConfigureMicrocephOSDStep as no osd devices are selected"
             )
+            return Result(ResultType.SKIPPED)
+
+        # Remove any disks that are already added
+        disks_to_add = self.disks.split(",")
+        disks_to_add = set(disks_to_add).difference(set(self.osd_disks))
+        self.disks = ",".join(disks_to_add)
+        if not self.disks:
+            LOG.debug("Skipping ConfigureMicrocephOSDStep as devices are already added")
             return Result(ResultType.SKIPPED)
 
         return Result(ResultType.COMPLETED)
