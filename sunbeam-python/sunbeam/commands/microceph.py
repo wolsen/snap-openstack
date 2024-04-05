@@ -45,7 +45,6 @@ MICROCEPH_APP_TIMEOUT = 180  # 3 minutes, managing the application should be fas
 MICROCEPH_UNIT_TIMEOUT = (
     1200  # 15 minutes, adding / removing units can take a long time
 )
-OSD_PATH_PREFIX = "/dev/disk/by-id/"
 
 
 def microceph_questions():
@@ -196,13 +195,7 @@ class ConfigureMicrocephOSDStep(BaseStep):
             self.unpartitioned_disks = [
                 disk.get("path") for disk in self.unpartitioned_disks
             ]
-            # Remove duplicates if any
-            self.unpartitioned_disks = list(set(self.unpartitioned_disks))
-            if OSD_PATH_PREFIX in self.unpartitioned_disks:
-                self.unpartitioned_disks.remove(OSD_PATH_PREFIX)
-
             self.osd_disks = [disk.get("path") for disk in self.osd_disks]
-            self.osd_disks = list(set(self.osd_disks))
             LOG.debug(f"Unpartitioned disks: {self.unpartitioned_disks}")
             LOG.debug(f"OSD disks: {self.osd_disks}")
 
