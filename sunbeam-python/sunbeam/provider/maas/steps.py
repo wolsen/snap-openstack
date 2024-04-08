@@ -1623,6 +1623,67 @@ class MaasDeployK8SApplicationStep(k8s.DeployK8SApplicationStep):
         return super().is_skip(status)
 
 
+class MaasEnableK8SFeatures(k8s.EnableK8SFeatures):
+    def __init__(
+        self,
+        client: Client,
+        maas_client: maas_client.MaasClient,
+        jhelper: JujuHelper,
+        public_space: str,
+        public_label: str,
+        model: str,
+    ):
+        super().__init__(
+            client,
+            jhelper,
+            model,
+        )
+        self.maas_client = maas_client
+        self.public_space = public_space
+        self.public_label = public_label
+
+    def _to_joined_range(self, subnet_ranges: dict[str, list[dict]], label: str) -> str:
+        """Convert a list of ip ranges to a string for cni config.
+
+        Current cni config format is: <ip start>-<ip end>,<ip  start>-<ip end>,...
+        """
+        lb_range = []
+        for ip_ranges in subnet_ranges.values():
+            for ip_range in ip_ranges:
+                if ip_range["label"] == label:
+                    lb_range.append(f"{ip_range['start']}-{ip_range['end']}")
+        if len(lb_range) == 0:
+            raise ValueError("No ip range found for label: " + label)
+        return ",".join(lb_range)
+
+    def is_skip(self, status: Status | None = None):
+        """Determines if the step should be skipped or not."""
+        try:
+            public_ranges = maas_client.get_ip_ranges_from_space(
+                self.maas_client, self.public_space
+            )
+            LOG.debug("Public ip ranges: %r", public_ranges)
+        except ValueError as e:
+            LOG.debug(
+                "Failed to ip ranges for space: %r", self.public_space, exc_info=True
+            )
+            return Result(ResultType.FAILED, str(e))
+        try:
+            public_metallb_range = self._to_joined_range(
+                public_ranges, self.public_label
+            )
+        except ValueError:
+            LOG.debug(
+                "No iprange with label %r found",
+                self.public_label,
+                exc_info=True,
+            )
+            return Result(ResultType.FAILED, "No public ip range found")
+        self.lb_range = public_metallb_range
+
+        return self.check_k8s_status()
+
+
 class MaasSetHypervisorUnitsOptionsStep(SetHypervisorUnitsOptionsStep):
     def __init__(
         self,

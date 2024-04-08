@@ -66,6 +66,7 @@ from sunbeam.commands.k8s import (
     AddK8SCloudStep,
     AddK8SUnitsStep,
     DeployK8SApplicationStep,
+    EnableK8SFeatures,
     RemoveK8SUnitStep,
     StoreK8SKubeConfigStep,
 )
@@ -357,6 +358,7 @@ def bootstrap(
     plan4.append(
         AddK8SUnitsStep(client, fqdn, jhelper, deployment.infrastructure_model)
     )
+    plan4.append(EnableK8SFeatures(client, jhelper, deployment.infrastructure_model))
     plan4.append(
         StoreK8SKubeConfigStep(client, jhelper, deployment.infrastructure_model)
     )

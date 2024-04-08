@@ -33,6 +33,7 @@ from sunbeam.jobs.common import (
 from sunbeam.jobs.juju import (
     ActionFailedException,
     ApplicationNotFoundException,
+    JujuException,
     JujuHelper,
     LeaderNotFoundException,
     UnsupportedKubeconfigException,
@@ -202,6 +203,131 @@ class RemoveK8SUnitStep(RemoveMachineUnitStep):
 
     def get_unit_timeout(self) -> int:
         return K8S_UNIT_TIMEOUT
+
+
+class EnableK8SFeatures(BaseStep):
+    """Enable K8S Features"""
+
+    _ADDONS_CONFIG = K8S_ADDONS_CONFIG_KEY
+
+    def __init__(
+        self,
+        client: Client,
+        jhelper: JujuHelper,
+        model: str,
+    ):
+        super().__init__("Enable K8S Features", "Enabling K8S Features")
+        self.client = client
+        self.jhelper = jhelper
+        self.model = model
+        self.timeout = K8S_APP_TIMEOUT
+        self.lb_range = None
+
+    def check_k8s_status(self) -> Result:
+        """Check k8s status and if features are enabled or not."""
+        try:
+            leader = run_sync(self.jhelper.get_leader_unit(APPLICATION, self.model))
+        except JujuException as e:
+            LOG.debug(f"Failed to get {APPLICATION} leader", exc_info=True)
+            return Result(ResultType.FAILED, str(e))
+
+        try:
+            cmd = "sudo k8s status"
+            cmd_result = run_sync(
+                self.jhelper.run_cmd_on_machine_unit(
+                    leader,
+                    self.model,
+                    cmd,
+                    self.timeout,
+                )
+            )
+            LOG.info(f"k8s status: {cmd_result}")
+
+            k8s_status = yaml.safe_load(cmd_result.get("stdout"))
+            if (
+                k8s_status.get("status") == "ready"
+                and k8s_status.get("load-balancer").get("enabled")  # noqa: W503
+                and k8s_status.get("local-storage").get("enabled")  # noqa: W503
+            ):
+                LOG.debug("K8S features load-balancer, local-storage already enabled")
+                return Result(ResultType.SKIPPED)
+
+        except JujuException as e:
+            LOG.debug("Failed to enable K8S features", exc_info=True)
+            return Result(ResultType.FAILED, str(e))
+
+        return Result(ResultType.COMPLETED)
+
+    def is_skip(self, status: Status | None = None) -> Result:
+        """Determines if the step should be skipped or not.
+
+        :return: ResultType.SKIPPED if the Step should be skipped,
+                ResultType.COMPLETED or ResultType.FAILED otherwise
+        """
+        try:
+            addons_config = read_config(self.client, self._ADDONS_CONFIG)
+            self.lb_range = addons_config.get("k8s-addons", {}).get("loadbalancer")
+        except ConfigItemNotFoundException as e:
+            LOG.debug("Failed to get load-balancer config")
+            return Result(ResultType.FAILED, str(e))
+
+        if not self.lb_range:
+            LOG.debug("Load balancer CIDR not set, skipping the step")
+            return Result(ResultType.SKIPPED)
+
+        return self.check_k8s_status()
+
+    def run(self, status: Status | None = None) -> Result:
+        """Enable k8s features.
+
+        Enable k8s features by deploying corresponding charms.
+        Currently there is no coredns charm intergration with k8s,
+        and no charm to enable local-storage and no options to
+        configure load-balancer via cilium charm.
+        As a workaround, enabling the above functionality by
+        running snap k8s commands on k8s unit.
+        """
+        try:
+            leader = run_sync(self.jhelper.get_leader_unit(APPLICATION, self.model))
+        except JujuException as e:
+            LOG.debug(f"Failed to get {APPLICATION} leader", exc_info=True)
+            return Result(ResultType.FAILED, str(e))
+
+        try:
+            cmd = "sudo k8s enable local-storage"
+            run_sync(
+                self.jhelper.run_cmd_on_machine_unit(
+                    leader,
+                    self.model,
+                    cmd,
+                    self.timeout,
+                )
+            )
+
+            cmd = "sudo k8s enable load-balancer"
+            run_sync(
+                self.jhelper.run_cmd_on_machine_unit(
+                    leader,
+                    self.model,
+                    cmd,
+                    self.timeout,
+                )
+            )
+
+            cmd = f"sudo k8s set load-balancer.cidrs={self.lb_range}"
+            run_sync(
+                self.jhelper.run_cmd_on_machine_unit(
+                    leader,
+                    self.model,
+                    cmd,
+                    self.timeout,
+                )
+            )
+        except JujuException as e:
+            LOG.debug("Failed to enable K8S features", exc_info=True)
+            return Result(ResultType.FAILED, str(e))
+
+        return Result(ResultType.COMPLETED)
 
 
 class AddK8SCloudStep(BaseStep, JujuStepHelper):

@@ -128,6 +128,7 @@ from sunbeam.provider.maas.steps import (
     MaasConfigureMicrocephOSDStep,
     MaasDeployK8SApplicationStep,
     MaasDeployMachinesStep,
+    MaasEnableK8SFeatures,
     MaasSaveClusterdAddressStep,
     MaasSaveControllerStep,
     MaasScaleJujuStep,
@@ -539,6 +540,16 @@ def deploy(
     )
     plan2.append(
         AddK8SUnitsStep(client, control, jhelper, deployment.infrastructure_model)
+    )
+    plan2.append(
+        MaasEnableK8SFeatures(
+            client,
+            maas_client,
+            jhelper,
+            str(deployment.network_mapping[Networks.PUBLIC.value]),
+            deployment.public_api_label,
+            deployment.infrastructure_model,
+        )
     )
     plan2.append(
         StoreK8SKubeConfigStep(client, jhelper, deployment.infrastructure_model)

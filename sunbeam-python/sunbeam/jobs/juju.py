@@ -436,6 +436,23 @@ class JujuHelper:
             f"Leader for application {name!r} is missing from model {model!r}"
         )
 
+    async def run_cmd_on_machine_unit(
+        self, name: str, model: str, cmd: str, timeout=None
+    ):
+        """Run a shell command on a machine unit.
+
+        :name: unit name
+        :model: Name of the model where the application is located
+        :cmd: Command to run
+        :timeout: Timeout in seconds
+        :returns: Command results
+        """
+        unit = await self.get_unit(name, model)
+        action = await unit.run(cmd, timeout=timeout, block=True)
+        if action.results["return-code"] != 0:
+            raise CmdFailedException(action.results["stderr"])
+        return action.results
+
     async def run_cmd_on_unit_payload(
         self,
         name: str,
