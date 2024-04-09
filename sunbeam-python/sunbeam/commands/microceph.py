@@ -292,7 +292,8 @@ class ConfigureMicrocephOSDStep(BaseStep):
             )
             LOG.debug(f"Result after running action add-osd: {action_result}")
         except (UnitNotFoundException, ActionFailedException) as e:
-            LOG.debug(str(e))
-            return Result(ResultType.FAILED, str(e))
+            message = f"Microceph Adding disks {self.disks} failed: {str(e)}"
+            LOG.debug(message)
+            return Result(ResultType.FAILED, message)
 
         return Result(ResultType.COMPLETED)
