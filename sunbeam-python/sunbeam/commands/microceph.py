@@ -173,7 +173,7 @@ class ConfigureMicrocephOSDStep(BaseStep):
     def microceph_config_questions(self):
         disks_str = None
         if len(self.unpartitioned_disks) > 0:
-            disks_str = ",".join(disks)
+            disks_str = ",".join(self.unpartitioned_disks)
 
         questions = microceph_questions()
         # Specialise question with local disk information.
