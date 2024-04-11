@@ -55,14 +55,14 @@ jobs:
           sg snap_daemon "openstack.sunbeam configure -a"
           sg snap_daemon "openstack.sunbeam launch"
           sg snap_daemon "openstack.sunbeam enable orchestration"
-          sg snap_daemon "openstack.sunbeam enable loadbalancer"
-          sg snap_daemon "openstack.sunbeam enable dns --nameservers=testing.github."
+          # sg snap_daemon "openstack.sunbeam enable loadbalancer"
+          # sg snap_daemon "openstack.sunbeam enable dns --nameservers=testing.github."
           sg snap_daemon "openstack.sunbeam enable telemetry"
           sg snap_daemon "openstack.sunbeam enable observability"
           sg snap_daemon "openstack.sunbeam enable vault"
           sg snap_daemon "openstack.sunbeam enable secrets"
           sg snap_daemon "openstack.sunbeam enable caas"
-          sg snap_daemon "openstack.sunbeam enable validation"
+          # sg snap_daemon "openstack.sunbeam enable validation"
           # If smoke tests fails, logs should be collected via sunbeam command in "Collect logs"
           # sg snap_daemon "openstack.sunbeam validation run smoke"
           # sg snap_daemon "openstack.sunbeam validation run --output tempest_validation.log"
@@ -72,10 +72,10 @@ jobs:
           # Commented disabling observability due to LP#1998282
           # sg snap_daemon "openstack.sunbeam disable observability"
           # sg snap_daemon "openstack.sunbeam disable telemetry"
-          sg snap_daemon "openstack.sunbeam disable dns"
-          sg snap_daemon "openstack.sunbeam disable loadbalancer"
+          # sg snap_daemon "openstack.sunbeam disable dns"
+          # sg snap_daemon "openstack.sunbeam disable loadbalancer"
           sg snap_daemon "openstack.sunbeam disable orchestration"
-          sg snap_daemon "openstack.sunbeam disable validation"
+          # sg snap_daemon "openstack.sunbeam disable validation"
 
       - name: Collect logs
         if: always()
