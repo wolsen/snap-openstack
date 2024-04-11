@@ -178,6 +178,12 @@ parts:
     plugin: dump
     source: snap-wrappers/
 
+  manifests:
+    plugin: dump
+    source: manifests/
+    organize:
+      '*': etc/manifests/
+
   sunbeam-and-openstackclients:
     plugin: python
     source: .
@@ -256,7 +262,7 @@ plugs:
     interface: personal-files
     write:
       - $HOME/.local/share/juju
-    
+
   dot-local-share-openstack:
     interface: personal-files
     write:
