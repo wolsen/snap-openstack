@@ -201,7 +201,7 @@ def clear(ctx: click.Context) -> None:
 def proxy_questions():
     return {
         "proxy_required": ConfirmQuestion(
-            "Configure proxy for access to external network resources?",
+            "Use proxy to access external network resources?",
             default_value=False,
         ),
         "http_proxy": PromptQuestion(
