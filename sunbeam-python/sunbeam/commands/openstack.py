@@ -173,7 +173,7 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         determined_topology = determine_target_topology(self.client)
 
         if self.topology == "auto":
-            self.topology = previous_config.get("topology", determined_topology)
+            self.topology = determined_topology
         LOG.debug(f"topology {self.topology}")
 
         if self.database == "auto":
