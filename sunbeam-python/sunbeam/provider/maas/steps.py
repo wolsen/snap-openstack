@@ -1501,8 +1501,8 @@ class MaasConfigureMicrocephOSDStep(BaseStep):
         return Result(ResultType.COMPLETED)
 
 
-class MaasDeployK8SApplicationStep(k8s.DeployK8SApplicationStep):
-    """Deploy K8S application using Terraform"""
+class MaasDeployMicrok8sApplicationStep(k8s.DeployK8SApplicationStep):
+    """Deploy Microk8s application using Terraform"""
 
     def __init__(
         self,
@@ -1534,12 +1534,9 @@ class MaasDeployK8SApplicationStep(k8s.DeployK8SApplicationStep):
         self.ranges = None
 
     def extra_tfvars(self) -> dict:
-        return {}
-        """
         if self.ranges is None:
             raise ValueError("No ip ranges found")
         return {"addons": {"dns": "", "hostpath-storage": "", "metallb": self.ranges}}
-        """
 
     def prompt(self, console: Console | None = None) -> None:
         """Determines if the step can take input from the user.
@@ -1621,6 +1618,13 @@ class MaasDeployK8SApplicationStep(k8s.DeployK8SApplicationStep):
             return Result(ResultType.FAILED, "No internal ip range found")
 
         return super().is_skip(status)
+
+
+class MaasDeployK8SApplicationStep(MaasDeployMicrok8sApplicationStep):
+    """Deploy K8S application using Terraform"""
+
+    def extra_tfvars(self) -> dict:
+        return {}
 
 
 class MaasEnableK8SFeatures(k8s.EnableK8SFeatures):

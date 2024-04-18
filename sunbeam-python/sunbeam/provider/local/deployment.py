@@ -35,6 +35,10 @@ from sunbeam.commands.configure import (
 from sunbeam.commands.juju import BOOTSTRAP_CONFIG_KEY, bootstrap_questions
 from sunbeam.commands.k8s import K8S_ADDONS_CONFIG_KEY, k8s_addons_questions
 from sunbeam.commands.microceph import CONFIG_DISKS_KEY, microceph_questions
+from sunbeam.commands.microk8s import (
+    MICROK8S_ADDONS_CONFIG_KEY,
+    microk8s_addons_questions,
+)
 from sunbeam.commands.proxy import proxy_questions
 from sunbeam.jobs.deployment import PROXY_CONFIG_KEY, Deployment
 from sunbeam.jobs.juju import JujuAccount, JujuAccountNotFound, JujuController
@@ -132,6 +136,20 @@ class LocalDeployment(Deployment):
             previous_answers=variables.get("bootstrap", {}),
         )
         preseed_content.extend(show_questions(bootstrap_bank, section="bootstrap"))
+
+        # NOTE: Add k8s-addons and microk8s addons. microk8s addons should be removed
+        # once microk8s is phased out
+        try:
+            variables = load_answers(client, MICROK8S_ADDONS_CONFIG_KEY)
+        except ClusterServiceUnavailableException:
+            variables = {}
+        microk8s_addons_bank = QuestionBank(
+            questions=microk8s_addons_questions(),
+            console=console,
+            previous_answers=variables.get("addons", {}),
+        )
+        preseed_content.extend(show_questions(microk8s_addons_bank, section="addons"))
+
         try:
             variables = load_answers(client, K8S_ADDONS_CONFIG_KEY)
         except ClusterServiceUnavailableException:
