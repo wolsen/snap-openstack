@@ -1,0 +1,108 @@
+name: Test sunbeam with k8s operator
+
+on:
+  workflow_dispatch:
+    input:
+      k8s-provider:
+        description: Select k8s provider
+        required: true
+        default: k8s
+        type: choice
+        options:
+        - microk8s
+        - k8s
+    outputs:
+      snap:
+        description: "Filename of the built snap artifact"
+        value: local-${{ jobs.build.outputs.snap }}
+
+jobs:
+  build:
+    name: Build snap
+    runs-on: ubuntu-latest
+    outputs:
+      snap: ${{ steps.snapcraft.outputs.snap }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Build snap locally
+        uses: snapcore/action-build@v1
+        id: snapcraft
+
+      - name: Upload locally built snap artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: local-${{ steps.snapcraft.outputs.snap }}
+          path: ${{ steps.snapcraft.outputs.snap }}
+
+  functional-test:
+    needs: build
+    name: Functional test
+    runs-on: [self-hosted, large, jammy, x64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Download snap artifact
+        id: download
+        uses: actions/download-artifact@v3
+        with:
+          name: local-${{ needs.build.outputs.snap }}
+      - name: test
+        run: |
+          export COLUMNS=256
+          sudo snap install  ${{ needs.build.outputs.snap }} --dangerous
+          sudo snap set openstack k8s.provider={{ inputs.k8s-provider }}
+          openstack.sunbeam prepare-node-script | bash -x
+          sudo snap connect openstack:juju-bin juju:juju-bin
+          sudo snap connect openstack:dot-local-share-juju
+          sudo snap connect openstack:dot-config-openstack
+          sudo snap connect openstack:dot-local-share-openstack
+          sg snap_daemon "openstack.sunbeam cluster bootstrap --manifest .github/assets/k8s/edge.yml --accept-defaults --topology single --database single"
+          sg snap_daemon "openstack.sunbeam cluster list"
+          # Note: Moving configure before enabling caas just to ensure caas images are not downloaded
+          # To download caas image, require ports to open on firewall to access fedora images.
+          sg snap_daemon "openstack.sunbeam configure -a"
+          sg snap_daemon "openstack.sunbeam launch"
+          sg snap_daemon "openstack.sunbeam enable orchestration"
+          # sg snap_daemon "openstack.sunbeam enable loadbalancer"
+          # sg snap_daemon "openstack.sunbeam enable dns --nameservers=testing.github."
+          sg snap_daemon "openstack.sunbeam enable telemetry"
+          sg snap_daemon "openstack.sunbeam enable observability"
+          sg snap_daemon "openstack.sunbeam enable vault"
+          sg snap_daemon "openstack.sunbeam enable secrets"
+          sg snap_daemon "openstack.sunbeam enable caas"
+          # sg snap_daemon "openstack.sunbeam enable validation"
+          # If smoke tests fails, logs should be collected via sunbeam command in "Collect logs"
+          # sg snap_daemon "openstack.sunbeam validation run smoke"
+          # sg snap_daemon "openstack.sunbeam validation run --output tempest_validation.log"
+          sg snap_daemon "openstack.sunbeam disable caas"
+          sg snap_daemon "openstack.sunbeam disable secrets"
+          sg snap_daemon "openstack.sunbeam disable vault"
+          # Commented disabling observability due to LP#1998282
+          # sg snap_daemon "openstack.sunbeam disable observability"
+          # sg snap_daemon "openstack.sunbeam disable telemetry"
+          # sg snap_daemon "openstack.sunbeam disable dns"
+          # sg snap_daemon "openstack.sunbeam disable loadbalancer"
+          sg snap_daemon "openstack.sunbeam disable orchestration"
+          # sg snap_daemon "openstack.sunbeam disable validation"
+
+      - name: Collect logs
+        if: always()
+        run: |
+          mkdir -p logs
+          models=$(juju models --format json | jq -r .models[].name)
+          for model in $models; do name=$(echo $model | cut -d/ -f2); juju status -m $model -o logs/$name.yaml; cat logs/$name.yaml; done
+          for model in $models; do name=$(echo $model | cut -d/ -f2); juju debug-log -m $model --replay > logs/$name-debug-log.txt; done
+          cp -rf $HOME/snap/openstack/common/logs/*.log logs/
+          # if test -f tempest_validation.log; then cp tempest_validation.log logs/; fi
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: Sunbeam logs
+          path: logs
+          retention-days: 30
+      - name: Setup tmate session
+        if: ${{ failure() && runner.debug }}
+        uses: canonical/action-tmate@main
