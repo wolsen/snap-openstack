@@ -29,6 +29,7 @@ from sunbeam.commands.microk8s import (
     MICROK8S_CLOUD,
     MICROK8S_DEFAULT_STORAGECLASS,
     MICROK8S_KUBECONFIG_KEY,
+    validate_cidr_or_ip_range,
 )
 from sunbeam.jobs.common import (
     BaseStep,
@@ -86,7 +87,7 @@ def k8s_addons_questions():
         "loadbalancer": PromptQuestion(
             "Load balancer CIDR ranges (supports multiple cidrs, comma separated)",
             default_value="10.20.21.16/28",
-            validation_function=validate_cidrs,
+            validation_function=validate_cidr_or_ip_range,
         ),
     }
 
