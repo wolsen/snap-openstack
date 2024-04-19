@@ -28,6 +28,7 @@ from snaphelpers import Snap
 
 import sunbeam.commands.k8s as k8s
 import sunbeam.commands.microceph as microceph
+import sunbeam.commands.microk8s as microk8s
 import sunbeam.jobs.questions
 import sunbeam.provider.maas.client as maas_client
 import sunbeam.provider.maas.deployment as maas_deployment
@@ -1501,7 +1502,7 @@ class MaasConfigureMicrocephOSDStep(BaseStep):
         return Result(ResultType.COMPLETED)
 
 
-class MaasDeployMicrok8sApplicationStep(k8s.DeployK8SApplicationStep):
+class MaasDeployMicrok8sApplicationStep(microk8s.DeployMicrok8sApplicationStep):
     """Deploy Microk8s application using Terraform"""
 
     def __init__(
@@ -1620,11 +1621,121 @@ class MaasDeployMicrok8sApplicationStep(k8s.DeployK8SApplicationStep):
         return super().is_skip(status)
 
 
-class MaasDeployK8SApplicationStep(MaasDeployMicrok8sApplicationStep):
+class MaasDeployK8SApplicationStep(k8s.DeployK8SApplicationStep):
     """Deploy K8S application using Terraform"""
+
+    def __init__(
+        self,
+        client: Client,
+        maas_client: maas_client.MaasClient,
+        manifest: Manifest,
+        jhelper: JujuHelper,
+        public_space: str,
+        public_label: str,
+        internal_space: str,
+        internal_label: str,
+        model: str,
+        deployment_preseed: dict | None = None,
+        accept_defaults: bool = False,
+    ):
+        super().__init__(
+            client,
+            manifest,
+            jhelper,
+            model,
+            deployment_preseed,
+            accept_defaults,
+        )
+        self.maas_client = maas_client
+        self.public_space = public_space
+        self.public_label = public_label
+        self.internal_space = internal_space
+        self.internal_label = internal_label
+        self.ranges = None
 
     def extra_tfvars(self) -> dict:
         return {}
+
+    def prompt(self, console: Console | None = None) -> None:
+        """Determines if the step can take input from the user.
+
+        Prompts are used by Steps to gather the necessary input prior to
+        running the step. Steps should not expect that the prompt will be
+        available and should provide a reasonable default where possible.
+        """
+
+    def has_prompts(self) -> bool:
+        """Returns true if the step has prompts that it can ask the user.
+
+        :return: True if the step can ask the user for prompts,
+                 False otherwise
+        """
+        return False
+
+    def _to_joined_range(self, subnet_ranges: dict[str, list[dict]], label: str) -> str:
+        """Convert a list of ip ranges to a string for cni config.
+
+        Current cni config format is: <ip start>-<ip end>,<ip  start>-<ip end>,...
+        """
+        lb_range = []
+        for ip_ranges in subnet_ranges.values():
+            for ip_range in ip_ranges:
+                if ip_range["label"] == label:
+                    lb_range.append(f"{ip_range['start']}-{ip_range['end']}")
+        if len(lb_range) == 0:
+            raise ValueError("No ip range found for label: " + label)
+        return ",".join(lb_range)
+
+    def is_skip(self, status: Status | None = None):
+        """Determines if the step should be skipped or not."""
+        try:
+            public_ranges = maas_client.get_ip_ranges_from_space(
+                self.maas_client, self.public_space
+            )
+            LOG.debug("Public ip ranges: %r", public_ranges)
+        except ValueError as e:
+            LOG.debug(
+                "Failed to ip ranges for space: %r", self.public_space, exc_info=True
+            )
+            return Result(ResultType.FAILED, str(e))
+        try:
+            public_metallb_range = self._to_joined_range(
+                public_ranges, self.public_label
+            )
+        except ValueError:
+            LOG.debug(
+                "No iprange with label %r found",
+                self.public_label,
+                exc_info=True,
+            )
+            return Result(ResultType.FAILED, "No public ip range found")
+        self.ranges = public_metallb_range
+
+        try:
+            internal_ranges = maas_client.get_ip_ranges_from_space(
+                self.maas_client, self.internal_space
+            )
+            LOG.debug("Internal ip ranges: %r", internal_ranges)
+        except ValueError as e:
+            LOG.debug(
+                "Failed to ip ranges for space: %r", self.internal_space, exc_info=True
+            )
+            return Result(ResultType.FAILED, str(e))
+        try:
+            # TODO(gboutry): use this range when cni (or sunbeam) easily supports
+            # using different ip pools
+            internal_metallb_range = self._to_joined_range(  # noqa
+                internal_ranges, self.internal_label
+            )
+        except ValueError:
+            LOG.debug(
+                "No iprange with label %r found",
+                self.internal_label,
+                exc_info=True,
+            )
+            return Result(ResultType.FAILED, "No internal ip range found")
+
+        return super().is_skip(status)
 
 
 class MaasEnableK8SFeatures(k8s.EnableK8SFeatures):
