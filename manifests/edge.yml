@@ -56,6 +56,3 @@ software:
       channel: 2024.1/edge
     microceph:
       channel: reef/edge
-    # k8s requires following charm fixes below
-    rabbitmq-k8s:
-      channel: 3.12/edge
