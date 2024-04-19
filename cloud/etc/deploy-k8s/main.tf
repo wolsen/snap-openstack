@@ -27,22 +27,22 @@ terraform {
 provider "juju" {}
 
 data "juju_model" "machine_model" {
-  name = var.machine-model
+  name = var.machine_model
 }
 
 resource "juju_application" "k8s" {
   name  = "k8s"
   model = data.juju_model.machine_model.name
-  units = length(var.machine-ids) # need to manage the number of units
+  units = length(var.machine_ids) # need to manage the number of units
 
   charm {
     name     = "k8s"
-    channel  = var.k8s-channel
-    revision = var.k8s-revision
+    channel  = var.k8s_channel
+    revision = var.k8s_revision
     base     = "ubuntu@22.04"
   }
 
   config = merge({
-    channel = var.k8s-snap-channel
-  }, var.k8s-config)
+    channel = var.k8s_snap_channel
+  }, var.k8s_config)
 }

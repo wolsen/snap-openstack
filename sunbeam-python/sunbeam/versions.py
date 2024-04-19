@@ -157,45 +157,45 @@ DEPLOY_OPENSTACK_TFVAR_MAP["charms"]["self-signed-certificates"] = {
 DEPLOY_MICROK8S_TFVAR_MAP = {
     "charms": {
         "microk8s": {
-            "channel": "charm-microk8s-channel",
-            "revision": "charm-microk8s-revision",
-            "config": "charm-microk8s-config",
+            "channel": "charm_microk8s_channel",
+            "revision": "charm_microk8s_revision",
+            "config": "charm_microk8s_config",
         }
     }
 }
 DEPLOY_K8S_TFVAR_MAP = {
     "charms": {
         "k8s": {
-            "channel": "k8s-channel",
-            "revision": "k8s-revision",
-            "config": "k8s-config",
+            "channel": "k8s_channel",
+            "revision": "k8s_revision",
+            "config": "k8s_config",
         },
     }
 }
 DEPLOY_MICROCEPH_TFVAR_MAP = {
     "charms": {
         "microceph": {
-            "channel": "charm-microceph-channel",
-            "revision": "charm-microceph-revision",
-            "config": "charm-microceph-config",
+            "channel": "charm_microceph_channel",
+            "revision": "charm_microceph_revision",
+            "config": "charm_microceph_config",
         }
     }
 }
 DEPLOY_OPENSTACK_HYPERVISOR_TFVAR_MAP = {
     "charms": {
         "openstack-hypervisor": {
-            "channel": "charm-channel",
-            "revision": "charm-revision",
-            "config": "charm-config",
+            "channel": "charm_channel",
+            "revision": "charm_revision",
+            "config": "charm_config",
         }
     }
 }
 DEPLOY_SUNBEAM_MACHINE_TFVAR_MAP = {
     "charms": {
         "sunbeam-machine": {
-            "channel": "charm-channel",
-            "revision": "charm-revision",
-            "config": "charm-config",
+            "channel": "charm_channel",
+            "revision": "charm_revision",
+            "config": "charm_config",
         }
     }
 }

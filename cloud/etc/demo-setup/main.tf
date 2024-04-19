@@ -62,23 +62,23 @@ resource "openstack_networking_network_v2" "external_network" {
   admin_state_up = true
   external       = true
   segments {
-    physical_network = var.external-network.physical_network
-    network_type     = var.external-network.network_type
-    segmentation_id  = var.external-network.segmentation_id
+    physical_network = var.external_network.physical_network
+    network_type     = var.external_network.network_type
+    segmentation_id  = var.external_network.segmentation_id
   }
 }
 
 resource "openstack_networking_subnet_v2" "external_subnet" {
   name        = "external-subnet"
   network_id  = openstack_networking_network_v2.external_network.id
-  cidr        = var.external-network.cidr
+  cidr        = var.external_network.cidr
   ip_version  = 4
   enable_dhcp = false
   allocation_pool {
-    start = var.external-network.start
-    end   = var.external-network.end
+    start = var.external_network.start
+    end   = var.external_network.end
   }
-  gateway_ip = var.external-network.gateway
+  gateway_ip = var.external_network.gateway
 }
 
 # User configuration

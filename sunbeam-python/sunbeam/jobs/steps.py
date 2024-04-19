@@ -98,8 +98,8 @@ class DeployMachineApplicationStep(BaseStep):
             extra_tfvars = self.extra_tfvars()
             extra_tfvars.update(
                 {
-                    "machine-ids": machine_ids,
-                    "machine-model": self.model,
+                    "machine_ids": machine_ids,
+                    "machine_model": self.model,
                 }
             )
             self.manifest.update_tfvars_and_apply_tf(
@@ -213,14 +213,14 @@ class AddMachineUnitsStep(BaseStep):
         except ConfigItemNotFoundException:
             tfvars = {}
 
-        machine_ids = set(tfvars.get("machine-ids", []))
+        machine_ids = set(tfvars.get("machine_ids", []))
 
         if len(self.to_deploy) > 0 and self.to_deploy.issubset(machine_ids):
             LOG.debug("All machine ids are already in tfvars, skipping update")
             return
 
         machine_ids.update(self.to_deploy)
-        tfvars.update({"machine-ids": sorted(machine_ids)})
+        tfvars.update({"machine_ids": sorted(machine_ids)})
         update_config(self.client, self.config, tfvars)
 
     def run(self, status: Optional[Status] = None) -> Result:

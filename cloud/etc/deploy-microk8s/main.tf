@@ -27,27 +27,27 @@ terraform {
 provider "juju" {}
 
 data "juju_model" "machine_model" {
-  name = var.machine-model
+  name = var.machine_model
 }
 
 resource "juju_application" "microk8s" {
   name  = "microk8s"
   trust = true
   model = data.juju_model.machine_model.name
-  units = length(var.machine-ids) # need to manage the number of units
+  units = length(var.machine_ids) # need to manage the number of units
 
   charm {
     name     = "microk8s"
-    channel  = var.charm-microk8s-channel
-    revision = var.charm-microk8s-revision
+    channel  = var.charm_microk8s_channel
+    revision = var.charm_microk8s_revision
     base    = "ubuntu@22.04"
   }
 
   config = merge({
-    channel                       = var.microk8s-channel
+    channel                       = var.microk8s_channel
     addons                        = join(" ", [for key, value in var.addons : "${key}:${value}"])
     disable_cert_reissue          = true
     kubelet_serialize_image_pulls = false
     skip_verify                   = true
-  }, var.charm-microk8s-config)
+  }, var.charm_microk8s_config)
 }

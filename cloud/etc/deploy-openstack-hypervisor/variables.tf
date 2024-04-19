@@ -13,42 +13,42 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-variable "machine-ids" {
+variable "machine_ids" {
   description = "List of machine ids to include"
   type        = list(string)
   default     = []
 }
 
-variable "snap-channel" {
+variable "snap_channel" {
   description = "Snap channel to deploy openstack-hypervisor snap from"
   type        = string
   default     = "2024.1/stable"
 }
 
-variable "charm-channel" {
+variable "charm_channel" {
   description = "Charm channel to deploy openstack-hypervisor charm from"
   type        = string
   default     = "2024.1/stable"
 }
 
-variable "charm-revision" {
+variable "charm_revision" {
   description = "Charm channel revision to deploy openstack-hypervisor charm from"
   type        = number
   default     = null
 }
 
-variable "charm-config" {
+variable "charm_config" {
   description = "Charm config to deploy openstack-hypervisor charm from"
   type        = map(string)
   default     = {}
 }
 
-variable "openstack-model" {
+variable "openstack_model" {
   description = "Name of OpenStack model."
   type        = string
 }
 
-variable "machine-model" {
+variable "machine_model" {
   description = "Name of model to deploy hypervisor into."
   type        = string
 }

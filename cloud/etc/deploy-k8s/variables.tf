@@ -13,36 +13,36 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-variable "k8s-channel" {
+variable "k8s_channel" {
   description = "Operator channel for k8s deployment"
   type        = string
   default     = "latest/edge"
 }
 
-variable "k8s-revision" {
+variable "k8s_revision" {
   description = "Operator channel revision for k8s deployment"
   type        = number
   default     = null
 }
 
-variable "k8s-config" {
+variable "k8s_config" {
   description = "Operator config for k8s deployment"
   type        = map(string)
   default     = {}
 }
 
-variable "k8s-snap-channel" {
+variable "k8s_snap_channel" {
   description = "K8S snap channel to deploy, not the operator channel"
   default     = "latest/edge"
 }
 
-variable "machine-ids" {
+variable "machine_ids" {
   description = "List of machine ids to include"
   type        = list(string)
   default     = []
 }
 
-variable "machine-model" {
+variable "machine_model" {
   description = "Model to deploy to"
   type        = string
 }

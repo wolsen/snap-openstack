@@ -50,7 +50,7 @@ class TestRemoveHypervisorUnitStep(unittest.TestCase):
             "sunbeam.commands.hypervisor.read_config",
             Mock(
                 return_value={
-                    "openstack-model": "openstack",
+                    "openstack_model": "openstack",
                 }
             ),
         )
@@ -195,7 +195,7 @@ class TestReapplyHypervisorTerraformPlanStep(unittest.TestCase):
             "sunbeam.commands.hypervisor.read_config",
             Mock(
                 return_value={
-                    "openstack-model": "openstack",
+                    "openstack_model": "openstack",
                 }
             ),
         )

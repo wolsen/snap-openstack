@@ -13,36 +13,36 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-variable "charm-microk8s-channel" {
+variable "charm_microk8s_channel" {
   description = "Operator channel for microk8s deployment"
   type        = string
   default     = "legacy/stable"
 }
 
-variable "charm-microk8s-revision" {
+variable "charm_microk8s_revision" {
   description = "Operator channel revision for microk8s deployment"
   type        = number
   default     = null
 }
 
-variable "charm-microk8s-config" {
+variable "charm_microk8s_config" {
   description = "Operator config for microk8s deployment"
   type        = map(string)
   default     = {}
 }
 
-variable "microk8s-channel" {
+variable "microk8s_channel" {
   description = "K8S channel to deploy, not the operator channel"
   default     = "1.28-strict/stable"
 }
 
-variable "machine-ids" {
+variable "machine_ids" {
   description = "List of machine ids to include"
   type        = list(string)
   default     = []
 }
 
-variable "machine-model" {
+variable "machine_model" {
   description = "Model to deploy to"
   type        = string
 }

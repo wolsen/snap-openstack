@@ -134,7 +134,7 @@ class TestDeployMachineApplicationStep:
             cclient,
             tfplan=tfplan,
             tfvar_config=tfconfig,
-            override_tfvars={"machine-ids": machines, "machine-model": model},
+            override_tfvars={"machine_ids": machines, "machine_model": model},
         )
         assert result.result_type == ResultType.COMPLETED
 
