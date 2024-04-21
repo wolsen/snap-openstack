@@ -14,7 +14,7 @@
 # limitations under the License.
 
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 import yaml
@@ -27,6 +27,8 @@ from sunbeam.clusterd.service import (
     ManifestItemNotFoundException,
 )
 from sunbeam.jobs.common import ResultType
+from sunbeam.jobs.deployment import Deployment
+from sunbeam.jobs.plugin import PluginManager
 from sunbeam.versions import OPENSTACK_CHANNEL, TERRAFORM_DIR_NAMES
 
 test_manifest = """
@@ -85,15 +87,16 @@ software:
 
 @pytest.fixture()
 def deployment():
-    mock = Mock()
-    mock.name = "test_deployment"
-    mock.juju_controller.api_endpoints = ["ep1", "ep2"]
+    mock = Mock(Deployment)
+    mock.__setattr__("name", "test_deployment")
+    mock.__setattr__("juju_controller", MagicMock())
+    mock.__setattr__("juju_account", MagicMock())
     yield mock
 
 
 @pytest.fixture()
 def pluginmanager():
-    with patch("sunbeam.jobs.manifest.PluginManager") as p:
+    with patch("sunbeam.jobs.manifest.PluginManager", spec=PluginManager) as p:
         yield p
 
 

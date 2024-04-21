@@ -98,7 +98,7 @@ class TerraformManifest:
     source: Path = Field(description="Path to Terraform plan")
 
 
-@dataclass(config=dict(extra="allow"))
+@dataclass(config=dict(extra="allow", arbitrary_types_allowed=True))
 class SoftwareConfig:
     deployment: InitVar[Deployment]
     plugin_manager: InitVar[PluginManager]
