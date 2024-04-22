@@ -26,6 +26,7 @@ DEFAULT_CONFIG = {
     "juju.cloud.name": "sunbeam",
     "daemon.group": "snap_daemon",
     "daemon.debug": False,
+    "k8s.provider": "microk8s",
 }
 
 OPTION_KEYS = set(k.split(".")[0] for k in DEFAULT_CONFIG.keys())

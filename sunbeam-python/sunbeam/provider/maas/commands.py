@@ -50,6 +50,11 @@ from sunbeam.commands.juju import (
     DownloadJujuControllerCharmStep,
     JujuLoginStep,
 )
+from sunbeam.commands.k8s import (
+    AddK8SCloudStep,
+    AddK8SUnitsStep,
+    StoreK8SKubeConfigStep,
+)
 from sunbeam.commands.microceph import (
     AddMicrocephUnitsStep,
     DeployMicrocephApplicationStep,
@@ -126,8 +131,10 @@ from sunbeam.provider.maas.steps import (
     MaasAddMachinesToClusterdStep,
     MaasBootstrapJujuStep,
     MaasConfigureMicrocephOSDStep,
+    MaasDeployK8SApplicationStep,
     MaasDeployMachinesStep,
     MaasDeployMicrok8sApplicationStep,
+    MaasEnableK8SFeatures,
     MaasSaveClusterdAddressStep,
     MaasSaveControllerStep,
     MaasScaleJujuStep,
@@ -406,6 +413,8 @@ def deploy(
     Deploy the sunbeam cluster.
     """
     deployment: MaasDeployment = ctx.obj
+    snap = Snap()
+    k8s_provider = snap.config.get("k8s.provider")
 
     preflight_checks = []
     preflight_checks.append(JujuSnapCheck())
@@ -464,7 +473,10 @@ def deploy(
     proxy_settings = get_proxy_settings(deployment)
 
     tfhelper_sunbeam_machine = manifest.get_tfhelper("sunbeam-machine-plan")
-    tfhelper_microk8s = manifest.get_tfhelper("microk8s-plan")
+    if k8s_provider == "k8s":
+        tfhelper_k8s = manifest.get_tfhelper("k8s-plan")
+    else:
+        tfhelper_k8s = manifest.get_tfhelper("microk8s-plan")
     tfhelper_microceph = manifest.get_tfhelper("microceph-plan")
     tfhelper_openstack_deploy = manifest.get_tfhelper("openstack-plan")
     tfhelper_hypervisor_deploy = manifest.get_tfhelper("hypervisor-plan")
@@ -521,29 +533,66 @@ def deploy(
             client, workers, jhelper, deployment.infrastructure_model
         )
     )
-    plan2.append(TerraformInitStep(tfhelper_microk8s))
-    plan2.append(
-        MaasDeployMicrok8sApplicationStep(
-            client,
-            maas_client,
-            manifest,
-            jhelper,
-            str(deployment.network_mapping[Networks.PUBLIC.value]),
-            deployment.public_api_label,
-            str(deployment.network_mapping[Networks.INTERNAL.value]),
-            deployment.internal_api_label,
-            deployment.infrastructure_model,
-            preseed,
-            accept_defaults,
+    plan2.append(TerraformInitStep(tfhelper_k8s))
+    if k8s_provider == "k8s":
+        plan2.append(
+            MaasDeployK8SApplicationStep(
+                client,
+                maas_client,
+                manifest,
+                jhelper,
+                str(deployment.network_mapping[Networks.PUBLIC.value]),
+                deployment.public_api_label,
+                str(deployment.network_mapping[Networks.INTERNAL.value]),
+                deployment.internal_api_label,
+                deployment.infrastructure_model,
+                preseed,
+                accept_defaults,
+            )
         )
-    )
-    plan2.append(
-        AddMicrok8sUnitsStep(client, control, jhelper, deployment.infrastructure_model)
-    )
-    plan2.append(
-        StoreMicrok8sConfigStep(client, jhelper, deployment.infrastructure_model)
-    )
-    plan2.append(AddMicrok8sCloudStep(client, jhelper))
+        plan2.append(
+            AddK8SUnitsStep(client, control, jhelper, deployment.infrastructure_model)
+        )
+        plan2.append(
+            MaasEnableK8SFeatures(
+                client,
+                maas_client,
+                jhelper,
+                str(deployment.network_mapping[Networks.PUBLIC.value]),
+                deployment.public_api_label,
+                deployment.infrastructure_model,
+            )
+        )
+        plan2.append(
+            StoreK8SKubeConfigStep(client, jhelper, deployment.infrastructure_model)
+        )
+        plan2.append(AddK8SCloudStep(client, jhelper))
+    else:
+        plan2.append(
+            MaasDeployMicrok8sApplicationStep(
+                client,
+                maas_client,
+                manifest,
+                jhelper,
+                str(deployment.network_mapping[Networks.PUBLIC.value]),
+                deployment.public_api_label,
+                str(deployment.network_mapping[Networks.INTERNAL.value]),
+                deployment.internal_api_label,
+                deployment.infrastructure_model,
+                preseed,
+                accept_defaults,
+            )
+        )
+        plan2.append(
+            AddMicrok8sUnitsStep(
+                client, control, jhelper, deployment.infrastructure_model
+            )
+        )
+        plan2.append(
+            StoreMicrok8sConfigStep(client, jhelper, deployment.infrastructure_model)
+        )
+        plan2.append(AddMicrok8sCloudStep(client, jhelper))
+
     plan2.append(TerraformInitStep(tfhelper_microceph))
     plan2.append(
         DeployMicrocephApplicationStep(

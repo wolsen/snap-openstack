@@ -229,7 +229,7 @@ class TestManifest:
             manifest.Manifest.load(deployment, manifest_file)
 
     def test_get_tfhelper(self, mocker, snap, copytree, deployment, pluginmanager):
-        tfplan = "microk8s-plan"
+        tfplan = "k8s-plan"
         mocker.patch.object(manifest, "Snap", return_value=snap)
         mocker.patch.object(terraform, "Snap", return_value=snap)
         client = Mock()
@@ -299,7 +299,7 @@ class TestManifest:
     def test_get_tfhelper_missing_terraform_source(
         self, mocker, snap, copytree, deployment, pluginmanager
     ):
-        tfplan = "microk8s-plan"
+        tfplan = "k8s-plan"
         mocker.patch.object(manifest, "Snap", return_value=snap)
         mocker.patch.object(terraform, "Snap", return_value=snap)
         client = Mock()

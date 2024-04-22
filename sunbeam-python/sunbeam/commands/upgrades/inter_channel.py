@@ -22,6 +22,7 @@ from rich.status import Status
 from sunbeam.clusterd.client import Client
 from sunbeam.commands.hypervisor import CONFIG_KEY as HYPERVISOR_CONFIG_KEY
 from sunbeam.commands.juju import JujuStepHelper
+from sunbeam.commands.k8s import K8S_CONFIG_KEY
 from sunbeam.commands.microceph import CONFIG_KEY as MICROCEPH_CONFIG_KEY
 from sunbeam.commands.microk8s import MICROK8S_CONFIG_KEY
 from sunbeam.commands.openstack import CONFIG_KEY as OPENSTACK_CONFIG_KEY
@@ -318,7 +319,7 @@ class UpgradeMicrok8sCharm(UpgradeMachineCharm):
         """
         super().__init__(
             "Upgrade Microk8s charm",
-            "Upgrading microk8s charm",
+            "Upgrading Microk8s charm",
             client,
             jhelper,
             manifest,
@@ -326,6 +327,35 @@ class UpgradeMicrok8sCharm(UpgradeMachineCharm):
             ["microk8s"],
             "microk8s-plan",
             MICROK8S_CONFIG_KEY,
+            1200,
+        )
+
+
+class UpgradeK8SCharm(UpgradeMachineCharm):
+    def __init__(
+        self,
+        client: Client,
+        jhelper: JujuHelper,
+        manifest: Manifest,
+        model: str,
+    ):
+        """Create instance of UpgradeK8SCharm class.
+
+        :client: Client to connect to clusterdb
+        :jhelper: Helper for interacting with pylibjuju
+        :manifest: Manifest object
+        :model: Name of model containing charms.
+        """
+        super().__init__(
+            "Upgrade K8S charm",
+            "Upgrading K8S charm",
+            client,
+            jhelper,
+            manifest,
+            model,
+            ["k8s"],
+            "k8s-plan",
+            K8S_CONFIG_KEY,
             1200,
         )
 
@@ -389,27 +419,6 @@ class UpgradeSunbeamMachineCharm(UpgradeMachineCharm):
 
 
 class ChannelUpgradeCoordinator(UpgradeCoordinator):
-    def __init__(
-        self,
-        deployment: Deployment,
-        client: Client,
-        jhelper: JujuHelper,
-        manifest: Manifest,
-    ):
-        """Upgrade coordinator.
-
-        Execute plan for conducting an upgrade.
-
-        :deployment: Deployment instance
-        :client: Client for interacting with clusterd
-        :jhelper: Helper for interacting with pylibjuju
-        :manifest: Manifest object
-        """
-        self.deployment = deployment
-        self.client = client
-        self.jhelper = jhelper
-        self.manifest = manifest
-
     def get_plan(self) -> list[BaseStep]:
         """Return the plan for this upgrade.
 
@@ -423,17 +432,29 @@ class ChannelUpgradeCoordinator(UpgradeCoordinator):
             UpgradeMicrocephCharm(
                 self.client, self.jhelper, self.manifest, "controller"
             ),
-            UpgradeMicrok8sCharm(
-                self.client, self.jhelper, self.manifest, "controller"
-            ),
-            UpgradeOpenstackHypervisorCharm(
-                self.client, self.jhelper, self.manifest, "controller"
-            ),
-            UpgradeSunbeamMachineCharm(
-                self.client, self.jhelper, self.manifest, "controller"
-            ),
-            UpgradePlugins(self.deployment, upgrade_release=True),
         ]
+        if self.k8s_provider == "k8s":
+            plan.append(
+                UpgradeK8SCharm(self.client, self.jhelper, self.manifest, "controller")
+            )
+        else:
+            plan.append(
+                UpgradeMicrok8sCharm(
+                    self.client, self.jhelper, self.manifest, "controller"
+                )
+            )
+
+        plan.extend(
+            [
+                UpgradeOpenstackHypervisorCharm(
+                    self.client, self.jhelper, self.manifest, "controller"
+                ),
+                UpgradeSunbeamMachineCharm(
+                    self.client, self.jhelper, self.manifest, "controller"
+                ),
+                UpgradePlugins(self.deployment, upgrade_release=True),
+            ]
+        )
         return plan
 
     def run_plan(self) -> None:

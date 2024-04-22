@@ -62,6 +62,14 @@ from sunbeam.commands.juju import (
     RemoveJujuMachineStep,
     SaveJujuUserLocallyStep,
 )
+from sunbeam.commands.k8s import (
+    AddK8SCloudStep,
+    AddK8SUnitsStep,
+    DeployK8SApplicationStep,
+    EnableK8SFeatures,
+    RemoveK8SUnitStep,
+    StoreK8SKubeConfigStep,
+)
 from sunbeam.commands.microceph import (
     AddMicrocephUnitsStep,
     ConfigureMicrocephOSDStep,
@@ -254,6 +262,7 @@ def bootstrap(
 
     cloud_type = snap.config.get("juju.cloud.type")
     cloud_name = snap.config.get("juju.cloud.name")
+    k8s_provider = snap.config.get("k8s.provider")
     cloud_definition = JujuHelper.manual_cloud(
         cloud_name, utils.get_local_ip_by_default_route()
     )
@@ -342,25 +351,49 @@ def bootstrap(
             client, fqdn, jhelper, deployment.infrastructure_model
         )
     )
-    # Deploy Microk8s application during bootstrap irrespective of node role.
-    plan4.append(TerraformInitStep(manifest_obj.get_tfhelper("microk8s-plan")))
-    plan4.append(
-        DeployMicrok8sApplicationStep(
-            client,
-            manifest_obj,
-            jhelper,
-            deployment.infrastructure_model,
-            accept_defaults=accept_defaults,
-            deployment_preseed=preseed,
+
+    if k8s_provider == "k8s":
+        plan4.append(TerraformInitStep(manifest_obj.get_tfhelper("k8s-plan")))
+        plan4.append(
+            DeployK8SApplicationStep(
+                client,
+                manifest_obj,
+                jhelper,
+                deployment.infrastructure_model,
+                accept_defaults=accept_defaults,
+                deployment_preseed=preseed,
+            )
         )
-    )
-    plan4.append(
-        AddMicrok8sUnitsStep(client, fqdn, jhelper, deployment.infrastructure_model)
-    )
-    plan4.append(
-        StoreMicrok8sConfigStep(client, jhelper, deployment.infrastructure_model)
-    )
-    plan4.append(AddMicrok8sCloudStep(client, jhelper))
+        plan4.append(
+            AddK8SUnitsStep(client, fqdn, jhelper, deployment.infrastructure_model)
+        )
+        plan4.append(
+            EnableK8SFeatures(client, jhelper, deployment.infrastructure_model)
+        )
+        plan4.append(
+            StoreK8SKubeConfigStep(client, jhelper, deployment.infrastructure_model)
+        )
+        plan4.append(AddK8SCloudStep(client, jhelper))
+    else:
+        plan4.append(TerraformInitStep(manifest_obj.get_tfhelper("microk8s-plan")))
+        plan4.append(
+            DeployMicrok8sApplicationStep(
+                client,
+                manifest_obj,
+                jhelper,
+                deployment.infrastructure_model,
+                accept_defaults=accept_defaults,
+                deployment_preseed=preseed,
+            )
+        )
+        plan4.append(
+            AddMicrok8sUnitsStep(client, fqdn, jhelper, deployment.infrastructure_model)
+        )
+        plan4.append(
+            StoreMicrok8sConfigStep(client, jhelper, deployment.infrastructure_model)
+        )
+        plan4.append(AddMicrok8sCloudStep(client, jhelper))
+
     # Deploy Microceph application during bootstrap irrespective of node role.
     plan4.append(TerraformInitStep(manifest_obj.get_tfhelper("microceph-plan")))
     plan4.append(
@@ -526,6 +559,8 @@ def join(
     pretty_roles = ", ".join(role_.name.lower() for role_ in roles)
     LOG.debug(f"Node joining the cluster with roles: {pretty_roles}")
 
+    k8s_provider = Snap().config.get("k8s.provider")
+
     preflight_checks = []
     preflight_checks.append(SystemRequirementsCheck())
     preflight_checks.append(JujuSnapCheck())
@@ -578,9 +613,16 @@ def join(
     )
 
     if is_control_node:
-        plan2.append(
-            AddMicrok8sUnitsStep(client, name, jhelper, deployment.infrastructure_model)
-        )
+        if k8s_provider == "k8s":
+            plan2.append(
+                AddK8SUnitsStep(client, name, jhelper, deployment.infrastructure_model)
+            )
+        else:
+            plan2.append(
+                AddMicrok8sUnitsStep(
+                    client, name, jhelper, deployment.infrastructure_model
+                )
+            )
 
     if is_storage_node:
         plan2.append(
@@ -685,6 +727,8 @@ def remove(ctx: click.Context, name: str, force: bool) -> None:
     client = deployment.get_client()
     jhelper = JujuHelper(deployment.get_connected_controller())
 
+    k8s_provider = Snap().config.get("k8s.provider")
+
     preflight_checks = [DaemonGroupCheck()]
     run_preflight_checks(preflight_checks, console)
 
@@ -693,17 +737,34 @@ def remove(ctx: click.Context, name: str, force: bool) -> None:
         RemoveSunbeamMachineStep(
             client, name, jhelper, deployment.infrastructure_model
         ),
-        RemoveMicrok8sUnitStep(client, name, jhelper, deployment.infrastructure_model),
-        RemoveMicrocephUnitStep(client, name, jhelper, deployment.infrastructure_model),
-        RemoveHypervisorUnitStep(
-            client, name, jhelper, deployment.infrastructure_model, force
-        ),
-        RemoveJujuMachineStep(client, name),
-        # Cannot remove user as the same user name cannot be resued,
-        # so commenting the RemoveJujuUserStep
-        # RemoveJujuUserStep(name),
-        ClusterRemoveNodeStep(client, name),
     ]
+
+    if k8s_provider == "k8s":
+        plan.append(
+            RemoveK8SUnitStep(client, name, jhelper, deployment.infrastructure_model)
+        )
+    else:
+        plan.append(
+            RemoveMicrok8sUnitStep(
+                client, name, jhelper, deployment.infrastructure_model
+            )
+        )
+
+    plan.extend(
+        [
+            RemoveMicrocephUnitStep(
+                client, name, jhelper, deployment.infrastructure_model
+            ),
+            RemoveHypervisorUnitStep(
+                client, name, jhelper, deployment.infrastructure_model, force
+            ),
+            RemoveJujuMachineStep(client, name),
+            # Cannot remove user as the same user name cannot be resued,
+            # so commenting the RemoveJujuUserStep
+            # RemoveJujuUserStep(name),
+            ClusterRemoveNodeStep(client, name),
+        ]
+    )
     run_plan(plan, console)
     click.echo(f"Removed node {name} from the cluster")
     # Removing machine does not clean up all deployed juju components. This is

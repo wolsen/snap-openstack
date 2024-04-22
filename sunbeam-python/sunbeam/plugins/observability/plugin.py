@@ -29,11 +29,7 @@ from rich.status import Status
 
 from sunbeam.clusterd.service import ClusterServiceUnavailableException
 from sunbeam.commands.juju import JujuStepHelper
-from sunbeam.commands.microk8s import (
-    CREDENTIAL_SUFFIX,
-    MICROK8S_CLOUD,
-    MICROK8S_DEFAULT_STORAGECLASS,
-)
+from sunbeam.commands.k8s import CREDENTIAL_SUFFIX, K8SHelper
 from sunbeam.commands.openstack import PatchLoadBalancerServicesStep
 from sunbeam.commands.terraform import TerraformException, TerraformInitStep
 from sunbeam.jobs.common import (
@@ -88,13 +84,13 @@ class DeployObservabilityStackStep(BaseStep, JujuStepHelper):
         self.client = self.plugin.deployment.get_client()
         self.tfplan = self.plugin.tfplan_cos
         self.model = OBSERVABILITY_MODEL
-        self.cloud = MICROK8S_CLOUD
+        self.cloud = K8SHelper.get_cloud()
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Execute configuration using terraform."""
         proxy_settings = get_proxy_settings(self.plugin.deployment)
         model_config = convert_proxy_to_model_configs(proxy_settings)
-        model_config.update({"workload-storage": MICROK8S_DEFAULT_STORAGECLASS})
+        model_config.update({"workload-storage": K8SHelper.get_default_storageclass()})
         extra_tfvars = {
             "model": self.model,
             "cloud": self.cloud,
@@ -153,13 +149,13 @@ class UpdateObservabilityModelConfigStep(BaseStep, JujuStepHelper):
         self.client = self.plugin.deployment.get_client()
         self.tfplan = self.plugin.tfplan_cos
         self.model = OBSERVABILITY_MODEL
-        self.cloud = MICROK8S_CLOUD
+        self.cloud = K8SHelper.get_cloud()
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Execute configuration using terraform."""
         proxy_settings = get_proxy_settings(self.plugin.deployment)
         model_config = convert_proxy_to_model_configs(proxy_settings)
-        model_config.update({"workload-storage": MICROK8S_DEFAULT_STORAGECLASS})
+        model_config.update({"workload-storage": K8SHelper.get_default_storageclass()})
         extra_tfvars = {
             "model": self.model,
             "cloud": self.cloud,
@@ -256,7 +252,7 @@ class RemoveObservabilityStackStep(BaseStep, JujuStepHelper):
         self.tfplan = self.plugin.tfplan_cos
         self.jhelper = jhelper
         self.model = OBSERVABILITY_MODEL
-        self.cloud = MICROK8S_CLOUD
+        self.cloud = K8SHelper.get_cloud()
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Execute configuration using terraform."""

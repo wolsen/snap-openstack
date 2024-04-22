@@ -55,8 +55,15 @@ def proxy_settings():
         yield p
 
 
+@pytest.fixture()
+def ssnap():
+    with patch("sunbeam.commands.k8s.Snap") as p:
+        yield p
+
+
 class TestDeployObservabilityStackStep:
-    def test_run(self, jhelper, observabilityplugin, proxy_settings):
+    def test_run(self, jhelper, observabilityplugin, proxy_settings, ssnap):
+        ssnap().config.get.return_value = "k8s"
         proxy_settings.return_value = {}
         step = observability_plugin.DeployObservabilityStackStep(
             observabilityplugin, jhelper
@@ -67,7 +74,10 @@ class TestDeployObservabilityStackStep:
         jhelper.wait_until_active.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
 
-    def test_run_tf_apply_failed(self, jhelper, observabilityplugin, proxy_settings):
+    def test_run_tf_apply_failed(
+        self, jhelper, observabilityplugin, proxy_settings, ssnap
+    ):
+        ssnap().config.get.return_value = "k8s"
         proxy_settings.return_value = {}
         observabilityplugin.manifest.update_tfvars_and_apply_tf.side_effect = (
             TerraformException("apply failed...")
@@ -83,7 +93,10 @@ class TestDeployObservabilityStackStep:
         assert result.result_type == ResultType.FAILED
         assert result.message == "apply failed..."
 
-    def test_run_waiting_timed_out(self, jhelper, observabilityplugin, proxy_settings):
+    def test_run_waiting_timed_out(
+        self, jhelper, observabilityplugin, proxy_settings, ssnap
+    ):
+        ssnap().config.get.return_value = "k8s"
         proxy_settings.return_value = {}
         jhelper.wait_until_active.side_effect = TimeoutException("timed out")
 
@@ -99,7 +112,8 @@ class TestDeployObservabilityStackStep:
 
 
 class TestRemoveObservabilityStackStep:
-    def test_run(self, jhelper, observabilityplugin):
+    def test_run(self, jhelper, observabilityplugin, ssnap):
+        ssnap().config.get.return_value = "k8s"
         tfhelper = observabilityplugin.manifest.get_tfhelper()
         step = observability_plugin.RemoveObservabilityStackStep(
             observabilityplugin, jhelper
@@ -110,7 +124,8 @@ class TestRemoveObservabilityStackStep:
         jhelper.wait_model_gone.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
 
-    def test_run_tf_destroy_failed(self, jhelper, observabilityplugin):
+    def test_run_tf_destroy_failed(self, jhelper, observabilityplugin, ssnap):
+        ssnap().config.get.return_value = "k8s"
         tfhelper = observabilityplugin.manifest.get_tfhelper()
         tfhelper.destroy.side_effect = TerraformException("destroy failed...")
 
@@ -124,7 +139,8 @@ class TestRemoveObservabilityStackStep:
         assert result.result_type == ResultType.FAILED
         assert result.message == "destroy failed..."
 
-    def test_run_waiting_timed_out(self, jhelper, observabilityplugin):
+    def test_run_waiting_timed_out(self, jhelper, observabilityplugin, ssnap):
+        ssnap().config.get.return_value = "k8s"
         tfhelper = observabilityplugin.manifest.get_tfhelper()
         jhelper.wait_model_gone.side_effect = TimeoutException("timed out")
 

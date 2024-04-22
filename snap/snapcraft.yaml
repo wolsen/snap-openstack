@@ -145,7 +145,7 @@ parts:
     stage:
       - bin/terraform
 
-  terraform-microk8s-plan:
+  terraform-sunbeam-plans:
     after: [terraform]
     plugin: dump
     source: cloud/

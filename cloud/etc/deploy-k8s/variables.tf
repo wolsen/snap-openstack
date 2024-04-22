@@ -13,27 +13,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-variable "charm_microk8s_channel" {
-  description = "Operator channel for microk8s deployment"
+variable "k8s_channel" {
+  description = "Operator channel for k8s deployment"
   type        = string
-  default     = "legacy/stable"
+  default     = "latest/edge"
 }
 
-variable "charm_microk8s_revision" {
-  description = "Operator channel revision for microk8s deployment"
+variable "k8s_revision" {
+  description = "Operator channel revision for k8s deployment"
   type        = number
   default     = null
 }
 
-variable "charm_microk8s_config" {
-  description = "Operator config for microk8s deployment"
+variable "k8s_config" {
+  description = "Operator config for k8s deployment"
   type        = map(string)
   default     = {}
 }
 
-variable "microk8s_channel" {
-  description = "K8S channel to deploy, not the operator channel"
-  default     = "1.28-strict/stable"
+variable "k8s_snap_channel" {
+  description = "K8S snap channel to deploy, not the operator channel"
+  default     = "latest/edge"
 }
 
 variable "machine_ids" {
@@ -45,14 +45,4 @@ variable "machine_ids" {
 variable "machine_model" {
   description = "Model to deploy to"
   type        = string
-}
-
-variable "addons" {
-  description = "Addon configuration to enable on the deployment"
-  type        = map(string)
-  default = {
-    dns              = ""
-    hostpath-storage = ""
-    metallb          = "10.20.21.1-10.20.21.10"
-  }
 }

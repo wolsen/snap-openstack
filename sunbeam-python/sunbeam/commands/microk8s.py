@@ -51,9 +51,10 @@ MICROK8S_DEFAULT_STORAGECLASS = "microk8s-hostpath"
 MICROK8S_KUBECONFIG_KEY = "Microk8sConfig"
 MICROK8S_CONFIG_KEY = "TerraformVarsMicrok8s"
 MICROK8S_ADDONS_CONFIG_KEY = "TerraformVarsMicrok8sAddons"
+METALLB_ANNOTATION = "metallb.universe.tf/loadBalancerIPs"
 
 
-def validate_metallb_range(ip_ranges: str):
+def validate_cidr_or_ip_range(ip_ranges: str):
     for ip_range in ip_ranges.split(","):
         ips = ip_range.split("-")
         if len(ips) == 1:
@@ -77,7 +78,7 @@ def microk8s_addons_questions():
             "MetalLB address allocation range "
             "(supports multiple ranges, comma separated)",
             default_value="10.20.21.10-10.20.21.20",
-            validation_function=validate_metallb_range,
+            validation_function=validate_cidr_or_ip_range,
         ),
     }
 
