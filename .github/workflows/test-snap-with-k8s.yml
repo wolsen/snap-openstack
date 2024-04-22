@@ -2,7 +2,7 @@ name: Test sunbeam with k8s operator
 
 on:
   workflow_dispatch:
-    input:
+    inputs:
       k8s-provider:
         description: Select k8s provider
         required: true
@@ -11,81 +11,55 @@ on:
         options:
         - microk8s
         - k8s
-    outputs:
-      snap:
-        description: "Filename of the built snap artifact"
-        value: local-${{ jobs.build.outputs.snap }}
+      snap-channel:
+        description: Specify openstack snap channel
+        required: true
+        default: 2024.1/edge
+        type: string
 
 jobs:
-  build:
-    name: Build snap
-    runs-on: ubuntu-latest
-    outputs:
-      snap: ${{ steps.snapcraft.outputs.snap }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Build snap locally
-        uses: snapcore/action-build@v1
-        id: snapcraft
-
-      - name: Upload locally built snap artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: local-${{ steps.snapcraft.outputs.snap }}
-          path: ${{ steps.snapcraft.outputs.snap }}
-
   functional-test:
-    needs: build
     name: Functional test
     runs-on: [self-hosted, large, jammy, x64]
     steps:
       - name: Checkout
         uses: actions/checkout@v3
-      - name: Download snap artifact
-        id: download
-        uses: actions/download-artifact@v3
-        with:
-          name: local-${{ needs.build.outputs.snap }}
       - name: test
         run: |
           export COLUMNS=256
-          sudo snap install  ${{ needs.build.outputs.snap }} --dangerous
+          sudo snap install openstack --channel {{ inputs.snap-channel }}
           sudo snap set openstack k8s.provider={{ inputs.k8s-provider }}
-          openstack.sunbeam prepare-node-script | bash -x
-          sudo snap connect openstack:juju-bin juju:juju-bin
-          sudo snap connect openstack:dot-local-share-juju
-          sudo snap connect openstack:dot-config-openstack
-          sudo snap connect openstack:dot-local-share-openstack
-          sg snap_daemon "openstack.sunbeam cluster bootstrap --manifest .github/assets/k8s/edge.yml --accept-defaults --topology single --database single"
-          sg snap_daemon "openstack.sunbeam cluster list"
+          sunbeam prepare-node-script | bash -x
+          sg snap_daemon "sunbeam cluster bootstrap --manifest .github/assets/k8s/edge.yml --accept-defaults --topology single --database single"
+          sg snap_daemon "sunbeam cluster list"
           # Note: Moving configure before enabling caas just to ensure caas images are not downloaded
           # To download caas image, require ports to open on firewall to access fedora images.
-          sg snap_daemon "openstack.sunbeam configure -a"
-          sg snap_daemon "openstack.sunbeam launch"
-          sg snap_daemon "openstack.sunbeam enable orchestration"
-          # sg snap_daemon "openstack.sunbeam enable loadbalancer"
-          # sg snap_daemon "openstack.sunbeam enable dns --nameservers=testing.github."
-          sg snap_daemon "openstack.sunbeam enable telemetry"
-          sg snap_daemon "openstack.sunbeam enable observability"
-          sg snap_daemon "openstack.sunbeam enable vault"
-          sg snap_daemon "openstack.sunbeam enable secrets"
-          sg snap_daemon "openstack.sunbeam enable caas"
-          # sg snap_daemon "openstack.sunbeam enable validation"
+          sg snap_daemon "sunbeam configure -a"
+          sg snap_daemon "sunbeam launch"
+          sg snap_daemon "sunbeam enable orchestration"
+          # sg snap_daemon "sunbeam enable loadbalancer"
+          # sg snap_daemon "sunbeam enable dns --nameservers=testing.github."
+          sg snap_daemon "sunbeam enable telemetry"
+          sg snap_daemon "sunbeam enable observability"
+          sg snap_daemon "sunbeam enable vault"
+          sg snap_daemon "sunbeam enable secrets"
+          sg snap_daemon "sunbeam enable caas"
+          sg snap_daemon "sunbeam enable images-sync"
+          # sg snap_daemon "sunbeam enable validation"
           # If smoke tests fails, logs should be collected via sunbeam command in "Collect logs"
-          # sg snap_daemon "openstack.sunbeam validation run smoke"
-          # sg snap_daemon "openstack.sunbeam validation run --output tempest_validation.log"
-          sg snap_daemon "openstack.sunbeam disable caas"
-          sg snap_daemon "openstack.sunbeam disable secrets"
-          sg snap_daemon "openstack.sunbeam disable vault"
+          # sg snap_daemon "sunbeam validation run smoke"
+          # sg snap_daemon "sunbeam validation run --output tempest_validation.log"
+          sg snap_daemon "sunbeam disable images-sync"
+          sg snap_daemon "sunbeam disable caas"
+          sg snap_daemon "sunbeam disable secrets"
+          sg snap_daemon "sunbeam disable vault"
           # Commented disabling observability due to LP#1998282
-          # sg snap_daemon "openstack.sunbeam disable observability"
-          # sg snap_daemon "openstack.sunbeam disable telemetry"
-          # sg snap_daemon "openstack.sunbeam disable dns"
-          # sg snap_daemon "openstack.sunbeam disable loadbalancer"
-          sg snap_daemon "openstack.sunbeam disable orchestration"
-          # sg snap_daemon "openstack.sunbeam disable validation"
+          # sg snap_daemon "sunbeam disable observability"
+          # sg snap_daemon "sunbeam disable telemetry"
+          # sg snap_daemon "sunbeam disable dns"
+          # sg snap_daemon "sunbeam disable loadbalancer"
+          sg snap_daemon "sunbeam disable orchestration"
+          # sg snap_daemon "sunbeam disable validation"
 
       - name: Collect logs
         if: always()
