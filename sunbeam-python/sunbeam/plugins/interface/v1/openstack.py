@@ -437,7 +437,7 @@ class EnableOpenStackApplicationStep(BaseStep, JujuStepHelper):
                 self.jhelper.wait_until_active(
                     self.model,
                     apps,
-                    timeout=APPLICATION_DEPLOY_TIMEOUT,
+                    timeout=self.plugin.set_application_timeout_on_enable(),
                 )
             )
         except (JujuWaitException, TimeoutException) as e:
@@ -493,6 +493,16 @@ class DisableOpenStackApplicationStep(BaseStep, JujuStepHelper):
 
         apps = self.plugin.set_application_names()
         LOG.debug(f"Application monitored for removal: {apps}")
-        # TODO(hemanth): Check if apps are removed or not.
+        try:
+            run_sync(
+                self.jhelper.wait_application_gone(
+                    apps,
+                    self.model,
+                    timeout=self.plugin.set_application_timeout_on_disable(),
+                )
+            )
+        except TimeoutException as e:
+            LOG.debug(f"Failed to destroy {apps}", exc_info=True)
+            return Result(ResultType.FAILED, str(e))
 
         return Result(ResultType.COMPLETED)

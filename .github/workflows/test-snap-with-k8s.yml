@@ -37,8 +37,8 @@ jobs:
           sg snap_daemon "sunbeam configure -a"
           sg snap_daemon "sunbeam launch"
           sg snap_daemon "sunbeam enable orchestration"
-          # sg snap_daemon "sunbeam enable loadbalancer"
-          # sg snap_daemon "sunbeam enable dns --nameservers=testing.github."
+          sg snap_daemon "sunbeam enable loadbalancer"
+          sg snap_daemon "sunbeam enable dns --nameservers=testing.github."
           sg snap_daemon "sunbeam enable telemetry"
           sg snap_daemon "sunbeam enable observability"
           sg snap_daemon "sunbeam enable vault"
@@ -56,8 +56,8 @@ jobs:
           # Commented disabling observability due to LP#1998282
           # sg snap_daemon "sunbeam disable observability"
           # sg snap_daemon "sunbeam disable telemetry"
-          # sg snap_daemon "sunbeam disable dns"
-          # sg snap_daemon "sunbeam disable loadbalancer"
+          sg snap_daemon "sunbeam disable dns"
+          sg snap_daemon "sunbeam disable loadbalancer"
           sg snap_daemon "sunbeam disable orchestration"
           # sg snap_daemon "sunbeam disable validation"
 
