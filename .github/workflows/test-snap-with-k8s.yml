@@ -27,8 +27,8 @@ jobs:
       - name: test
         run: |
           export COLUMNS=256
-          sudo snap install openstack --channel {{ inputs.snap-channel }}
-          sudo snap set openstack k8s.provider={{ inputs.k8s-provider }}
+          sudo snap install openstack --channel ${{ inputs.snap-channel }}
+          sudo snap set openstack k8s.provider=${{ inputs.k8s-provider }}
           sunbeam prepare-node-script | bash -x
           sg snap_daemon "sunbeam cluster bootstrap --manifest .github/assets/k8s/edge.yml --accept-defaults --topology single --database single"
           sg snap_daemon "sunbeam cluster list"
