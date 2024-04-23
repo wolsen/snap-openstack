@@ -324,7 +324,10 @@ class EnableK8SFeatures(BaseStep):
                 )
             )
 
-            cmd = f"sudo k8s set load-balancer.cidrs={self.lb_range}"
+            cmd = (
+                f"sudo k8s set load-balancer.cidrs={self.lb_range} "
+                "load-balancer.l2-mode=true"
+            )
             run_sync(
                 self.jhelper.run_cmd_on_machine_unit(
                     leader,
