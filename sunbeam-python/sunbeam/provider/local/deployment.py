@@ -234,5 +234,5 @@ class LocalDeployment(Deployment):
             )
 
         proxy_configs = ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY"]
-        proxy = {p: v for p in proxy_configs if (v := current_env.get(p))}
+        proxy = {p: v.strip("\"'") for p in proxy_configs if (v := current_env.get(p))}
         return proxy

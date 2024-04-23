@@ -198,6 +198,12 @@ def clear(ctx: click.Context) -> None:
         return
 
 
+def does_not_contain_quotes(answer: str):
+    """Check if the answer does not contain quotes."""
+    if '"' in answer or "'" in answer:
+        raise ValueError("Answer cannot contain quotes (\" or ').")
+
+
 def proxy_questions():
     return {
         "proxy_required": ConfirmQuestion(
@@ -206,12 +212,15 @@ def proxy_questions():
         ),
         "http_proxy": PromptQuestion(
             "Enter value for http_proxy:",
+            validation_function=does_not_contain_quotes,
         ),
         "https_proxy": PromptQuestion(
             "Enter value for https_proxy:",
+            validation_function=does_not_contain_quotes,
         ),
         "no_proxy": PromptQuestion(
             "Enter value for no_proxy:",
+            validation_function=does_not_contain_quotes,
         ),
     }
 
