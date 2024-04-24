@@ -30,7 +30,7 @@ from rich.status import Status
 from sunbeam.clusterd.service import ClusterServiceUnavailableException
 from sunbeam.commands.juju import JujuStepHelper
 from sunbeam.commands.k8s import CREDENTIAL_SUFFIX, K8SHelper
-from sunbeam.commands.openstack import PatchLoadBalancerServicesStep
+from sunbeam.commands.openstack import OPENSTACK_MODEL, PatchLoadBalancerServicesStep
 from sunbeam.commands.terraform import TerraformException, TerraformInitStep
 from sunbeam.jobs.common import (
     BaseStep,
@@ -175,6 +175,58 @@ class UpdateObservabilityModelConfigStep(BaseStep, JujuStepHelper):
             LOG.exception("Error updating Observability Model config")
             return Result(ResultType.FAILED, str(e))
 
+        return Result(ResultType.COMPLETED)
+
+
+class RemoveSaasApplicationsStep(BaseStep):
+    """Removes SAAS offers from given model.
+
+    This is a workaround around:
+    https://github.com/juju/terraform-provider-juju/issues/473
+    """
+
+    def __init__(self, jhelper: JujuHelper, model: str, offering_model: str):
+        super().__init__(
+            f"Purge SAAS Offers: {model}", f"Purging SAAS Offers from {model}"
+        )
+        self.jhelper = jhelper
+        self.model = model
+        self.offering_model = offering_model
+        self._remote_app_to_delete = []
+
+    def is_skip(self, status: Status | None = None) -> Result:
+        model = run_sync(self.jhelper.get_model(self.model))
+        remote_applications = model.remote_applications
+        LOG.debug(
+            "Remote applications found: %s", ", ".join(remote_applications.keys())
+        )
+        if not remote_applications:
+            return Result(ResultType.SKIPPED, "No remote applications found")
+
+        for name, remote_app in remote_applications.items():
+            if not remote_app:
+                continue
+            offer = remote_app.offer_url
+            LOG.debug("Processing offer: %s", offer)
+            model_name = offer.split("/", 1)[1].split(".", 1)[0]
+            if model_name == self.offering_model:
+                self._remote_app_to_delete.append(name)
+
+        if len(self._remote_app_to_delete) == 0:
+            return Result(ResultType.SKIPPED, "No remote applications to remove")
+
+        return Result(ResultType.COMPLETED)
+
+    def run(self, status: Optional[Status] = None) -> Result:
+        """Execute configuration using terraform."""
+        if not self._remote_app_to_delete:
+            return Result(ResultType.COMPLETED)
+
+        model = run_sync(self.jhelper.get_model(self.model))
+
+        for saas in self._remote_app_to_delete:
+            LOG.debug("Removing remote application %s", saas)
+            run_sync(model.remove_saas(saas))
         return Result(ResultType.COMPLETED)
 
 
@@ -515,11 +567,15 @@ class ObservabilityPlugin(OpenStackControlPlanePlugin):
         agent_grafana_k8s_plan = [
             TerraformInitStep(self.manifest.get_tfhelper(self.tfplan)),
             DisableOpenStackApplicationStep(jhelper, self),
+            RemoveSaasApplicationsStep(jhelper, OPENSTACK_MODEL, OBSERVABILITY_MODEL),
         ]
 
         grafana_agent_plan = [
             TerraformInitStep(self.manifest.get_tfhelper(self.tfplan_grafana_agent)),
             RemoveGrafanaAgentStep(self, jhelper),
+            RemoveSaasApplicationsStep(
+                jhelper, self.deployment.infrastructure_model, OBSERVABILITY_MODEL
+            ),
         ]
 
         cos_plan = [
