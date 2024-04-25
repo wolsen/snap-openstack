@@ -149,37 +149,35 @@ class ConfigureCAStep(BaseStep):
 
         for record in certs_to_process:
             unit_name = record.get("unit_name")
-            unit_csrs = record.get("unit_csrs")
+            csr = record.get("csr")
             app = record.get("application_name")
             relation_id = record.get("relation_id")
 
             # Each unit can have multiple CSRs
-            for csr in unit_csrs:
-                csr = csr.get("certificate_signing_request")
-                subject = get_subject_from_csr(csr)
-                if not subject:
-                    raise click.ClickException(f"Not a valid CSR for unit {unit_name}")
+            subject = get_subject_from_csr(csr)
+            if not subject:
+                raise click.ClickException(f"Not a valid CSR for unit {unit_name}")
 
-                cert_questions = certificate_questions(unit_name, subject)
-                certificates_bank = questions.QuestionBank(
-                    questions=cert_questions,
-                    console=console,
-                    preseed=self.preseed.get("certificates").get(subject),
-                    previous_answers=variables.get("certificates").get(subject),
-                )
-                cert = certificates_bank.certificate.ask()
-                if not is_certificate_valid(cert):
-                    raise click.ClickException("Not a valid certificate")
+            cert_questions = certificate_questions(unit_name, subject)
+            certificates_bank = questions.QuestionBank(
+                questions=cert_questions,
+                console=console,
+                preseed=self.preseed.get("certificates").get(subject),
+                previous_answers=variables.get("certificates").get(subject),
+            )
+            cert = certificates_bank.certificate.ask()
+            if not is_certificate_valid(cert):
+                raise click.ClickException("Not a valid certificate")
 
-                self.process_certs[subject] = {
-                    "app": app,
-                    "unit": unit_name,
-                    "relation_id": relation_id,
-                    "csr": csr,
-                    "certificate": cert,
-                }
-                variables["certificates"].setdefault(subject, {})
-                variables["certificates"][subject]["certificate"] = cert
+            self.process_certs[subject] = {
+                "app": app,
+                "unit": unit_name,
+                "relation_id": relation_id,
+                "csr": csr,
+                "certificate": cert,
+            }
+            variables["certificates"].setdefault(subject, {})
+            variables["certificates"][subject]["certificate"] = cert
 
         questions.write_answers(self.client, self._CONFIG, variables)
 
@@ -377,22 +375,19 @@ class CaTlsPlugin(TlsPluginGroup):
                 "Unable to get outstanding certificate requests from CA"
             )
 
-        csrs = {}
         certs_to_process = json.loads(action_result.get("result")) or {}
-        for record in certs_to_process:
-            unit_name = record.get("unit_name")
-            unit_csrs = record.get("unit_csrs")
-            if unit_name:
-                csrs[unit_name] = unit_csrs
+        csrs = {
+            unit: csr
+            for record in certs_to_process
+            if (unit := record.get("unit_name")) and (csr := record.get("csr"))
+        }
 
         if format == FORMAT_TABLE:
             table = Table()
             table.add_column("Unit name")
             table.add_column("CSR")
             for unit, csr in csrs.items():
-                certs = (key.get("certificate_signing_request", "") for key in csr)
-                certs_str = "\n".join(certs)
-                table.add_row(unit, certs_str)
+                table.add_row(unit, csr)
             console.print(table)
         elif format == FORMAT_YAML:
             yaml.add_representer(str, str_presenter)
