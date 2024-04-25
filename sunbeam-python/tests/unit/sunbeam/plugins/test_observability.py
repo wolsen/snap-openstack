@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -222,3 +222,45 @@ class TestRemoveGrafanaAgentStep:
         jhelper.wait_application_gone.assert_called_once()
         assert result.result_type == ResultType.FAILED
         assert result.message == "timed out"
+
+
+class TestRemoveSaasApplicationsStep:
+    def test_is_skip(self, jhelper):
+        jhelper.get_model.return_value = AsyncMock(
+            remote_applications={
+                "test-1": Mock(offer_url="admin/offering_model.test-1")
+            }
+        )
+        step = observability_plugin.RemoveSaasApplicationsStep(
+            jhelper, "test", "offering_model"
+        )
+        result = step.is_skip()
+        assert result.result_type == ResultType.COMPLETED
+
+    def test_is_skip_no_remote_app(self, jhelper):
+        jhelper.get_model.return_value = AsyncMock(remote_applications={})
+        step = observability_plugin.RemoveSaasApplicationsStep(
+            jhelper, "test", "offering_model"
+        )
+        result = step.is_skip()
+        assert result.result_type == ResultType.SKIPPED
+
+    def test_is_skip_no_saas_app(self, jhelper):
+        jhelper.get_model.return_value = AsyncMock(
+            remote_applications={
+                "test-1": Mock(offer_url="admin/offering_model.test-1")
+            }
+        )
+        step = observability_plugin.RemoveSaasApplicationsStep(
+            jhelper, "test", "offering_model-no-apps"
+        )
+        result = step.is_skip()
+        assert result.result_type == ResultType.SKIPPED
+
+    def test_run(self, jhelper):
+        step = observability_plugin.RemoveSaasApplicationsStep(
+            jhelper, "test", "offering_model"
+        )
+        step._remote_app_to_delete = ["test-1"]
+        result = step.run()
+        assert result.result_type == ResultType.COMPLETED
