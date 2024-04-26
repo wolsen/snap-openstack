@@ -31,11 +31,6 @@ variable "k8s_config" {
   default     = {}
 }
 
-variable "k8s_snap_channel" {
-  description = "K8S snap channel to deploy, not the operator channel"
-  default     = "latest/edge"
-}
-
 variable "machine_ids" {
   description = "List of machine ids to include"
   type        = list(string)

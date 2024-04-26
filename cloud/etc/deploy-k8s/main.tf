@@ -42,7 +42,5 @@ resource "juju_application" "k8s" {
     base     = "ubuntu@22.04"
   }
 
-  config = merge({
-    channel = var.k8s_snap_channel
-  }, var.k8s_config)
+  config = var.k8s_config
 }
