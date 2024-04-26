@@ -146,6 +146,19 @@ class TestDisableOpenStackApplicationStep:
         assert result.result_type == ResultType.FAILED
         assert result.message == "apply failed..."
 
+    def test_run_waiting_timed_out(
+        self, cclient, read_config, jhelper, tfhelper, osplugin, manifest, pluginmanager
+    ):
+        jhelper.wait_application_gone.side_effect = TimeoutException("timed out")
+
+        step = openstack.DisableOpenStackApplicationStep(jhelper, osplugin)
+        result = step.run()
+
+        osplugin.manifest.update_tfvars_and_apply_tf.assert_called_once()
+        jhelper.wait_application_gone.assert_called_once()
+        assert result.result_type == ResultType.FAILED
+        assert result.message == "timed out"
+
 
 class MockStatus:
     def __init__(self, value: dict):
