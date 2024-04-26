@@ -52,7 +52,7 @@ dpkg -s openssh-server &> /dev/null || {{
 
 # Add $USER to the snap_daemon group supporting interaction
 # with the sunbeam clustering daemon for cluster operations.
-sudo addgroup $USER snap_daemon
+sudo usermod --append --groups snap_daemon $USER
 
 # Generate keypair and set-up prompt-less access to local machine
 [ -f $HOME/.ssh/id_rsa ] || ssh-keygen -b 4096 -f $HOME/.ssh/id_rsa -t rsa -N ""
