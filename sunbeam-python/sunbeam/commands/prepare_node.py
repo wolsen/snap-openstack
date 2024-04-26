@@ -82,6 +82,27 @@ sudo snap install --channel {JUJU_CHANNEL} juju
 # Workaround a bug between snapd and juju
 mkdir -p $HOME/.local/share
 mkdir -p $HOME/.config/openstack
+
+# Check the snap channel and deduce risk level from it
+snap_output=$(snap list openstack --unicode=never --color=never | grep openstack)
+track=$(awk -v col=4 '{{print $col}}' <<<"$snap_output")
+risk=stable
+
+# if never installed from the store, the channel is "-"
+if [[ $track =~ "edge" ]] || [[ $track == "-" ]]; then
+    risk="edge"
+fi
+
+if [[ $track =~ "candidate" ]]; then
+    risk="candidate"
+fi
+
+if [[ $risk != "stable" ]]; then
+    echo "You're deploying from $risk channel," \
+        " to test $risk charms, you must provide the $risk manifest."
+    echo "Example: sunbeam cluster bootstrap " \
+        "--manifest /snap/openstack/current/etc/manifests/$risk.yml"
+fi
 """
 
 
