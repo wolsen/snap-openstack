@@ -48,6 +48,7 @@ from sunbeam.jobs.juju import (
     LeaderNotFoundException,
     run_sync,
 )
+from sunbeam.jobs.manifest import CharmManifest, SoftwareConfig
 from sunbeam.plugins.interface.utils import (
     encode_base64_as_string,
     get_subject_from_csr,
@@ -243,9 +244,11 @@ class CaTlsPlugin(TlsPluginGroup):
         )
         self.endpoints = []
 
-    def manifest_defaults(self) -> dict:
-        """Manifest plugin part in dict format."""
-        return {"charms": {"manual-tls-certificates": {"channel": "latest/stable"}}}
+    def manifest_defaults(self) -> SoftwareConfig:
+        """Plugin software configuration"""
+        return SoftwareConfig(
+            charms={"manual-tls-certificates": CharmManifest(channel="latest/stable")}
+        )
 
     def manifest_attributes_tfvar_map(self) -> dict:
         """Manifest attributes terraformvars map."""

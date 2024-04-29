@@ -48,6 +48,7 @@ from sunbeam.commands.juju import (
     JujuStepHelper,
     ScaleJujuStep,
 )
+from sunbeam.commands.terraform import TerraformHelper
 from sunbeam.jobs.checks import Check, DiagnosticsCheck, DiagnosticsResult
 from sunbeam.jobs.common import (
     RAM_4_GB_IN_MB,
@@ -1509,8 +1510,9 @@ class MaasDeployMicrok8sApplicationStep(microk8s.DeployMicrok8sApplicationStep):
         self,
         client: Client,
         maas_client: maas_client.MaasClient,
-        manifest: Manifest,
+        tfhelper: TerraformHelper,
         jhelper: JujuHelper,
+        manifest: Manifest,
         public_space: str,
         public_label: str,
         internal_space: str,
@@ -1521,8 +1523,9 @@ class MaasDeployMicrok8sApplicationStep(microk8s.DeployMicrok8sApplicationStep):
     ):
         super().__init__(
             client,
-            manifest,
+            tfhelper,
             jhelper,
+            manifest,
             model,
             deployment_preseed,
             accept_defaults,
@@ -1628,8 +1631,9 @@ class MaasDeployK8SApplicationStep(k8s.DeployK8SApplicationStep):
         self,
         client: Client,
         maas_client: maas_client.MaasClient,
-        manifest: Manifest,
+        tfhelper: TerraformHelper,
         jhelper: JujuHelper,
+        manifest: Manifest,
         public_space: str,
         public_label: str,
         internal_space: str,
@@ -1640,8 +1644,9 @@ class MaasDeployK8SApplicationStep(k8s.DeployK8SApplicationStep):
     ):
         super().__init__(
             client,
-            manifest,
+            tfhelper,
             jhelper,
+            manifest,
             model,
             deployment_preseed,
             accept_defaults,
