@@ -73,7 +73,6 @@ class UpgradeCoordinator:
         self.client = client
         self.jhelper = jhelper
         self.manifest = manifest
-        self.tfhelper = self.manifest.get_tfhelper("openstack-plan")
         self.k8s_provider = Snap().config.get("k8s.provider")
 
     def get_plan(self) -> list[BaseStep]:

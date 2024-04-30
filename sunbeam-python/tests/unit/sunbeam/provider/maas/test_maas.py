@@ -1107,6 +1107,7 @@ class TestMaasDeployK8SApplicationStep:
             MagicMock(),
             MagicMock(),
             MagicMock(),
+            MagicMock(),
             "public_space",
             "public_api",
             "internal_space",
@@ -1127,6 +1128,7 @@ class TestMaasDeployK8SApplicationStep:
             MagicMock(),
             MagicMock(),
             MagicMock(),
+            MagicMock(),
             "public_space",
             "public_api",
             "internal_space",
@@ -1143,6 +1145,7 @@ class TestMaasDeployK8SApplicationStep:
             return_value={},
         )
         step = MaasDeployK8SApplicationStep(
+            MagicMock(),
             MagicMock(),
             MagicMock(),
             MagicMock(),
@@ -1178,6 +1181,7 @@ class TestMaasDeployK8SApplicationStep:
             MagicMock(),
             MagicMock(),
             MagicMock(),
+            MagicMock(),
             "public_space",
             "public_api",
             "internal_space",
@@ -1205,6 +1209,7 @@ class TestMaasDeployK8SApplicationStep:
             ],
         )
         step = MaasDeployK8SApplicationStep(
+            MagicMock(),
             MagicMock(),
             MagicMock(),
             MagicMock(),

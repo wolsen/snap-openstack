@@ -31,6 +31,7 @@ from sunbeam.commands.microk8s import (
     MICROK8S_KUBECONFIG_KEY,
     validate_cidr_or_ip_range,
 )
+from sunbeam.commands.terraform import TerraformHelper
 from sunbeam.jobs.common import (
     BaseStep,
     Result,
@@ -100,8 +101,9 @@ class DeployK8SApplicationStep(DeployMachineApplicationStep):
     def __init__(
         self,
         client: Client,
-        manifest: Manifest,
+        tfhelper: TerraformHelper,
         jhelper: JujuHelper,
+        manifest: Manifest,
         model: str,
         deployment_preseed: dict | None = None,
         accept_defaults: bool = False,
@@ -109,12 +111,12 @@ class DeployK8SApplicationStep(DeployMachineApplicationStep):
     ):
         super().__init__(
             client,
-            manifest,
+            tfhelper,
             jhelper,
+            manifest,
             K8S_CONFIG_KEY,
             APPLICATION,
             model,
-            "k8s-plan",
             "Deploy K8S",
             "Deploying K8S",
             refresh,
@@ -198,14 +200,13 @@ class RemoveK8SUnitStep(RemoveMachineUnitStep):
         names: list[str] | str,
         jhelper: JujuHelper,
         model: str,
-        application: str,
     ):
         super().__init__(
             client,
             names,
             jhelper,
             K8S_CONFIG_KEY,
-            application,
+            APPLICATION,
             model,
             "Remove K8S unit",
             "Removing K8S unit from machine",

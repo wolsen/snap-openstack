@@ -20,6 +20,7 @@ from packaging.version import Version
 from rich.console import Console
 
 from sunbeam.jobs.deployment import Deployment
+from sunbeam.jobs.manifest import CharmManifest, SoftwareConfig
 from sunbeam.plugins.interface.v1.openstack import (
     ApplicationChannelData,
     OpenStackControlPlanePlugin,
@@ -41,13 +42,13 @@ class ImagesSyncPlugin(OpenStackControlPlanePlugin):
             tf_plan_location=TerraformPlanLocation.SUNBEAM_TERRAFORM_REPO,
         )
 
-    def manifest_defaults(self) -> dict:
-        """Manifest plugin part in dict format."""
-        return {
-            "charms": {
-                "openstack-images-sync-k8s": {"channel": OPENSTACK_CHANNEL},
+    def manifest_defaults(self) -> SoftwareConfig:
+        """Plugin software configuration"""
+        return SoftwareConfig(
+            charms={
+                "openstack-images-sync-k8s": CharmManifest(channel=OPENSTACK_CHANNEL),
             }
-        }
+        )
 
     def manifest_attributes_tfvar_map(self) -> dict:
         """Manifest attributes terraformvars map."""

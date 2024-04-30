@@ -66,6 +66,7 @@ class TestDeployControlPlaneStep(unittest.TestCase):
     def setUp(self):
         self.jhelper = AsyncMock()
         self.jhelper.run_action.return_value = {}
+        self.tfhelper = Mock()
         self.manifest = Mock()
         self.client = Mock()
         self.client.cluster.list_nodes_by_role.side_effect = [
@@ -84,7 +85,13 @@ class TestDeployControlPlaneStep(unittest.TestCase):
         )
 
         step = DeployControlPlaneStep(
-            self.client, self.manifest, self.jhelper, TOPOLOGY, DATABASE, MODEL
+            self.client,
+            self.tfhelper,
+            self.jhelper,
+            self.manifest,
+            TOPOLOGY,
+            DATABASE,
+            MODEL,
         )
         with patch(
             "sunbeam.commands.openstack.read_config",
@@ -92,17 +99,23 @@ class TestDeployControlPlaneStep(unittest.TestCase):
         ):
             result = step.run()
 
-        self.manifest.update_tfvars_and_apply_tf.assert_called_once()
+        self.tfhelper.update_tfvars_and_apply_tf.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
 
     def test_run_tf_apply_failed(self):
         self.snap_mock().config.get.return_value = "k8s"
-        self.manifest.update_tfvars_and_apply_tf.side_effect = TerraformException(
+        self.tfhelper.update_tfvars_and_apply_tf.side_effect = TerraformException(
             "apply failed..."
         )
 
         step = DeployControlPlaneStep(
-            self.client, self.manifest, self.jhelper, TOPOLOGY, DATABASE, MODEL
+            self.client,
+            self.tfhelper,
+            self.jhelper,
+            self.manifest,
+            TOPOLOGY,
+            DATABASE,
+            MODEL,
         )
         with patch(
             "sunbeam.commands.openstack.read_config",
@@ -110,7 +123,7 @@ class TestDeployControlPlaneStep(unittest.TestCase):
         ):
             result = step.run()
 
-        self.manifest.update_tfvars_and_apply_tf.assert_called_once()
+        self.tfhelper.update_tfvars_and_apply_tf.assert_called_once()
         assert result.result_type == ResultType.FAILED
         assert result.message == "apply failed..."
 
@@ -119,7 +132,13 @@ class TestDeployControlPlaneStep(unittest.TestCase):
         self.jhelper.wait_until_active.side_effect = TimeoutException("timed out")
 
         step = DeployControlPlaneStep(
-            self.client, self.manifest, self.jhelper, TOPOLOGY, DATABASE, MODEL
+            self.client,
+            self.tfhelper,
+            self.jhelper,
+            self.manifest,
+            TOPOLOGY,
+            DATABASE,
+            MODEL,
         )
         with patch(
             "sunbeam.commands.openstack.read_config",
@@ -138,7 +157,13 @@ class TestDeployControlPlaneStep(unittest.TestCase):
         )
 
         step = DeployControlPlaneStep(
-            self.client, self.manifest, self.jhelper, TOPOLOGY, DATABASE, MODEL
+            self.client,
+            self.tfhelper,
+            self.jhelper,
+            self.manifest,
+            TOPOLOGY,
+            DATABASE,
+            MODEL,
         )
         with patch(
             "sunbeam.commands.openstack.read_config",
@@ -153,7 +178,13 @@ class TestDeployControlPlaneStep(unittest.TestCase):
     def test_is_skip_pristine(self):
         self.snap_mock().config.get.return_value = "k8s"
         step = DeployControlPlaneStep(
-            self.client, self.manifest, self.jhelper, TOPOLOGY, DATABASE, MODEL
+            self.client,
+            self.tfhelper,
+            self.jhelper,
+            self.manifest,
+            TOPOLOGY,
+            DATABASE,
+            MODEL,
         )
         with patch(
             "sunbeam.commands.openstack.read_config",
@@ -166,7 +197,13 @@ class TestDeployControlPlaneStep(unittest.TestCase):
     def test_is_skip_subsequent_run(self):
         self.snap_mock().config.get.return_value = "k8s"
         step = DeployControlPlaneStep(
-            self.client, self.manifest, self.jhelper, TOPOLOGY, DATABASE, MODEL
+            self.client,
+            self.tfhelper,
+            self.jhelper,
+            self.manifest,
+            TOPOLOGY,
+            DATABASE,
+            MODEL,
         )
         with patch(
             "sunbeam.commands.openstack.read_config",
@@ -179,7 +216,13 @@ class TestDeployControlPlaneStep(unittest.TestCase):
     def test_is_skip_database_changed(self):
         self.snap_mock().config.get.return_value = "k8s"
         step = DeployControlPlaneStep(
-            self.client, self.manifest, self.jhelper, TOPOLOGY, DATABASE, MODEL
+            self.client,
+            self.tfhelper,
+            self.jhelper,
+            self.manifest,
+            TOPOLOGY,
+            DATABASE,
+            MODEL,
         )
         with patch(
             "sunbeam.commands.openstack.read_config",
@@ -193,8 +236,9 @@ class TestDeployControlPlaneStep(unittest.TestCase):
         self.snap_mock().config.get.return_value = "k8s"
         step = DeployControlPlaneStep(
             self.client,
-            self.manifest,
+            self.tfhelper,
             self.jhelper,
+            self.manifest,
             "large",
             "auto",
             MODEL,
@@ -214,8 +258,9 @@ class TestDeployControlPlaneStep(unittest.TestCase):
         self.snap_mock().config.get.return_value = "k8s"
         step = DeployControlPlaneStep(
             self.client,
-            self.manifest,
+            self.tfhelper,
             self.jhelper,
+            self.manifest,
             "large",
             "auto",
             MODEL,
@@ -414,6 +459,7 @@ class TestReapplyOpenStackTerraformPlanStep(unittest.TestCase):
             cluster=Mock(list_nodes_by_role=Mock(return_value=[1, 2, 3, 4]))
         )
         self.read_config.start()
+        self.tfhelper = Mock()
         self.jhelper = AsyncMock()
         self.manifest = Mock()
 
@@ -422,24 +468,24 @@ class TestReapplyOpenStackTerraformPlanStep(unittest.TestCase):
 
     def test_run(self):
         step = ReapplyOpenStackTerraformPlanStep(
-            self.client, self.manifest, self.jhelper
+            self.client, self.tfhelper, self.jhelper, self.manifest
         )
         result = step.run()
 
-        self.manifest.update_tfvars_and_apply_tf.assert_called_once()
+        self.tfhelper.update_tfvars_and_apply_tf.assert_called_once()
         assert result.result_type == ResultType.COMPLETED
 
     def test_run_tf_apply_failed(self):
-        self.manifest.update_tfvars_and_apply_tf.side_effect = TerraformException(
+        self.tfhelper.update_tfvars_and_apply_tf.side_effect = TerraformException(
             "apply failed..."
         )
 
         step = ReapplyOpenStackTerraformPlanStep(
-            self.client, self.manifest, self.jhelper
+            self.client, self.tfhelper, self.jhelper, self.manifest
         )
         result = step.run()
 
-        self.manifest.update_tfvars_and_apply_tf.assert_called_once()
+        self.tfhelper.update_tfvars_and_apply_tf.assert_called_once()
         assert result.result_type == ResultType.FAILED
         assert result.message == "apply failed..."
 
@@ -447,7 +493,7 @@ class TestReapplyOpenStackTerraformPlanStep(unittest.TestCase):
         self.jhelper.wait_until_active.side_effect = TimeoutException("timed out")
 
         step = ReapplyOpenStackTerraformPlanStep(
-            self.client, self.manifest, self.jhelper
+            self.client, self.tfhelper, self.jhelper, self.manifest
         )
         result = step.run()
 
@@ -461,7 +507,7 @@ class TestReapplyOpenStackTerraformPlanStep(unittest.TestCase):
         )
 
         step = ReapplyOpenStackTerraformPlanStep(
-            self.client, self.manifest, self.jhelper
+            self.client, self.tfhelper, self.jhelper, self.manifest
         )
         result = step.run()
 

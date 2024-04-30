@@ -27,7 +27,7 @@ from sunbeam.clusterd.client import Client
 from sunbeam.clusterd.service import ConfigItemNotFoundException
 from sunbeam.commands.juju import JujuStepHelper
 from sunbeam.commands.k8s import CREDENTIAL_SUFFIX, K8SHelper
-from sunbeam.commands.terraform import TerraformException
+from sunbeam.commands.terraform import TerraformException, TerraformHelper
 from sunbeam.jobs.common import (
     RAM_32_GB_IN_KB,
     BaseStep,
@@ -111,8 +111,9 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
     def __init__(
         self,
         client: Client,
-        manifest: Manifest,
+        tfhelper: TerraformHelper,
         jhelper: JujuHelper,
+        manifest: Manifest,
         topology: str,
         database: str,
         machine_model: str,
@@ -124,8 +125,9 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
             "Deploying OpenStack Control Plane to Kubernetes (this may take a while)",
         )
         self.client = client
-        self.manifest = manifest
+        self.tfhelper = tfhelper
         self.jhelper = jhelper
+        self.manifest = manifest
         self.topology = topology
         self.database = database
         self.machine_model = machine_model
@@ -133,7 +135,6 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         self.force = force
         self.model = OPENSTACK_MODEL
         self.cloud = K8SHelper.get_cloud()
-        self.tfplan = "openstack-plan"
 
     def get_storage_tfvars(self, storage_nodes: list[dict]) -> dict:
         """Create terraform variables related to storage."""
@@ -229,9 +230,9 @@ class DeployControlPlaneStep(BaseStep, JujuStepHelper):
         )
         self.update_status(status, "deploying services")
         try:
-            self.manifest.update_tfvars_and_apply_tf(
+            self.tfhelper.update_tfvars_and_apply_tf(
                 self.client,
-                tfplan=self.tfplan,
+                self.manifest,
                 tfvar_config=self._CONFIG,
                 override_tfvars=extra_tfvars,
             )
@@ -327,26 +328,27 @@ class ReapplyOpenStackTerraformPlanStep(BaseStep, JujuStepHelper):
     def __init__(
         self,
         client: Client,
-        manifest: Manifest,
+        tfhelper: TerraformHelper,
         jhelper: JujuHelper,
+        manifest: Manifest,
     ):
         super().__init__(
             "Applying Control plane Terraform plan",
             "Applying Control plane Terraform plan (this may take a while)",
         )
-        self.manifest = manifest
-        self.jhelper = jhelper
         self.client = client
-        self.tfplan = "openstack-plan"
+        self.tfhelper = tfhelper
+        self.jhelper = jhelper
+        self.manifest = manifest
         self.model = OPENSTACK_MODEL
 
     def run(self, status: Optional[Status] = None) -> Result:
         """Reapply Terraform plan if there are changes in tfvars."""
         try:
             self.update_status(status, "deploying services")
-            self.manifest.update_tfvars_and_apply_tf(
+            self.tfhelper.update_tfvars_and_apply_tf(
                 self.client,
-                tfplan=self.tfplan,
+                self.manifest,
                 tfvar_config=self._CONFIG,
             )
         except TerraformException as e:
@@ -386,6 +388,7 @@ class UpdateOpenStackModelConfigStep(BaseStep):
     def __init__(
         self,
         client: Client,
+        tfhelper: TerraformHelper,
         manifest: Manifest,
         model_config: dict,
     ):
@@ -394,9 +397,9 @@ class UpdateOpenStackModelConfigStep(BaseStep):
             "Updating OpenStack model config related to proxy",
         )
         self.client = client
+        self.tfhelper = tfhelper
         self.manifest = manifest
         self.model_config = model_config
-        self.tfplan = "openstack-plan"
 
     def run(self, status: Status | None = None) -> Result:
         """Apply model configs to openstack terraform plan."""
@@ -405,9 +408,9 @@ class UpdateOpenStackModelConfigStep(BaseStep):
                 {"workload-storage": K8SHelper.get_default_storageclass()}
             )
             override_tfvars = {"config": self.model_config}
-            self.manifest.update_tfvars_and_apply_tf(
+            self.tfhelper.update_tfvars_and_apply_tf(
                 self.client,
-                tfplan=self.tfplan,
+                self.manifest,
                 tfvar_config=self._CONFIG,
                 override_tfvars=override_tfvars,
                 tf_apply_extra_args=["-target=juju_model.sunbeam"],
