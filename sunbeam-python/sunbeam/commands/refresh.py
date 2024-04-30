@@ -75,7 +75,7 @@ def refresh(
     # Validate manifest file
     manifest = None
     if clear_manifest:
-        run_plan([AddManifestStep(client)], console)
+        run_plan([AddManifestStep(client, clear=True)], console)
     elif manifest_path:
         manifest = deployment.get_manifest(manifest_path)
         run_plan([AddManifestStep(client, manifest_path)], console)

@@ -31,9 +31,14 @@ from sunbeam.clusterd.service import (
     ConfigItemNotFoundException,
 )
 from sunbeam.commands.terraform import TerraformHelper
-from sunbeam.jobs.common import _get_default_no_proxy_settings, read_config
+from sunbeam.jobs.common import (
+    RiskLevel,
+    _get_default_no_proxy_settings,
+    infer_risk,
+    read_config,
+)
 from sunbeam.jobs.juju import JujuAccount, JujuController
-from sunbeam.jobs.manifest import Manifest
+from sunbeam.jobs.manifest import Manifest, embedded_manifest_path
 from sunbeam.versions import MANIFEST_ATTRIBUTES_TFVAR_MAP, TERRAFORM_DIR_NAMES
 
 LOG = logging.getLogger(__name__)
@@ -175,11 +180,11 @@ class Deployment(pydantic.BaseModel):
             except ClusterServiceUnavailableException:
                 LOG.debug(
                     "Failed to get manifest from clusterd, might not be bootstrapped,"
-                    " consider empty manifest from database."
+                    " consider default manifest."
                 )
             except ConfigItemNotFoundException:
                 LOG.debug(
-                    "No manifest found in clusterd, consider empty"
+                    "No manifest found in clusterd, consider default"
                     " manifest from database."
                 )
             except ValueError:
@@ -187,6 +192,15 @@ class Deployment(pydantic.BaseModel):
                     "Failed to get clusterd client, might no be bootstrapped,"
                     " consider empty manifest from database."
                 )
+            if override_manifest is None:
+                # Only get manifest from embedded if manifest not present in clusterd
+                snap = Snap()
+                risk = infer_risk(snap)
+                if risk != RiskLevel.STABLE:
+                    manifest_file = embedded_manifest_path(snap, risk)
+                    LOG.debug(f"Risk {risk.value} detected, loading {manifest_file}...")
+                    override_manifest = Manifest.from_file(manifest_file)
+                    LOG.debug("Manifest loaded from embedded manifest.")
 
         if override_manifest is not None:
             override_manifest.validate_against_default(manifest)

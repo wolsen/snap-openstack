@@ -276,8 +276,7 @@ def bootstrap(
     plan.append(JujuLoginStep(deployment.juju_account))
     # bootstrapped node is always machine 0 in controller model
     plan.append(ClusterInitStep(client, roles_to_str_list(roles), 0))
-    if manifest_path:
-        plan.append(AddManifestStep(client, manifest_path))
+    plan.append(AddManifestStep(client, manifest_path))
     plan.append(
         PromptForProxyStep(
             deployment, accept_defaults=accept_defaults, deployment_preseed=preseed

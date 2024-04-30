@@ -367,10 +367,9 @@ def bootstrap(
         sys.exit(1)
 
     client = deployment.get_client()
-    if manifest_path:
-        plan3 = []
-        plan3.append(AddManifestStep(client))
-        run_plan(plan3, console)
+    plan3 = []
+    plan3.append(AddManifestStep(client, manifest_path))
+    run_plan(plan3, console)
 
     if proxy_from_user and isinstance(proxy_from_user, dict):
         LOG.debug(f"Writing proxy information to clusterdb: {proxy_from_user}")
