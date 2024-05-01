@@ -51,7 +51,11 @@ software:
 
 
 @pytest.fixture()
-def deployment():
+def deployment(mocker, snap):
+    mocker.patch.object(manifest_mod, "Snap", return_value=snap)
+    mocker.patch.object(deployment_mod, "Snap", return_value=snap)
+    snap_config = {"deployment.risk": "stable"}
+    snap.config.get.side_effect = snap_config.__getitem__
     with patch("sunbeam.jobs.deployment.Deployment") as p:
         dep = p(name="", url="", type="")
         dep.get_manifest.side_effect = functools.partial(Deployment.get_manifest, dep)
@@ -68,16 +72,14 @@ def deployment():
 
 class TestDeployment:
 
-    def test_get_default_manifest(self, mocker, snap, deployment: Deployment):
-        mocker.patch.object(manifest_mod, "Snap", return_value=snap)
+    def test_get_default_manifest(self, deployment: Deployment):
         manifest = deployment.get_manifest()
 
         # Assert core charms / plans are present
         assert set(manifest.software.charms.keys()) >= MANIFEST_CHARM_VERSIONS.keys()
         assert set(manifest.software.terraform.keys()) >= TERRAFORM_DIR_NAMES.keys()
 
-    def test_load_on_default(self, mocker, snap, deployment: Deployment, tmpdir):
-        mocker.patch.object(manifest_mod, "Snap", return_value=snap)
+    def test_load_on_default(self, deployment: Deployment, tmpdir):
         manifest_file = tmpdir.mkdir("manifests").join("test_manifest.yaml")
         manifest_file.write(test_manifest)
         manifest_obj = deployment.get_manifest(manifest_file)
@@ -94,8 +96,7 @@ class TestDeployment:
         assert nova_manifest.revision is None
         assert nova_manifest.config is None
 
-    def test_load_latest_from_clusterdb(self, mocker, snap, deployment: Deployment):
-        mocker.patch.object(manifest_mod, "Snap", return_value=snap)
+    def test_load_latest_from_clusterdb(self, deployment: Deployment):
         client = Mock()
         client.cluster.get_latest_manifest.return_value = {"data": test_manifest}
         deployment.get_client.side_effect = None

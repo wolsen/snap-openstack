@@ -29,11 +29,22 @@ from sunbeam.clusterd.service import (
     ClusterServiceUnavailableException,
     ManifestItemNotFoundException,
 )
-from sunbeam.jobs.common import BaseStep, Result, ResultType, Status
+from sunbeam.jobs.common import (
+    BaseStep,
+    Result,
+    ResultType,
+    RiskLevel,
+    Status,
+    infer_risk,
+)
 from sunbeam.versions import MANIFEST_CHARM_VERSIONS, TERRAFORM_DIR_NAMES
 
 LOG = logging.getLogger(__name__)
 EMPTY_MANIFEST = {"charms": {}, "terraform": {}}
+
+
+def embedded_manifest_path(snap: Snap, risk: str) -> Path:
+    return snap.paths.snap / "etc" / "manifests" / f"{risk}.yml"
 
 
 class JujuManifest(pydantic.BaseModel):
@@ -195,29 +206,54 @@ class Manifest(pydantic.BaseModel):
 
 
 class AddManifestStep(BaseStep):
-    """Add Manifest file to cluster database"""
+    """Add Manifest file to cluster database.
 
-    def __init__(self, client: Client, manifest: Optional[Path] = None):
+    This step writes the manifest file to cluster database if:
+    - The user provides a manifest file.
+    - The user clears the manifest.
+    - The risk level is not stable.
+    Any other reason will be skipped.
+    """
+
+    def __init__(
+        self,
+        client: Client,
+        manifest_file: Path | None = None,
+        clear: bool = False,
+    ):
         super().__init__("Write Manifest to database", "Writing Manifest to database")
-        # Write EMPTY_MANIFEST if manifest not provided
-        self.manifest = manifest
         self.client = client
+        self.manifest_file = manifest_file
+        self.clear = clear
         self.manifest_content = None
+        self.snap = Snap()
 
     def is_skip(self, status: Optional[Status] = None) -> Result:
         """Skip if the user provided manifest and the latest from db are same."""
+        risk = infer_risk(self.snap)
         try:
-            if self.manifest:
-                with self.manifest.open("r") as file:
+            if self.manifest_file:
+                with self.manifest_file.open("r") as file:
                     self.manifest_content = yaml.safe_load(file)
-            else:
+            elif self.clear:
                 self.manifest_content = EMPTY_MANIFEST
+            elif risk != RiskLevel.STABLE:
+                self.manifest_content = yaml.safe_load(
+                    embedded_manifest_path(self.snap, risk).read_bytes()
+                )
+            else:
+                # No manifest to update
+                return Result(ResultType.SKIPPED)
+        except (yaml.YAMLError, IOError) as e:
+            LOG.debug("Failed to load manifest", exc_info=True)
+            return Result(ResultType.FAILED, str(e))
 
+        try:
             latest_manifest = self.client.cluster.get_latest_manifest()
         except ManifestItemNotFoundException:
             return Result(ResultType.COMPLETED)
-        except (ClusterServiceUnavailableException, yaml.YAMLError, IOError) as e:
-            LOG.debug(e)
+        except ClusterServiceUnavailableException as e:
+            LOG.debug("Failed to fetch latest manifest from clusterd", exc_info=True)
             return Result(ResultType.FAILED, str(e))
 
         if yaml.safe_load(latest_manifest.get("data", {})) == self.manifest_content:

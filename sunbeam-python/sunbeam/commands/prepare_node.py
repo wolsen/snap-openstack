@@ -86,22 +86,25 @@ mkdir -p $HOME/.config/openstack
 # Check the snap channel and deduce risk level from it
 snap_output=$(snap list openstack --unicode=never --color=never | grep openstack)
 track=$(awk -v col=4 '{{print $col}}' <<<"$snap_output")
-risk=stable
 
 # if never installed from the store, the channel is "-"
 if [[ $track =~ "edge" ]] || [[ $track == "-" ]]; then
     risk="edge"
-fi
-
-if [[ $track =~ "candidate" ]]; then
+elif [[ $track =~ "beta" ]]; then
+    risk="beta"
+elif [[ $track =~ "candidate" ]]; then
     risk="candidate"
+else
+    risk="stable"
 fi
 
 if [[ $risk != "stable" ]]; then
     echo "You're deploying from $risk channel," \
         " to test $risk charms, you must provide the $risk manifest."
-    echo "Example: sunbeam cluster bootstrap " \
-        "--manifest /snap/openstack/current/etc/manifests/$risk.yml"
+    sudo snap set openstack deployment.risk=$risk
+    echo "Snap has been automatically configured to deploy from" \
+        "$risk channel."
+    echo "Override by passing a custom manifest with -m/--manifest."
 fi
 """
 

@@ -27,6 +27,7 @@ from click import decorators
 from juju.client.client import FullStatus
 from rich.console import Console
 from rich.status import Status
+from snaphelpers import Snap, UnknownConfigKey
 
 from sunbeam.clusterd.client import Client
 
@@ -422,3 +423,30 @@ class SunbeamException(Exception):
     """Base exception for sunbeam."""
 
     pass
+
+
+class RiskLevel(str, enum.Enum):
+    STABLE = "stable"
+    CANDIDATE = "candidate"
+    BETA = "beta"
+    EDGE = "edge"
+
+
+def infer_risk(snap: Snap) -> RiskLevel:
+    """Compute risk level from environment."""
+    try:
+        risk = snap.config.get("deployment.risk")
+    except UnknownConfigKey:
+        return RiskLevel.STABLE
+
+    match risk:
+        case "candidate":
+            return RiskLevel.CANDIDATE
+        # Beta and edge are considered the same for now
+        case "beta":
+            LOG.debug("Beta channel detected, using edge instead.")
+            return RiskLevel.EDGE
+        case "edge":
+            return RiskLevel.EDGE
+        case _:
+            return RiskLevel.STABLE
