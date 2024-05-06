@@ -39,8 +39,9 @@ software:
       channel: OS_CHARM
     openstack-hypervisor:
       channel: OS_CHARM
-    openstack-images-sync-k8s:
-      channel: OS_CHARM
+    # removed as not present in 2023.2
+    # openstack-images-sync-k8s:
+    #   channel: OS_CHARM
     ovn-central-k8s:
       channel: OVN_CHARM
     ovn-relay-k8s:
