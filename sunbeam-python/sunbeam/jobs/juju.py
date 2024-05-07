@@ -480,7 +480,10 @@ class JujuHelper:
                 "--",
             ]
         )
-        action = await unit.run(pebble + " " + cmd, timeout=timeout, block=True)
+        try:
+            action = await unit.run(pebble + " " + cmd, timeout=timeout, block=True)
+        except asyncio.TimeoutError as e:
+            raise TimeoutException(f"Timeout while running command: {cmd}") from e
         if action.results["return-code"] != 0:
             raise CmdFailedException(action.results["stderr"])
         return action.results
