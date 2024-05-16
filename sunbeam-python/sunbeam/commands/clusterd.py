@@ -40,7 +40,6 @@ from sunbeam.jobs.common import (
     Result,
     ResultType,
     Status,
-    update_status_background,
 )
 from sunbeam.jobs.juju import (
     ApplicationNotFoundException,
@@ -484,7 +483,6 @@ class DeploySunbeamClusterdApplicationStep(BaseStep):
         )
 
         apps = run_sync(self.jhelper.get_application_names(self.model))
-        task = run_sync(update_status_background(self, apps, status))
         try:
             run_sync(
                 self.jhelper.wait_until_active(
@@ -496,8 +494,5 @@ class DeploySunbeamClusterdApplicationStep(BaseStep):
         except (JujuWaitException, TimeoutException) as e:
             LOG.warning(str(e))
             return Result(ResultType.FAILED, str(e))
-        finally:
-            if not task.done():
-                task.cancel()
 
         return Result(ResultType.COMPLETED)
